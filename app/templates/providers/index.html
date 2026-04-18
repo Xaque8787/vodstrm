@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Providers{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--actions">
+  <div>
+    <h1>Providers</h1>
+    <p class="page-subtitle">Manage your M3U and Xtream Code sources.</p>
+  </div>
+  <button class="btn btn-primary" id="add-provider-btn">+ Add Provider</button>
+</div>
+
+{% if error %}
+<div class="alert alert-error" style="margin-bottom: 24px;">{{ error }}</div>
+{% endif %}
+
+<!-- ADD PROVIDER PANEL -->
+<div class="provider-panel" id="provider-panel" {% if not open_type %}style="display:none"{% endif %}>
+  <div class="provider-panel__header">
+    <span class="provider-panel__title">New Provider</span>
+    <button class="provider-panel__close" id="close-panel-btn" aria-label="Close">&times;</button>
+  </div>
+
+  <!-- TYPE SELECTOR -->
+  <div class="radio-group">
+    <label class="radio-option {% if open_type == 'm3u' or not open_type %}radio-option--active{% endif %}" id="label-m3u">
+      <input type="radio" name="provider_type" value="m3u" id="type-m3u"
+        {% if open_type == 'm3u' or not open_type %}checked{% endif %} />
+      <span class="radio-option__icon">&#9654;</span>
+      <span>
+        <strong>M3U URL</strong>
+        <small>Provide a direct playlist URL</small>
+      </span>
+    </label>
+    <label class="radio-option {% if open_type == 'xtream' %}radio-option--active{% endif %}" id="label-xtream">
+      <input type="radio" name="provider_type" value="xtream" id="type-xtream"
+        {% if open_type == 'xtream' %}checked{% endif %} />
+      <span class="radio-option__icon">&#128737;</span>
+      <span>
+        <strong>Xtream Codes</strong>
+        <small>Connect via username &amp; password</small>
+      </span>
+    </label>
+  </div>
+
+  <!-- M3U FORM -->
+  <form method="post" action="/providers/add/m3u" id="form-m3u"
+    class="provider-form {% if open_type == 'xtream' %}provider-form--hidden{% endif %}">
+    <div class="form-group">
+      <label for="m3u-name">Name</label>
+      <input type="text" id="m3u-name" name="name" placeholder="My Provider"
+        value="{{ form_name or '' }}" required />
+    </div>
+    <div class="form-group">
+      <label for="m3u-url">Playlist URL</label>
+      <input type="url" id="m3u-url" name="url" placeholder="http://example.com/playlist.m3u"
+        value="{{ form_url or '' }}" required />
+    </div>
+    <div class="provider-form__footer">
+      <button type="submit" class="btn btn-primary">Add Provider</button>
+    </div>
+  </form>
+
+  <!-- XTREAM FORM -->
+  <form method="post" action="/providers/add/xtream" id="form-xtream"
+    class="provider-form {% if open_type != 'xtream' %}provider-form--hidden{% endif %}">
+    <div class="form-group">
+      <label for="xt-name">Name</label>
+      <input type="text" id="xt-name" name="name" placeholder="My Xtream Provider"
+        value="{{ form_name or '' }}" required />
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="xt-username">Username</label>
+        <input type="text" id="xt-username" name="username"
+          value="{{ form_username or '' }}" required />
+      </div>
+      <div class="form-group">
+        <label for="xt-password">Password</label>
+        <input type="password" id="xt-password" name="password" required />
+      </div>
+    </div>
+    <div class="form-group form-group--half">
+      <label for="xt-port">Port <span class="label-optional">(optional)</span></label>
+      <input type="text" id="xt-port" name="port" placeholder="8080"
+        value="{{ form_port or '' }}" />
+    </div>
+    <div class="provider-form__footer">
+      <button type="submit" class="btn btn-primary">Add Provider</button>
+    </div>
+  </form>
+</div>
+
+<!-- PROVIDERS TABLE -->
+{% if providers %}
+<div class="card" style="margin-top: 32px;">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Details</th>
+        <th>Added</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in providers %}
+      <tr>
+        <td><strong>{{ p.name }}</strong></td>
+        <td>
+          <span class="badge {% if p.type == 'm3u' %}badge--blue{% else %}badge--green{% endif %}">
+            {{ "M3U" if p.type == "m3u" else "Xtream" }}
+          </span>
+        </td>
+        <td class="text-muted">
+          {% if p.type == "m3u" %}
+            {{ p.url }}
+          {% else %}
+            {{ p.username }}{% if p.port %}:{{ p.port }}{% endif %}
+          {% endif %}
+        </td>
+        <td class="text-muted">{{ p.created_at[:10] }}</td>
+        <td>
+          <form method="post" action="/providers/{{ p.id }}/delete"
+            data-confirm="Remove provider &quot;{{ p.name }}&quot;?">
+            <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <p>No providers added yet. Click <strong>+ Add Provider</strong> to get started.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const panel     = document.getElementById("provider-panel");
+  const openBtn   = document.getElementById("add-provider-btn");
+  const closeBtn  = document.getElementById("close-panel-btn");
+  const radioM3u  = document.getElementById("type-m3u");
+  const radioXt   = document.getElementById("type-xtream");
+  const formM3u   = document.getElementById("form-m3u");
+  const formXt    = document.getElementById("form-xtream");
+  const labelM3u  = document.getElementById("label-m3u");
+  const labelXt   = document.getElementById("label-xtream");
+
+  openBtn.addEventListener("click", () => {
+    panel.style.display = "block";
+    openBtn.style.display = "none";
+  });
+
+  closeBtn.addEventListener("click", () => {
+    panel.style.display = "none";
+    openBtn.style.display = "";
+  });
+
+  function switchType(type) {
+    if (type === "m3u") {
+      formM3u.classList.remove("provider-form--hidden");
+      formXt.classList.add("provider-form--hidden");
+      labelM3u.classList.add("radio-option--active");
+      labelXt.classList.remove("radio-option--active");
+    } else {
+      formXt.classList.remove("provider-form--hidden");
+      formM3u.classList.add("provider-form--hidden");
+      labelXt.classList.add("radio-option--active");
+      labelM3u.classList.remove("radio-option--active");
+    }
+  }
+
+  radioM3u.addEventListener("change", () => switchType("m3u"));
+  radioXt.addEventListener("change", () => switchType("xtream"));
+</script>
+{% endblock %}
