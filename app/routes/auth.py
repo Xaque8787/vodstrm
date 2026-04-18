@@ -42,6 +42,8 @@ def _admin_exists() -> bool:
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
+    if not _admin_exists():
+        return RedirectResponse("/setup", status_code=302)
     token = request.cookies.get(COOKIE_NAME)
     if token and decode_access_token(token):
         return RedirectResponse("/", status_code=302)

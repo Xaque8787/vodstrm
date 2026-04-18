@@ -51,6 +51,9 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request, current_user: TokenData = Depends(get_current_user)):
+        from app.routes.auth import _admin_exists
+        if not _admin_exists():
+            return RedirectResponse("/setup", status_code=302)
         return templates.TemplateResponse(
             "index.html", {"request": request, "current_user": current_user}
         )
