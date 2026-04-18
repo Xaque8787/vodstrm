@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from app.auth.jwt_handler import TokenData, get_current_user
 from app.routes import admin as admin_router
 from app.routes import auth as auth_router
+from app.routes import providers as providers_router
 from app.utils.logging_config import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router.router)
     app.include_router(admin_router.router)
+    app.include_router(providers_router.router)
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request, current_user: TokenData = Depends(get_current_user)):
