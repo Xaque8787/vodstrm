@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Users{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>User Management</h1>
+</div>
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Admin</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td>{{ user.id }}</td>
+        <td>{{ user.username }}</td>
+        <td>{{ user.email or "—" }}</td>
+        <td>{{ "Yes" if user.is_admin else "No" }}</td>
+        <td>{{ user.created_at }}</td>
+        <td>
+          {% if user.id != current_user.user_id %}
+          <form method="post" action="/admin/users/{{ user.id }}/delete" onsubmit="return confirm('Delete this user?')">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+          {% else %}
+          <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

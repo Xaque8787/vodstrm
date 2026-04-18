@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}App{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/main.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if current_user is defined and current_user %}
+  <nav class="nav">
+    <div class="nav-brand">App</div>
+    <div class="nav-links">
+      <a href="/">Dashboard</a>
+      {% if current_user.is_admin %}
+      <a href="/admin/users">Users</a>
+      {% endif %}
+      <a href="/logout" class="nav-logout">Logout</a>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="/static/js/main.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
