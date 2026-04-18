@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="FastAPI Boilerplate",
+        title="vodstrm",
         lifespan=lifespan,
         docs_url="/docs" if os.getenv("DEBUG", "false").lower() == "true" else None,
         redoc_url=None,
