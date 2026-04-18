@@ -25,6 +25,10 @@ async def lifespan(app: FastAPI):
     configure_logging(debug=debug)
     logger.info("Application starting up")
 
+    from app.database import init_db
+    init_db()
+    logger.info("Database tables verified")
+
     from run_migrations import run_all_migrations
     run_all_migrations()
 
