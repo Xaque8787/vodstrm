@@ -4,7 +4,10 @@ import os
 from contextlib import contextmanager
 from typing import Generator
 
-DATABASE_PATH = os.getenv("DATABASE_PATH", "data/app.db")
+from app.utils.env import resolve_path
+
+_DATABASE_RELATIVE = os.getenv("DATABASE_PATH", "data/app.db")
+DATABASE_PATH = resolve_path(_DATABASE_RELATIVE)
 
 _sql_logger = logging.getLogger("app.sql")
 

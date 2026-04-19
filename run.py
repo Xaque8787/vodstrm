@@ -13,9 +13,12 @@ if __name__ == "__main__":
     port = int(os.getenv("APP_PORT", "8000"))
     debug = os.getenv("DEBUG", "false").lower() == "true"
 
+    in_docker = os.path.exists("/app") and os.path.isfile("/app/run.py")
+    host = "0.0.0.0" if in_docker else "127.0.0.1"
+
     uvicorn.run(
         "app.main:app",
-        host="127.0.0.1",
+        host=host,
         port=port,
         reload=True,
         log_level="debug" if debug else "info",

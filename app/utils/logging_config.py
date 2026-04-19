@@ -2,12 +2,14 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-LOG_DIR = "data/logs"
-LOG_FILE = os.path.join(LOG_DIR, "app.log")
+from app.utils.env import resolve_path
+
+_LOG_DIR = resolve_path(os.getenv("LOG_DIR", "data/logs"))
+_LOG_FILE = os.path.join(_LOG_DIR, "app.log")
 
 
 def configure_logging(debug: bool = False) -> None:
-    os.makedirs(LOG_DIR, exist_ok=True)
+    os.makedirs(_LOG_DIR, exist_ok=True)
 
     level = logging.DEBUG if debug else logging.INFO
 
@@ -27,7 +29,7 @@ def configure_logging(debug: bool = False) -> None:
     root_logger.addHandler(console_handler)
 
     file_handler = RotatingFileHandler(
-        LOG_FILE,
+        _LOG_FILE,
         maxBytes=5 * 1024 * 1024,
         backupCount=3,
         encoding="utf-8",

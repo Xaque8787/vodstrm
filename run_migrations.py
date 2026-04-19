@@ -10,16 +10,34 @@ import os
 import sqlite3
 import sys
 
-MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
-
 logger = logging.getLogger(__name__)
+
+_DOCKER_ROOT = "/app"
+
+
+def _project_root() -> str:
+    if os.path.exists(_DOCKER_ROOT) and os.path.isfile(os.path.join(_DOCKER_ROOT, "run.py")):
+        return _DOCKER_ROOT
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve(relative: str) -> str:
+    if os.path.isabs(relative):
+        return relative
+    return os.path.join(_project_root(), relative)
+
+
+MIGRATIONS_DIR = _resolve("migrations")
 
 
 def _get_connection() -> sqlite3.Connection:
-    from dotenv import load_dotenv
-    load_dotenv()
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_resolve(".env"))
+    except ImportError:
+        pass
 
-    db_path = os.getenv("DATABASE_PATH", "data/app.db")
+    db_path = _resolve(os.getenv("DATABASE_PATH", "data/app.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
