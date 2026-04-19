@@ -116,6 +116,15 @@ def _apply_schedule_to_scheduler(schedule: dict) -> None:
 
 
 def _resolve_task_fn(task_type: str, provider_slug: str | None):
+    from app.tasks.downloader import download_provider, download_all_providers
+
+    if task_type in ("m3u_download", "xtream_download") and provider_slug:
+        import functools
+        return functools.partial(download_provider, provider_slug)
+
+    if task_type == "download_all_providers":
+        return download_all_providers
+
     return None
 
 
@@ -131,6 +140,10 @@ async def schedules_page(
     scheduler = get_scheduler()
     scheduler_jobs = {job.id: job for job in scheduler.get_jobs()}
 
+    _GLOBAL_TASKS = [
+        {"task_type": "download_all_providers", "label": "Download All Active Providers"},
+    ]
+
     schedules_with_next = []
     for s in schedules:
         job = scheduler_jobs.get(s["task_id"])
@@ -141,6 +154,19 @@ async def schedules_page(
         )
         schedules_with_next.append(s)
 
+    schedules_by_task_id = {s["task_id"]: s for s in schedules_with_next}
+
+    global_tasks = []
+    for gt in _GLOBAL_TASKS:
+        task_id = f"global:{gt['task_type']}"
+        sched = schedules_by_task_id.get(task_id)
+        global_tasks.append({
+            "task_type": gt["task_type"],
+            "label": gt["label"],
+            "task_id": task_id,
+            "sched": sched,
+        })
+
     return templates.TemplateResponse(
         "schedules/index.html",
         {
@@ -148,6 +174,7 @@ async def schedules_page(
             "current_user": current_user,
             "schedules": schedules_with_next,
             "providers": providers,
+            "global_tasks": global_tasks,
             "tz": __import__("os").getenv("TZ", "America/Los_Angeles"),
         },
     )
@@ -198,6 +225,65 @@ async def save_provider_schedule(
     logger.info(
         "Schedule saved for provider %s by %s", provider_slug, current_user.username
     )
+    return RedirectResponse("/schedules", status_code=302)
+
+
+@router.post("/global/{task_type}/save", response_class=HTMLResponse)
+async def save_global_schedule(
+    task_type: str,
+    request: Request,
+    trigger_type: str = Form("cron"),
+    cron_expression: str = Form(""),
+    interval_seconds: str = Form(""),
+    enabled: str = Form("off"),
+    current_user: TokenData = Depends(get_current_user),
+):
+    _GLOBAL_LABELS = {
+        "download_all_providers": "Download All Active Providers",
+    }
+    if task_type not in _GLOBAL_LABELS:
+        return RedirectResponse("/schedules", status_code=302)
+
+    task_id = f"global:{task_type}"
+    label = _GLOBAL_LABELS[task_type]
+    is_enabled = enabled.lower() in ("on", "true", "1", "yes")
+    cron_val = cron_expression.strip() or None
+    interval_val = int(interval_seconds.strip()) if interval_seconds.strip().isdigit() else None
+
+    _upsert_schedule(
+        task_id=task_id,
+        provider_slug=None,
+        task_type=task_type,
+        label=label,
+        trigger_type=trigger_type,
+        cron_expression=cron_val,
+        interval_seconds=interval_val,
+        enabled=is_enabled,
+    )
+
+    schedule = _get_schedule(task_id)
+    if schedule:
+        _apply_schedule_to_scheduler(schedule)
+
+    logger.info("Global schedule saved: %s by %s", task_type, current_user.username)
+    return RedirectResponse("/schedules", status_code=302)
+
+
+@router.post("/global/{task_type}/run-now")
+async def run_global_now(
+    task_type: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    fn = _resolve_task_fn(task_type, None)
+
+    if fn is not None:
+        import threading
+        t = threading.Thread(target=fn, daemon=True)
+        t.start()
+        logger.info("Manual global trigger: %s by %s", task_type, current_user.username)
+    else:
+        logger.warning("Manual global trigger requested for unknown task_type: %s", task_type)
+
     return RedirectResponse("/schedules", status_code=302)
 
 

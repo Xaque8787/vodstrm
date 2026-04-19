@@ -8,6 +8,117 @@
   <p class="page-subtitle">Configure when each provider's playlist is downloaded. Timezone: <code>{{ tz }}</code></p>
 </div>
 
+{% if global_tasks %}
+<div class="schedule-list" style="margin-bottom:2rem;">
+  <h2 style="font-size:1rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;">Global Tasks</h2>
+  {% for gt in global_tasks %}
+  {% set gs = gt.sched %}
+  <div class="card schedule-card" id="schedule-card-{{ gt.task_type }}">
+    <div class="schedule-card__header">
+      <div class="schedule-card__info">
+        <span class="badge badge--blue">Global</span>
+        <strong class="schedule-card__name">{{ gt.label }}</strong>
+      </div>
+      <div class="schedule-card__actions">
+        <form method="post" action="/schedules/global/{{ gt.task_type }}/run-now" style="display:inline">
+          <button type="submit" class="btn btn-secondary btn-sm" title="Trigger immediately">&#9654; Run Now</button>
+        </form>
+        <button type="button" class="btn btn-secondary btn-sm schedule-toggle-btn"
+          data-target="schedule-form-global-{{ gt.task_type }}">
+          &#9881; Schedule
+        </button>
+      </div>
+    </div>
+
+    {% if gs %}
+    <div class="schedule-card__status">
+      <span class="toggle-btn {% if gs.enabled %}toggle-btn--active{% else %}toggle-btn--inactive{% endif %}">
+        <span class="toggle-btn__dot"></span>
+        <span class="toggle-btn__label">{{ "Enabled" if gs.enabled else "Disabled" }}</span>
+      </span>
+      {% if gs.trigger_type == "cron" %}
+        <span class="text-muted" style="font-size:0.85rem;">Cron: <code>{{ gs.cron_expression }}</code></span>
+      {% else %}
+        <span class="text-muted" style="font-size:0.85rem;">Every {{ gs.interval_seconds }}s</span>
+      {% endif %}
+      {% if gs.next_run %}
+        <span class="text-muted" style="font-size:0.85rem;">Next: {{ gs.next_run }}</span>
+      {% endif %}
+      {% if gs.last_run_at %}
+        <span class="text-muted" style="font-size:0.85rem;">
+          Last:
+          {% if gs.last_run_status == "success" %}
+            <span style="color:#166534;">&#10003;</span>
+          {% elif gs.last_run_status == "error" %}
+            <span style="color:#dc3545;">&#10007;</span>
+          {% endif %}
+          {{ gs.last_run_at[:19] }}
+        </span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="schedule-form-panel" id="schedule-form-global-{{ gt.task_type }}" style="display:none">
+      <form method="post" action="/schedules/global/{{ gt.task_type }}/save" class="schedule-form">
+        <div class="schedule-form__row">
+          <div class="form-group" style="flex:0 0 auto;">
+            <label>Enabled</label>
+            <label class="toggle-switch">
+              <input type="checkbox" name="enabled" value="on"
+                {% if gs and gs.enabled %}checked{% endif %} />
+              <span class="toggle-switch__track"></span>
+            </label>
+          </div>
+
+          <div class="form-group" style="flex:0 0 auto;">
+            <label>Trigger Type</label>
+            <div class="seg-control" id="trigger-seg-global-{{ gt.task_type }}">
+              <label class="seg-control__opt">
+                <input type="radio" name="trigger_type" value="cron"
+                  {% if not gs or gs.trigger_type == 'cron' %}checked{% endif %}
+                  onchange="switchTrigger('global-{{ gt.task_type }}', 'cron')" />
+                <span>Cron</span>
+              </label>
+              <label class="seg-control__opt">
+                <input type="radio" name="trigger_type" value="interval"
+                  {% if gs and gs.trigger_type == 'interval' %}checked{% endif %}
+                  onchange="switchTrigger('global-{{ gt.task_type }}', 'interval')" />
+                <span>Interval</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group schedule-trigger-field" id="cron-field-global-{{ gt.task_type }}"
+            {% if gs and gs.trigger_type == 'interval' %}style="display:none"{% endif %}>
+            <label>Cron Expression</label>
+            <input type="text" name="cron_expression"
+              placeholder="0 4 * * *"
+              value="{{ gs.cron_expression if gs and gs.cron_expression else '' }}" />
+            <span class="form-hint">Standard 5-field cron. E.g. <code>0 4 * * *</code> = daily at 4 AM</span>
+          </div>
+
+          <div class="form-group schedule-trigger-field" id="interval-field-global-{{ gt.task_type }}"
+            {% if not gs or gs.trigger_type == 'cron' %}style="display:none"{% endif %}>
+            <label>Interval (seconds)</label>
+            <input type="number" name="interval_seconds" min="60"
+              placeholder="14400"
+              value="{{ gs.interval_seconds if gs and gs.interval_seconds else '' }}" />
+            <span class="form-hint">Minimum 60. E.g. <code>14400</code> = every 4 hours</span>
+          </div>
+        </div>
+
+        <div class="schedule-form__footer">
+          <button type="submit" class="btn btn-primary btn-sm">Save Schedule</button>
+          <button type="button" class="btn btn-secondary btn-sm schedule-toggle-btn"
+            data-target="schedule-form-global-{{ gt.task_type }}">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if not providers %}
 <div class="empty-state">
   <p>No providers configured yet. <a href="/providers">Add a provider</a> to get started.</p>
@@ -74,8 +185,7 @@
     </div>
     {% endif %}
 
-    <div class="schedule-form-panel" id="schedule-form-{{ p.slug }}"
-      {% if not existing.sched %}style="display:none"{% endif %}>
+    <div class="schedule-form-panel" id="schedule-form-{{ p.slug }}" style="display:none">
       <form method="post" action="/schedules/provider/{{ p.slug }}/save" class="schedule-form">
         <div class="schedule-form__row">
           <div class="form-group" style="flex:0 0 auto;">
