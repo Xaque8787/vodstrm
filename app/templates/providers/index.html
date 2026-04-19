@@ -124,7 +124,7 @@
       {% for p in providers %}
       <tr class="{% if not p.is_active %}row--inactive{% endif %}">
         <td>
-          <form method="post" action="/providers/{{ p.id }}/toggle" style="display:inline">
+          <form method="post" action="/providers/{{ p.slug }}/toggle" style="display:inline">
             <button type="submit"
               class="toggle-btn {% if p.is_active %}toggle-btn--active{% else %}toggle-btn--inactive{% endif %}"
               title="{% if p.is_active %}Click to deactivate{% else %}Click to activate{% endif %}">
@@ -150,8 +150,8 @@
         <td class="text-muted">{{ p.created_at[:10] }}</td>
         <td class="table-actions">
           <button type="button" class="btn btn-secondary btn-sm edit-open-btn"
-            data-edit-id="{{ p.id }}">Edit</button>
-          <form method="post" action="/providers/{{ p.id }}/delete"
+            data-edit-id="{{ p.slug }}">Edit</button>
+          <form method="post" action="/providers/{{ p.slug }}/delete"
             data-confirm="Remove provider &quot;{{ p.name }}&quot;?" style="display:inline">
             <button type="submit" class="btn btn-danger btn-sm">Remove</button>
           </form>
@@ -159,11 +159,11 @@
       </tr>
 
       <!-- INLINE EDIT ROW -->
-      <tr class="edit-row" id="edit-row-{{ p.id }}"
-        {% if edit_provider_id != p.id %}style="display:none"{% endif %}>
+      <tr class="edit-row" id="edit-row-{{ p.slug }}"
+        {% if edit_provider_slug != p.slug %}style="display:none"{% endif %}>
         <td colspan="6" class="edit-row__cell">
           {% if p.type == "m3u" %}
-          <form method="post" action="/providers/{{ p.id }}/edit/m3u" class="inline-edit-form">
+          <form method="post" action="/providers/{{ p.slug }}/edit/m3u" class="inline-edit-form">
             <div class="inline-edit-fields">
               <div class="form-group">
                 <label>Name</label>
@@ -177,11 +177,11 @@
             <div class="inline-edit-actions">
               <button type="submit" class="btn btn-primary btn-sm">Save</button>
               <button type="button" class="btn btn-secondary btn-sm cancel-edit-btn"
-                data-edit-id="{{ p.id }}">Cancel</button>
+                data-edit-id="{{ p.slug }}">Cancel</button>
             </div>
           </form>
           {% else %}
-          <form method="post" action="/providers/{{ p.id }}/edit/xtream" class="inline-edit-form">
+          <form method="post" action="/providers/{{ p.slug }}/edit/xtream" class="inline-edit-form">
             <div class="inline-edit-fields">
               <div class="form-group">
                 <label>Name</label>
@@ -218,7 +218,7 @@
             <div class="inline-edit-actions">
               <button type="submit" class="btn btn-primary btn-sm">Save</button>
               <button type="button" class="btn btn-secondary btn-sm cancel-edit-btn"
-                data-edit-id="{{ p.id }}">Cancel</button>
+                data-edit-id="{{ p.slug }}">Cancel</button>
             </div>
           </form>
           {% endif %}
