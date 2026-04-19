@@ -9,6 +9,8 @@ import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from app.tasks.downloader import download_all_providers
+
 logger = logging.getLogger("app.tasks.registry")
 
 
@@ -31,8 +33,12 @@ def _register_task(
 
 
 def register_all(scheduler: BackgroundScheduler) -> None:
-    """
-    Register every scheduled task here.
-    Tasks will be added as they are implemented.
-    """
+    _register_task(
+        scheduler,
+        download_all_providers,
+        trigger="cron",
+        job_id="download_all_providers",
+        hour=4,
+        minute=0,
+    )
     logger.info("All tasks registered with scheduler")
