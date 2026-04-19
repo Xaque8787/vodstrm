@@ -78,10 +78,27 @@
         <input type="password" id="xt-password" name="password" required />
       </div>
     </div>
-    <div class="form-group form-group--half">
-      <label for="xt-port">Port <span class="label-optional">(optional)</span></label>
-      <input type="text" id="xt-port" name="port" placeholder="8080"
-        value="{{ form_port or '' }}" />
+    <div class="form-row">
+      <div class="form-group form-group--half">
+        <label for="xt-port">Port <span class="label-optional">(optional)</span></label>
+        <input type="text" id="xt-port" name="port" placeholder="8080"
+          value="{{ form_port or '' }}" />
+      </div>
+      <div class="form-group">
+        <label>Stream Format</label>
+        <div class="seg-control">
+          <label class="seg-control__opt">
+            <input type="radio" name="stream_format" value="ts"
+              {% if (form_stream_format or 'ts') == 'ts' %}checked{% endif %} />
+            <span>.ts</span>
+          </label>
+          <label class="seg-control__opt">
+            <input type="radio" name="stream_format" value="hls"
+              {% if form_stream_format == 'hls' %}checked{% endif %} />
+            <span>HLS</span>
+          </label>
+        </div>
+      </div>
     </div>
     <div class="provider-form__footer">
       <button type="submit" class="btn btn-primary">Add Provider</button>
@@ -127,6 +144,7 @@
             {{ p.url }}
           {% else %}
             {{ p.username }}{% if p.port %}:{{ p.port }}{% endif %}
+            <span class="badge badge--gray" style="margin-left:6px;">{{ ".ts" if (p.stream_format or "ts") == "ts" else "HLS" }}</span>
           {% endif %}
         </td>
         <td class="text-muted">{{ p.created_at[:10] }}</td>
@@ -180,6 +198,21 @@
               <div class="form-group form-group--sm">
                 <label>Port <span class="label-optional">(opt)</span></label>
                 <input type="text" name="port" value="{{ p.port or '' }}" placeholder="8080" />
+              </div>
+              <div class="form-group form-group--sm">
+                <label>Stream Format</label>
+                <div class="seg-control">
+                  <label class="seg-control__opt">
+                    <input type="radio" name="stream_format" value="ts"
+                      {% if (p.stream_format or 'ts') == 'ts' %}checked{% endif %} />
+                    <span>.ts</span>
+                  </label>
+                  <label class="seg-control__opt">
+                    <input type="radio" name="stream_format" value="hls"
+                      {% if p.stream_format == 'hls' %}checked{% endif %} />
+                    <span>HLS</span>
+                  </label>
+                </div>
               </div>
             </div>
             <div class="inline-edit-actions">

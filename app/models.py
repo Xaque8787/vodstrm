@@ -57,6 +57,7 @@ class ProviderXtreamCreate(BaseModel):
     username: str
     password: str
     port: Optional[str] = None
+    stream_format: Literal["ts", "hls"] = "ts"
 
     @field_validator("name", "username", "password")
     @classmethod
@@ -83,6 +84,7 @@ class ProviderRecord(BaseModel):
     username: Optional[str]
     password: Optional[str]
     port: Optional[str]
+    stream_format: Literal["ts", "hls"] = "ts"
     is_active: bool = True
     created_at: datetime
 
@@ -116,6 +118,7 @@ class ProviderXtreamUpdate(BaseModel):
     username: str
     password: str
     port: Optional[str] = None
+    stream_format: Literal["ts", "hls"] = "ts"
 
     @field_validator("name", "username", "password")
     @classmethod

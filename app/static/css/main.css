@@ -462,6 +462,49 @@ code {
   color: #166534;
 }
 
+.badge--gray {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+/* SEGMENTED CONTROL */
+.seg-control {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.seg-control__opt {
+  display: flex;
+  cursor: pointer;
+}
+
+.seg-control__opt input[type="radio"] {
+  display: none;
+}
+
+.seg-control__opt span {
+  display: block;
+  padding: 5px 14px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  transition: background 0.12s ease, color 0.12s ease;
+  border-right: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.seg-control__opt:last-child span {
+  border-right: none;
+}
+
+.seg-control__opt input[type="radio"]:checked + span {
+  background: var(--color-primary);
+  color: #fff;
+}
+
 /* TABLE ACTIONS */
 .table-actions {
   display: flex;

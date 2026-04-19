@@ -35,7 +35,7 @@ def _provider_name_taken(name: str, exclude_id: int | None = None) -> bool:
 def _list_providers() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, type, url, username, port, is_active, created_at FROM providers ORDER BY name"
+            "SELECT id, name, type, url, username, port, stream_format, is_active, created_at FROM providers ORDER BY name"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -43,7 +43,7 @@ def _list_providers() -> list[dict]:
 def _get_provider(provider_id: int) -> dict | None:
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id, name, type, url, username, password, port, is_active, created_at FROM providers WHERE id = ?",
+            "SELECT id, name, type, url, username, password, port, stream_format, is_active, created_at FROM providers WHERE id = ?",
             (provider_id,),
         ).fetchone()
     return dict(row) if row else None
@@ -117,10 +117,14 @@ async def add_xtream_provider(
     username: str = Form(...),
     password: str = Form(...),
     port: str = Form(""),
+    stream_format: str = Form("ts"),
     current_user: TokenData = Depends(get_current_user),
 ):
     try:
-        data = ProviderXtreamCreate(name=name, username=username, password=password, port=port or None)
+        data = ProviderXtreamCreate(
+            name=name, username=username, password=password,
+            port=port or None, stream_format=stream_format,
+        )
     except ValidationError as exc:
         error = exc.errors()[0]["msg"]
         return templates.TemplateResponse(
@@ -134,6 +138,7 @@ async def add_xtream_provider(
                 "form_name": name,
                 "form_username": username,
                 "form_port": port,
+                "form_stream_format": stream_format,
             },
             status_code=422,
         )
@@ -150,14 +155,15 @@ async def add_xtream_provider(
                 "form_name": name,
                 "form_username": username,
                 "form_port": port,
+                "form_stream_format": stream_format,
             },
             status_code=409,
         )
 
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO providers (name, type, username, password, port) VALUES (?, 'xtream', ?, ?, ?)",
-            (data.name, data.username, data.password, data.port),
+            "INSERT INTO providers (name, type, username, password, port, stream_format) VALUES (?, 'xtream', ?, ?, ?, ?)",
+            (data.name, data.username, data.password, data.port, data.stream_format),
         )
     logger.info("Provider added (xtream): %s", data.name)
     return RedirectResponse("/providers", status_code=302)
@@ -221,6 +227,7 @@ async def edit_xtream_provider(
     username: str = Form(...),
     password: str = Form(...),
     port: str = Form(""),
+    stream_format: str = Form("ts"),
     current_user: TokenData = Depends(get_current_user),
 ):
     provider = _get_provider(provider_id)
@@ -228,7 +235,10 @@ async def edit_xtream_provider(
         return RedirectResponse("/providers", status_code=302)
 
     try:
-        data = ProviderXtreamUpdate(name=name, username=username, password=password, port=port or None)
+        data = ProviderXtreamUpdate(
+            name=name, username=username, password=password,
+            port=port or None, stream_format=stream_format,
+        )
     except ValidationError as exc:
         error = exc.errors()[0]["msg"]
         return templates.TemplateResponse(
@@ -258,8 +268,8 @@ async def edit_xtream_provider(
 
     with get_db() as conn:
         conn.execute(
-            "UPDATE providers SET name = ?, username = ?, password = ?, port = ? WHERE id = ?",
-            (data.name, data.username, data.password, data.port, provider_id),
+            "UPDATE providers SET name = ?, username = ?, password = ?, port = ?, stream_format = ? WHERE id = ?",
+            (data.name, data.username, data.password, data.port, data.stream_format, provider_id),
         )
     logger.info("Provider updated (xtream): id=%d by %s", provider_id, current_user.username)
     return RedirectResponse("/providers", status_code=302)
