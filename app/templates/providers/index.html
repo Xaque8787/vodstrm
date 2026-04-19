@@ -22,7 +22,6 @@
     <button class="provider-panel__close" id="close-panel-btn" aria-label="Close">&times;</button>
   </div>
 
-  <!-- TYPE SELECTOR -->
   <div class="radio-group">
     <label class="radio-option {% if open_type == 'm3u' or not open_type %}radio-option--active{% endif %}" id="label-m3u">
       <input type="radio" name="provider_type" value="m3u" id="type-m3u"
@@ -44,7 +43,6 @@
     </label>
   </div>
 
-  <!-- M3U FORM -->
   <form method="post" action="/providers/add/m3u" id="form-m3u"
     class="provider-form {% if open_type == 'xtream' %}provider-form--hidden{% endif %}">
     <div class="form-group">
@@ -62,7 +60,6 @@
     </div>
   </form>
 
-  <!-- XTREAM FORM -->
   <form method="post" action="/providers/add/xtream" id="form-xtream"
     class="provider-form {% if open_type != 'xtream' %}provider-form--hidden{% endif %}">
     <div class="form-group">
@@ -98,6 +95,7 @@
   <table class="table">
     <thead>
       <tr>
+        <th>Status</th>
         <th>Name</th>
         <th>Type</th>
         <th>Details</th>
@@ -107,7 +105,17 @@
     </thead>
     <tbody>
       {% for p in providers %}
-      <tr>
+      <tr class="{% if not p.is_active %}row--inactive{% endif %}">
+        <td>
+          <form method="post" action="/providers/{{ p.id }}/toggle" style="display:inline">
+            <button type="submit"
+              class="toggle-btn {% if p.is_active %}toggle-btn--active{% else %}toggle-btn--inactive{% endif %}"
+              title="{% if p.is_active %}Click to deactivate{% else %}Click to activate{% endif %}">
+              <span class="toggle-btn__dot"></span>
+              <span class="toggle-btn__label">{{ "Active" if p.is_active else "Inactive" }}</span>
+            </button>
+          </form>
+        </td>
         <td><strong>{{ p.name }}</strong></td>
         <td>
           <span class="badge {% if p.type == 'm3u' %}badge--blue{% else %}badge--green{% endif %}">
@@ -122,11 +130,65 @@
           {% endif %}
         </td>
         <td class="text-muted">{{ p.created_at[:10] }}</td>
-        <td>
+        <td class="table-actions">
+          <button type="button" class="btn btn-secondary btn-sm edit-open-btn"
+            data-edit-id="{{ p.id }}">Edit</button>
           <form method="post" action="/providers/{{ p.id }}/delete"
-            data-confirm="Remove provider &quot;{{ p.name }}&quot;?">
+            data-confirm="Remove provider &quot;{{ p.name }}&quot;?" style="display:inline">
             <button type="submit" class="btn btn-danger btn-sm">Remove</button>
           </form>
+        </td>
+      </tr>
+
+      <!-- INLINE EDIT ROW -->
+      <tr class="edit-row" id="edit-row-{{ p.id }}"
+        {% if edit_provider_id != p.id %}style="display:none"{% endif %}>
+        <td colspan="6" class="edit-row__cell">
+          {% if p.type == "m3u" %}
+          <form method="post" action="/providers/{{ p.id }}/edit/m3u" class="inline-edit-form">
+            <div class="inline-edit-fields">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" name="name" value="{{ p.name }}" required />
+              </div>
+              <div class="form-group" style="flex:2">
+                <label>Playlist URL</label>
+                <input type="url" name="url" value="{{ p.url or '' }}" required />
+              </div>
+            </div>
+            <div class="inline-edit-actions">
+              <button type="submit" class="btn btn-primary btn-sm">Save</button>
+              <button type="button" class="btn btn-secondary btn-sm cancel-edit-btn"
+                data-edit-id="{{ p.id }}">Cancel</button>
+            </div>
+          </form>
+          {% else %}
+          <form method="post" action="/providers/{{ p.id }}/edit/xtream" class="inline-edit-form">
+            <div class="inline-edit-fields">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" name="name" value="{{ p.name }}" required />
+              </div>
+              <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" value="{{ p.username or '' }}" required />
+              </div>
+              <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" placeholder="New password" required />
+              </div>
+              <div class="form-group form-group--sm">
+                <label>Port <span class="label-optional">(opt)</span></label>
+                <input type="text" name="port" value="{{ p.port or '' }}" placeholder="8080" />
+              </div>
+            </div>
+            <div class="inline-edit-actions">
+              <button type="submit" class="btn btn-primary btn-sm">Save</button>
+              <button type="button" class="btn btn-secondary btn-sm cancel-edit-btn"
+                data-edit-id="{{ p.id }}">Cancel</button>
+            </div>
+          </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -142,15 +204,15 @@
 
 {% block scripts %}
 <script>
-  const panel     = document.getElementById("provider-panel");
-  const openBtn   = document.getElementById("add-provider-btn");
-  const closeBtn  = document.getElementById("close-panel-btn");
-  const radioM3u  = document.getElementById("type-m3u");
-  const radioXt   = document.getElementById("type-xtream");
-  const formM3u   = document.getElementById("form-m3u");
-  const formXt    = document.getElementById("form-xtream");
-  const labelM3u  = document.getElementById("label-m3u");
-  const labelXt   = document.getElementById("label-xtream");
+  const panel    = document.getElementById("provider-panel");
+  const openBtn  = document.getElementById("add-provider-btn");
+  const closeBtn = document.getElementById("close-panel-btn");
+  const radioM3u = document.getElementById("type-m3u");
+  const radioXt  = document.getElementById("type-xtream");
+  const formM3u  = document.getElementById("form-m3u");
+  const formXt   = document.getElementById("form-xtream");
+  const labelM3u = document.getElementById("label-m3u");
+  const labelXt  = document.getElementById("label-xtream");
 
   openBtn.addEventListener("click", () => {
     panel.style.display = "block";
@@ -177,6 +239,30 @@
   }
 
   radioM3u.addEventListener("change", () => switchType("m3u"));
-  radioXt.addEventListener("change", () => switchType("xtream"));
+  radioXt.addEventListener("change",  () => switchType("xtream"));
+
+  document.querySelectorAll(".edit-open-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.editId;
+      document.querySelectorAll(".edit-row").forEach(r => {
+        if (r.id !== "edit-row-" + id) r.style.display = "none";
+      });
+      const row = document.getElementById("edit-row-" + id);
+      if (row) row.style.display = row.style.display === "none" ? "" : "none";
+    });
+  });
+
+  document.querySelectorAll(".cancel-edit-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const row = document.getElementById("edit-row-" + btn.dataset.editId);
+      if (row) row.style.display = "none";
+    });
+  });
+
+  document.querySelectorAll("[data-confirm]").forEach(form => {
+    form.addEventListener("submit", e => {
+      if (!confirm(form.dataset.confirm)) e.preventDefault();
+    });
+  });
 </script>
 {% endblock %}

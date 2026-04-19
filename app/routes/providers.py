@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from app.auth.jwt_handler import TokenData, get_current_user
 from app.database import get_db
-from app.models import ProviderM3UCreate, ProviderXtreamCreate
+from app.models import ProviderM3UCreate, ProviderM3UUpdate, ProviderXtreamCreate, ProviderXtreamUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -18,20 +18,35 @@ templates = Jinja2Templates(
 )
 
 
-def _provider_name_taken(name: str) -> bool:
+def _provider_name_taken(name: str, exclude_id: int | None = None) -> bool:
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM providers WHERE name = ?", (name.strip(),)
-        ).fetchone()
+        if exclude_id is not None:
+            row = conn.execute(
+                "SELECT 1 FROM providers WHERE name = ? AND id != ?",
+                (name.strip(), exclude_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT 1 FROM providers WHERE name = ?", (name.strip(),)
+            ).fetchone()
     return row is not None
 
 
 def _list_providers() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, type, url, username, port, created_at FROM providers ORDER BY name"
+            "SELECT id, name, type, url, username, port, is_active, created_at FROM providers ORDER BY name"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def _get_provider(provider_id: int) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, name, type, url, username, password, port, is_active, created_at FROM providers WHERE id = ?",
+            (provider_id,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 @router.get("", response_class=HTMLResponse)
@@ -145,6 +160,122 @@ async def add_xtream_provider(
             (data.name, data.username, data.password, data.port),
         )
     logger.info("Provider added (xtream): %s", data.name)
+    return RedirectResponse("/providers", status_code=302)
+
+
+@router.post("/{provider_id}/edit/m3u", response_class=HTMLResponse)
+async def edit_m3u_provider(
+    provider_id: int,
+    request: Request,
+    name: str = Form(...),
+    url: str = Form(...),
+    current_user: TokenData = Depends(get_current_user),
+):
+    provider = _get_provider(provider_id)
+    if not provider or provider["type"] != "m3u":
+        return RedirectResponse("/providers", status_code=302)
+
+    try:
+        data = ProviderM3UUpdate(name=name, url=url)
+    except ValidationError as exc:
+        error = exc.errors()[0]["msg"]
+        return templates.TemplateResponse(
+            "providers/index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "providers": _list_providers(),
+                "error": error,
+                "edit_provider_id": provider_id,
+            },
+            status_code=422,
+        )
+
+    if _provider_name_taken(data.name, exclude_id=provider_id):
+        return templates.TemplateResponse(
+            "providers/index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "providers": _list_providers(),
+                "error": f'A provider named "{data.name}" already exists.',
+                "edit_provider_id": provider_id,
+            },
+            status_code=409,
+        )
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE providers SET name = ?, url = ? WHERE id = ?",
+            (data.name, data.url, provider_id),
+        )
+    logger.info("Provider updated (m3u): id=%d by %s", provider_id, current_user.username)
+    return RedirectResponse("/providers", status_code=302)
+
+
+@router.post("/{provider_id}/edit/xtream", response_class=HTMLResponse)
+async def edit_xtream_provider(
+    provider_id: int,
+    request: Request,
+    name: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    port: str = Form(""),
+    current_user: TokenData = Depends(get_current_user),
+):
+    provider = _get_provider(provider_id)
+    if not provider or provider["type"] != "xtream":
+        return RedirectResponse("/providers", status_code=302)
+
+    try:
+        data = ProviderXtreamUpdate(name=name, username=username, password=password, port=port or None)
+    except ValidationError as exc:
+        error = exc.errors()[0]["msg"]
+        return templates.TemplateResponse(
+            "providers/index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "providers": _list_providers(),
+                "error": error,
+                "edit_provider_id": provider_id,
+            },
+            status_code=422,
+        )
+
+    if _provider_name_taken(data.name, exclude_id=provider_id):
+        return templates.TemplateResponse(
+            "providers/index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "providers": _list_providers(),
+                "error": f'A provider named "{data.name}" already exists.',
+                "edit_provider_id": provider_id,
+            },
+            status_code=409,
+        )
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE providers SET name = ?, username = ?, password = ?, port = ? WHERE id = ?",
+            (data.name, data.username, data.password, data.port, provider_id),
+        )
+    logger.info("Provider updated (xtream): id=%d by %s", provider_id, current_user.username)
+    return RedirectResponse("/providers", status_code=302)
+
+
+@router.post("/{provider_id}/toggle")
+async def toggle_provider(
+    provider_id: int,
+    current_user: TokenData = Depends(get_current_user),
+):
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE providers SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ?",
+            (provider_id,),
+        )
+    logger.info("Provider toggled: id=%d by %s", provider_id, current_user.username)
     return RedirectResponse("/providers", status_code=302)
 
 

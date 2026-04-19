@@ -83,7 +83,52 @@ class ProviderRecord(BaseModel):
     username: Optional[str]
     password: Optional[str]
     port: Optional[str]
+    is_active: bool = True
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ProviderM3UUpdate(BaseModel):
+    name: str
+    url: str
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name is required")
+        return v
+
+    @field_validator("url")
+    @classmethod
+    def url_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("URL is required")
+        return v
+
+
+class ProviderXtreamUpdate(BaseModel):
+    name: str
+    username: str
+    password: str
+    port: Optional[str] = None
+
+    @field_validator("name", "username", "password")
+    @classmethod
+    def fields_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("This field is required")
+        return v
+
+    @field_validator("port")
+    @classmethod
+    def port_optional_strip(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            return v if v else None
+        return None
