@@ -948,3 +948,50 @@ code {
 .provider-task-table .btn {
   white-space: nowrap;
 }
+
+/* ===========================
+   LIBRARY — METADATA INSPECTOR
+   =========================== */
+
+.lib-table--streams .lib-meta-cell {
+  width: 120px;
+  white-space: nowrap;
+}
+
+.lib-meta-details summary.lib-meta-summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-primary, #2563eb);
+  user-select: none;
+  list-style: none;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.lib-meta-details summary.lib-meta-summary::-webkit-details-marker {
+  display: none;
+}
+
+.lib-meta-details[open] summary.lib-meta-summary {
+  margin-bottom: 6px;
+}
+
+.lib-meta-blob {
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--color-surface-alt, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-width: 480px;
+  max-height: 260px;
+  overflow-y: auto;
+  position: absolute;
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}

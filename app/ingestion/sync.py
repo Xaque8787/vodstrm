@@ -61,17 +61,20 @@ def _upsert_stream(conn: sqlite3.Connection, entry: dict) -> None:
     """
     Insert or update a stream row.
     Conflict key: (entry_id, provider) — one active stream URL per provider per entry.
+    metadata_json is always refreshed so provider metadata changes are captured
+    even when the stream URL has not changed.
     """
     sql = """
     INSERT INTO streams (
         entry_id, stream_url, provider,
-        source_file, ingested_at, batch_id
-    ) VALUES (?, ?, ?, ?, ?, ?)
+        source_file, ingested_at, batch_id, metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(entry_id, provider) DO UPDATE SET
-        stream_url  = excluded.stream_url,
-        source_file = excluded.source_file,
-        ingested_at = excluded.ingested_at,
-        batch_id    = excluded.batch_id
+        stream_url    = excluded.stream_url,
+        source_file   = excluded.source_file,
+        ingested_at   = excluded.ingested_at,
+        batch_id      = excluded.batch_id,
+        metadata_json = excluded.metadata_json
     """
     conn.execute(sql, (
         entry["entry_id"],
@@ -80,6 +83,7 @@ def _upsert_stream(conn: sqlite3.Connection, entry: dict) -> None:
         entry.get("source_file"),
         entry.get("ingested_at"),
         entry.get("batch_id"),
+        entry.get("metadata_json"),
     ))
 
 

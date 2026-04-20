@@ -91,28 +91,38 @@
     </table>
 
     {% else %}
-    <table class="table lib-table">
+    <table class="table lib-table lib-table--streams">
       <thead>
         <tr>
           <th>#</th>
           <th>entry_id</th>
           <th>provider</th>
           <th>stream_url</th>
-          <th>batch_id</th>
           <th>ingested_at</th>
+          <th>metadata</th>
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
+        {% set meta = row.metadata_json | default('{}') %}
         <tr>
           <td class="lib-id">{{ row.stream_id }}</td>
           <td><code class="lib-hash">{{ row.entry_id[:12] }}</code></td>
           <td>{{ row.provider or "—" }}</td>
           <td class="lib-url">
-            <span title="{{ row.stream_url }}">{{ row.stream_url[:80] }}{% if row.stream_url|length > 80 %}…{% endif %}</span>
+            <span title="{{ row.stream_url }}">{{ row.stream_url[:72] }}{% if row.stream_url and row.stream_url|length > 72 %}…{% endif %}</span>
           </td>
-          <td><code class="lib-hash">{{ row.batch_id[:12] if row.batch_id else "—" }}</code></td>
           <td class="lib-date">{{ row.ingested_at or "—" }}</td>
+          <td class="lib-meta-cell">
+            {% if meta and meta != '{}' and meta != 'null' %}
+            <details class="lib-meta-details">
+              <summary class="lib-meta-summary">View</summary>
+              <pre class="lib-meta-blob">{{ meta }}</pre>
+            </details>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

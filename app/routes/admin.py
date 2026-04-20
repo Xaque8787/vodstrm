@@ -80,7 +80,7 @@ async def library_page(
             rows = conn.execute(
                 """
                 SELECT stream_id, entry_id, provider, stream_url,
-                       source_file, ingested_at, batch_id
+                       source_file, ingested_at, batch_id, metadata_json
                 FROM streams
                 ORDER BY provider, entry_id
                 LIMIT ? OFFSET ?

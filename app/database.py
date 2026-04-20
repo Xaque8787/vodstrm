@@ -81,13 +81,14 @@ CREATE TABLE IF NOT EXISTS entries (
 -- by multiple providers; each provider may only have one active
 -- stream URL per entry at a time (enforced by unique index below).
 CREATE TABLE IF NOT EXISTS streams (
-    stream_id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_id    TEXT NOT NULL REFERENCES entries(entry_id),
-    stream_url  TEXT NOT NULL,
-    provider    TEXT NOT NULL,
-    source_file TEXT,
-    ingested_at TEXT,
-    batch_id    TEXT NOT NULL
+    stream_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id      TEXT NOT NULL REFERENCES entries(entry_id),
+    stream_url    TEXT NOT NULL,
+    provider      TEXT NOT NULL,
+    source_file   TEXT,
+    ingested_at   TEXT,
+    batch_id      TEXT NOT NULL,
+    metadata_json TEXT
 );
 
 -- One stream per provider per entry (upsert key)

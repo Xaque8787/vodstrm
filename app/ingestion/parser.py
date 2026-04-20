@@ -11,6 +11,7 @@ Output dict keys per entry:
     stream_url, source_file, provider, ingested_at, batch_id, entry_id
 """
 import hashlib
+import json
 import logging
 import re
 from collections import defaultdict
@@ -107,6 +108,26 @@ def _make_entry_id(entry: dict) -> str:
         str(entry.get("air_date") or ""),
     ])
     return hashlib.sha256(parts.encode()).hexdigest()
+
+
+# Keys that are internal bookkeeping — excluded from the provider metadata blob.
+_INTERNAL_KEYS = frozenset({
+    "stream_url", "source_file", "provider", "ingested_at", "batch_id",
+    "entry_id", "type", "raw_title", "cleaned_title", "season", "episode",
+    "year", "air_date", "series_type",
+})
+
+
+def _build_metadata_json(entry: dict) -> str:
+    """
+    Collect all raw EXTINF attributes plus extgrp into a JSON string.
+    Internal bookkeeping keys are excluded so only provider-supplied
+    metadata ends up in the blob.
+    """
+    meta: dict[str, Any] = {
+        k: v for k, v in entry.items() if k not in _INTERNAL_KEYS
+    }
+    return json.dumps(meta, ensure_ascii=False)
 
 
 def _extract_air_date(value: str) -> tuple[str | None, str]:
@@ -275,6 +296,7 @@ def parse_m3u(file_path: str, provider: str, ingest_time: str | None = None) -> 
                     current["stream_url"] = line
                     final = _classify(current.copy())
                     final["entry_id"] = _make_entry_id(final)
+                    final["metadata_json"] = _build_metadata_json(final)
                     log.increment("entries_completed")
 
                     t = final["type"]
