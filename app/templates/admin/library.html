@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Library Inspector{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--actions">
+  <div>
+    <h1>Library Inspector</h1>
+    <p class="page-subtitle">Inspect and reset the ingested media library tables.</p>
+  </div>
+  <div class="lib-danger-zone">
+    <form method="post" action="/admin/library/clear/streams"
+          data-confirm="Clear ALL streams? Entries with no remaining streams will become orphans.">
+      <button type="submit" class="btn btn-danger btn-sm">Clear Streams</button>
+    </form>
+    <form method="post" action="/admin/library/clear/entries"
+          data-confirm="Clear ALL entries and streams? This cannot be undone.">
+      <button type="submit" class="btn btn-danger btn-sm">Clear All</button>
+    </form>
+  </div>
+</div>
+
+{% if flash == "cleared" %}
+<div class="alert alert-success" style="margin-bottom: 24px;">
+  Entries and streams tables have been cleared.
+</div>
+{% elif flash == "streams_cleared" %}
+<div class="alert alert-success" style="margin-bottom: 24px;">
+  Streams table has been cleared.
+</div>
+{% endif %}
+
+<!-- SUMMARY COUNTS -->
+<div class="lib-counts">
+  <div class="lib-count-card">
+    <div class="lib-count-card__value">{{ entry_count }}</div>
+    <div class="lib-count-card__label">Entries</div>
+  </div>
+  <div class="lib-count-card">
+    <div class="lib-count-card__value">{{ stream_count }}</div>
+    <div class="lib-count-card__label">Streams</div>
+  </div>
+</div>
+
+<!-- TAB SWITCHER -->
+<div class="lib-tabs">
+  <a href="/admin/library?tab=entries"
+     class="lib-tab {% if tab == 'entries' %}lib-tab--active{% endif %}">
+    Entries
+  </a>
+  <a href="/admin/library?tab=streams"
+     class="lib-tab {% if tab == 'streams' %}lib-tab--active{% endif %}">
+    Streams
+  </a>
+</div>
+
+<!-- TABLE -->
+<div class="card lib-table-card">
+  {% if rows %}
+  <div class="lib-table-wrap">
+    {% if tab == "entries" %}
+    <table class="table lib-table">
+      <thead>
+        <tr>
+          <th>entry_id</th>
+          <th>type</th>
+          <th>cleaned_title</th>
+          <th>year</th>
+          <th>S</th>
+          <th>E</th>
+          <th>air_date</th>
+          <th>series_type</th>
+          <th>created_at</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><code class="lib-hash">{{ row.entry_id[:12] }}</code></td>
+          <td><span class="lib-type-badge lib-type-badge--{{ row.type }}">{{ row.type }}</span></td>
+          <td class="lib-title">{{ row.cleaned_title or "—" }}</td>
+          <td>{{ row.year or "—" }}</td>
+          <td>{{ row.season if row.season is not none else "—" }}</td>
+          <td>{{ row.episode if row.episode is not none else "—" }}</td>
+          <td>{{ row.air_date or "—" }}</td>
+          <td>{{ row.series_type or "—" }}</td>
+          <td class="lib-date">{{ row.created_at or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% else %}
+    <table class="table lib-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>entry_id</th>
+          <th>provider</th>
+          <th>stream_url</th>
+          <th>batch_id</th>
+          <th>ingested_at</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="lib-id">{{ row.stream_id }}</td>
+          <td><code class="lib-hash">{{ row.entry_id[:12] }}</code></td>
+          <td>{{ row.provider or "—" }}</td>
+          <td class="lib-url">
+            <span title="{{ row.stream_url }}">{{ row.stream_url[:80] }}{% if row.stream_url|length > 80 %}…{% endif %}</span>
+          </td>
+          <td><code class="lib-hash">{{ row.batch_id[:12] if row.batch_id else "—" }}</code></td>
+          <td class="lib-date">{{ row.ingested_at or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <!-- PAGINATION -->
+  {% if total_pages > 1 %}
+  <div class="lib-pagination">
+    <span class="lib-pagination__info">
+      Showing {{ ((page - 1) * 100) + 1 }}–{{ [page * 100, total] | min }} of {{ total }}
+    </span>
+    <div class="lib-pagination__btns">
+      {% if page > 1 %}
+      <a href="/admin/library?tab={{ tab }}&page={{ page - 1 }}" class="btn btn-secondary btn-sm">← Prev</a>
+      {% endif %}
+      <span class="lib-pagination__page">Page {{ page }} / {{ total_pages }}</span>
+      {% if page < total_pages %}
+      <a href="/admin/library?tab={{ tab }}&page={{ page + 1 }}" class="btn btn-secondary btn-sm">Next →</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="empty-state">
+    No {{ tab }} found. Run a provider download to populate the library.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
