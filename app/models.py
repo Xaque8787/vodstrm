@@ -86,6 +86,7 @@ class ProviderRecord(BaseModel):
     port: Optional[str]
     stream_format: Literal["ts", "hls"] = "ts"
     is_active: bool = True
+    strm_mode: Literal["generate_all", "import_selected"] = "generate_all"
     created_at: datetime
 
     class Config:

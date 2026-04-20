@@ -12,8 +12,9 @@ This layer never modifies raw parsed data and never touches the M3U files.
 """
 import logging
 import sqlite3
-from datetime import datetime, timezone
 from typing import Iterable
+
+from app.utils.env import local_now_iso
 
 logger = logging.getLogger("app.ingestion.sync")
 
@@ -50,7 +51,7 @@ def _upsert_entry(conn: sqlite3.Connection, entry: dict) -> None:
         entry.get("episode"),
         entry.get("air_date"),
         entry.get("series_type"),
-        datetime.now(timezone.utc).isoformat(),
+        local_now_iso(),
     ))
 
 

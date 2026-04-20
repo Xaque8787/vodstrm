@@ -908,3 +908,43 @@ code {
   border-radius: var(--radius);
   font-size: 0.875rem;
 }
+
+/* ===========================
+   SCHEDULE SECTION HEADERS
+   =========================== */
+
+.sched-section {
+  margin-bottom: calc(var(--spacing) * 5);
+}
+
+.sched-section__title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin-bottom: calc(var(--spacing) * 0.5);
+}
+
+.sched-section__desc {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  margin-bottom: calc(var(--spacing) * 2);
+}
+
+/* ===========================
+   PROVIDER TASK TABLE
+   =========================== */
+
+.provider-task-table .provider-task-table__name {
+  font-weight: 500;
+}
+
+.provider-task-table td {
+  vertical-align: middle;
+}
+
+.provider-task-table .toggle-btn,
+.provider-task-table .btn {
+  white-space: nowrap;
+}

@@ -15,7 +15,19 @@
     <a href="/providers" class="btn btn-secondary">Manage Providers</a>
   </div>
 
+  <div class="card">
+    <h2 class="card-title">Tasks &amp; Schedules</h2>
+    <p class="card-body">Configure the global download schedule and per-provider controls.</p>
+    <a href="/schedules" class="btn btn-secondary">Manage Schedules</a>
+  </div>
+
   {% if current_user.is_admin %}
+  <div class="card">
+    <h2 class="card-title">Library</h2>
+    <p class="card-body">Inspect ingested entries and streams, or reset the library for testing.</p>
+    <a href="/admin/library" class="btn btn-secondary">Open Library</a>
+  </div>
+
   <div class="card">
     <h2 class="card-title">Administration</h2>
     <p class="card-body">Manage users and application settings.</p>

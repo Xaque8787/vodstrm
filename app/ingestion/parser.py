@@ -14,8 +14,9 @@ import hashlib
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime, timezone
 from typing import Any
+
+from app.utils.env import local_now_iso
 
 logger = logging.getLogger("app.ingestion.parser")
 
@@ -226,7 +227,7 @@ def parse_m3u(file_path: str, provider: str, ingest_time: str | None = None) -> 
         }
     """
     if ingest_time is None:
-        ingest_time = datetime.now(timezone.utc).isoformat()
+        ingest_time = local_now_iso()
 
     batch_id = _make_batch_id(file_path, provider, ingest_time)
     log = _IngestionLogger()

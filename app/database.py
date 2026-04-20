@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS providers (
     port TEXT,
     stream_format TEXT NOT NULL DEFAULT 'ts',
     is_active INTEGER NOT NULL DEFAULT 1,
+    strm_mode TEXT NOT NULL DEFAULT 'generate_all' CHECK(strm_mode IN ('generate_all', 'import_selected')),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

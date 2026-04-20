@@ -15,20 +15,21 @@ templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "..", "templates")
 )
 
+# ---------------------------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------------------------
 
 def _list_providers() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, slug, type, is_active FROM providers ORDER BY name"
+            "SELECT id, name, slug, type, is_active, strm_mode FROM providers ORDER BY name"
         ).fetchall()
     return [dict(r) for r in rows]
 
 
 def _list_schedules() -> list[dict]:
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM task_schedules ORDER BY label"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM task_schedules ORDER BY label").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -96,7 +97,7 @@ def _apply_schedule_to_scheduler(schedule: dict) -> None:
             pass
         return
 
-    fn = _resolve_task_fn(schedule["task_type"], schedule["provider_slug"])
+    fn = _resolve_task_fn(schedule["task_type"], schedule.get("provider_slug"))
     if fn is None:
         logger.warning("No task function found for task_type=%s", schedule["task_type"])
         return
@@ -106,21 +107,12 @@ def _apply_schedule_to_scheduler(schedule: dict) -> None:
     else:
         trigger = IntervalTrigger(seconds=schedule["interval_seconds"])
 
-    scheduler.add_job(
-        fn,
-        trigger=trigger,
-        id=task_id,
-        replace_existing=True,
-    )
+    scheduler.add_job(fn, trigger=trigger, id=task_id, replace_existing=True)
     logger.info("Scheduled job applied: %s", task_id)
 
 
 def _resolve_task_fn(task_type: str, provider_slug: str | None):
-    from app.tasks.downloader import download_provider, download_all_providers
-
-    if task_type in ("m3u_download", "xtream_download") and provider_slug:
-        import functools
-        return functools.partial(download_provider, provider_slug)
+    from app.tasks.downloader import download_all_providers
 
     if task_type == "download_all_providers":
         return download_all_providers
@@ -128,12 +120,15 @@ def _resolve_task_fn(task_type: str, provider_slug: str | None):
     return None
 
 
+# ---------------------------------------------------------------------------
+# ROUTES — page
+# ---------------------------------------------------------------------------
+
 @router.get("", response_class=HTMLResponse)
 async def schedules_page(
     request: Request,
     current_user: TokenData = Depends(get_current_user),
 ):
-    schedules = _list_schedules()
     providers = _list_providers()
 
     from app.scheduler import get_scheduler
@@ -144,27 +139,25 @@ async def schedules_page(
         {"task_type": "download_all_providers", "label": "Download All Active Providers"},
     ]
 
-    schedules_with_next = []
-    for s in schedules:
+    all_schedules = _list_schedules()
+    schedules_by_task_id: dict[str, dict] = {}
+    for s in all_schedules:
         job = scheduler_jobs.get(s["task_id"])
         s["next_run"] = (
             job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z")
             if job and job.next_run_time
             else None
         )
-        schedules_with_next.append(s)
-
-    schedules_by_task_id = {s["task_id"]: s for s in schedules_with_next}
+        schedules_by_task_id[s["task_id"]] = s
 
     global_tasks = []
     for gt in _GLOBAL_TASKS:
         task_id = f"global:{gt['task_type']}"
-        sched = schedules_by_task_id.get(task_id)
         global_tasks.append({
             "task_type": gt["task_type"],
             "label": gt["label"],
             "task_id": task_id,
-            "sched": sched,
+            "sched": schedules_by_task_id.get(task_id),
         })
 
     return templates.TemplateResponse(
@@ -172,66 +165,20 @@ async def schedules_page(
         {
             "request": request,
             "current_user": current_user,
-            "schedules": schedules_with_next,
             "providers": providers,
             "global_tasks": global_tasks,
-            "tz": __import__("os").getenv("TZ", "America/Los_Angeles"),
+            "tz": os.getenv("TZ", "America/Los_Angeles"),
         },
     )
 
 
-@router.post("/provider/{provider_slug}/save", response_class=HTMLResponse)
-async def save_provider_schedule(
-    provider_slug: str,
-    request: Request,
-    trigger_type: str = Form("cron"),
-    cron_expression: str = Form(""),
-    interval_seconds: str = Form(""),
-    enabled: str = Form("off"),
-    current_user: TokenData = Depends(get_current_user),
-):
-    with get_db() as conn:
-        provider = conn.execute(
-            "SELECT name, slug, type FROM providers WHERE slug = ?", (provider_slug,)
-        ).fetchone()
+# ---------------------------------------------------------------------------
+# ROUTES — global schedule
+# ---------------------------------------------------------------------------
 
-    if not provider:
-        return RedirectResponse("/schedules", status_code=302)
-
-    provider = dict(provider)
-    task_type = f"{provider['type']}_download"
-    task_id = f"provider_download:{provider_slug}"
-    label = f"Download — {provider['name']}"
-    is_enabled = enabled.lower() in ("on", "true", "1", "yes")
-
-    cron_val = cron_expression.strip() or None
-    interval_val = int(interval_seconds.strip()) if interval_seconds.strip().isdigit() else None
-
-    _upsert_schedule(
-        task_id=task_id,
-        provider_slug=provider_slug,
-        task_type=task_type,
-        label=label,
-        trigger_type=trigger_type,
-        cron_expression=cron_val,
-        interval_seconds=interval_val,
-        enabled=is_enabled,
-    )
-
-    schedule = _get_schedule(task_id)
-    if schedule:
-        _apply_schedule_to_scheduler(schedule)
-
-    logger.info(
-        "Schedule saved for provider %s by %s", provider_slug, current_user.username
-    )
-    return RedirectResponse("/schedules", status_code=302)
-
-
-@router.post("/global/{task_type}/save", response_class=HTMLResponse)
+@router.post("/global/{task_type}/save")
 async def save_global_schedule(
     task_type: str,
-    request: Request,
     trigger_type: str = Form("cron"),
     cron_expression: str = Form(""),
     interval_seconds: str = Form(""),
@@ -245,7 +192,6 @@ async def save_global_schedule(
         return RedirectResponse("/schedules", status_code=302)
 
     task_id = f"global:{task_type}"
-    label = _GLOBAL_LABELS[task_type]
     is_enabled = enabled.lower() in ("on", "true", "1", "yes")
     cron_val = cron_expression.strip() or None
     interval_val = int(interval_seconds.strip()) if interval_seconds.strip().isdigit() else None
@@ -254,7 +200,7 @@ async def save_global_schedule(
         task_id=task_id,
         provider_slug=None,
         task_type=task_type,
-        label=label,
+        label=_GLOBAL_LABELS[task_type],
         trigger_type=trigger_type,
         cron_expression=cron_val,
         interval_seconds=interval_val,
@@ -275,47 +221,58 @@ async def run_global_now(
     current_user: TokenData = Depends(get_current_user),
 ):
     fn = _resolve_task_fn(task_type, None)
-
     if fn is not None:
         import threading
-        t = threading.Thread(target=fn, daemon=True)
-        t.start()
+        threading.Thread(target=fn, daemon=True).start()
         logger.info("Manual global trigger: %s by %s", task_type, current_user.username)
-    else:
-        logger.warning("Manual global trigger requested for unknown task_type: %s", task_type)
-
     return RedirectResponse("/schedules", status_code=302)
 
+
+# ---------------------------------------------------------------------------
+# ROUTES — provider actions
+# ---------------------------------------------------------------------------
 
 @router.post("/provider/{provider_slug}/run-now")
 async def run_provider_now(
     provider_slug: str,
     current_user: TokenData = Depends(get_current_user),
 ):
+    from app.tasks.downloader import download_provider
+    import threading
+    threading.Thread(target=download_provider, args=(provider_slug,), daemon=True).start()
+    logger.info("Manual download trigger: provider=%s by %s", provider_slug, current_user.username)
+    return RedirectResponse("/schedules", status_code=302)
+
+
+@router.post("/provider/{provider_slug}/toggle")
+async def toggle_provider(
+    provider_slug: str,
+    current_user: TokenData = Depends(get_current_user),
+):
     with get_db() as conn:
-        provider = conn.execute(
-            "SELECT name, slug, type FROM providers WHERE slug = ?", (provider_slug,)
-        ).fetchone()
+        conn.execute(
+            "UPDATE providers SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE slug = ?",
+            (provider_slug,),
+        )
+    logger.info("Provider toggled: %s by %s", provider_slug, current_user.username)
+    return RedirectResponse("/schedules", status_code=302)
 
-    if not provider:
+
+@router.post("/provider/{provider_slug}/strm-mode")
+async def set_strm_mode(
+    provider_slug: str,
+    strm_mode: str = Form(...),
+    current_user: TokenData = Depends(get_current_user),
+):
+    if strm_mode not in ("generate_all", "import_selected"):
         return RedirectResponse("/schedules", status_code=302)
-
-    provider = dict(provider)
-    task_type = f"{provider['type']}_download"
-    fn = _resolve_task_fn(task_type, provider_slug)
-
-    if fn is not None:
-        import threading
-        t = threading.Thread(target=fn, daemon=True)
-        t.start()
-        logger.info(
-            "Manual trigger: %s for provider %s by %s",
-            task_type, provider_slug, current_user.username,
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE providers SET strm_mode = ? WHERE slug = ?",
+            (strm_mode, provider_slug),
         )
-    else:
-        logger.warning(
-            "Manual trigger requested for %s but no task function defined yet",
-            provider_slug,
-        )
-
+    logger.info(
+        "Provider strm_mode set to '%s': %s by %s",
+        strm_mode, provider_slug, current_user.username,
+    )
     return RedirectResponse("/schedules", status_code=302)
