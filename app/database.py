@@ -52,6 +52,54 @@ CREATE TABLE IF NOT EXISTS task_schedules (
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- -------------------------------------------------------
+-- MEDIA LIBRARY: entries (what content is)
+-- -------------------------------------------------------
+-- One row per unique piece of content (movie, episode, channel, etc.)
+-- entry_id is a deterministic hash of content identity fields so
+-- re-ingesting the same content never creates a duplicate row.
+CREATE TABLE IF NOT EXISTS entries (
+    entry_id    TEXT PRIMARY KEY,
+    type        TEXT NOT NULL CHECK(type IN ('movie', 'series', 'live', 'tv_vod', 'unsorted')),
+    cleaned_title TEXT,
+    raw_title   TEXT,
+    year        INTEGER,
+    season      INTEGER,
+    episode     INTEGER,
+    air_date    TEXT,
+    series_type TEXT CHECK(series_type IN ('season_episode', 'air_date') OR series_type IS NULL),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+
+-- -------------------------------------------------------
+-- MEDIA LIBRARY: streams (where content comes from)
+-- -------------------------------------------------------
+-- One row per provider per entry. The same content can be supplied
+-- by multiple providers; each provider may only have one active
+-- stream URL per entry at a time (enforced by unique index below).
+CREATE TABLE IF NOT EXISTS streams (
+    stream_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id    TEXT NOT NULL REFERENCES entries(entry_id),
+    stream_url  TEXT NOT NULL,
+    provider    TEXT NOT NULL,
+    source_file TEXT,
+    ingested_at TEXT,
+    batch_id    TEXT NOT NULL
+);
+
+-- One stream per provider per entry (upsert key)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_streams_entry_provider
+    ON streams(entry_id, provider);
+
+-- Fast lookup of all streams for a given entry
+CREATE INDEX IF NOT EXISTS idx_streams_entry_id
+    ON streams(entry_id);
+
+-- Fast lookup of all streams belonging to a batch (used in cleanup)
+CREATE INDEX IF NOT EXISTS idx_streams_batch_id
+    ON streams(batch_id);
 """
 
 

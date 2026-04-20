@@ -101,6 +101,18 @@ def _download_provider(provider: sqlite3.Row, m3u_dir: str) -> bool:
         len(response.content),
         file_path,
     )
+
+    # Trigger ingestion immediately after a successful download.
+    # Import here to avoid a circular dependency at module load time.
+    try:
+        from app.tasks.ingestion import ingest_provider_file
+        ingest_provider_file(slug)
+    except Exception as exc:
+        logger.error(
+            "[DOWNLOADER] Ingestion failed for provider '%s' after download: %s",
+            slug, exc, exc_info=True,
+        )
+
     return True
 
 

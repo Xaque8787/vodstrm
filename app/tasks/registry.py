@@ -10,6 +10,7 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.tasks.downloader import download_all_providers
+from app.tasks.ingestion import ingest_all_providers
 
 logger = logging.getLogger("app.tasks.registry")
 
@@ -33,6 +34,8 @@ def _register_task(
 
 
 def register_all(scheduler: BackgroundScheduler) -> None:
+    # Download all providers at 04:00 daily; ingestion is triggered inline
+    # per-provider immediately after each successful download.
     _register_task(
         scheduler,
         download_all_providers,
@@ -41,4 +44,17 @@ def register_all(scheduler: BackgroundScheduler) -> None:
         hour=4,
         minute=0,
     )
+
+    # Standalone ingest job: picks up any .m3u files left in the directory
+    # (e.g. manually placed files or partial runs). Runs 5 minutes after
+    # the download job to allow for slow downloads.
+    _register_task(
+        scheduler,
+        ingest_all_providers,
+        trigger="cron",
+        job_id="ingest_all_providers",
+        hour=4,
+        minute=5,
+    )
+
     logger.info("All tasks registered with scheduler")
