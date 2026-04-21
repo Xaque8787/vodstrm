@@ -130,28 +130,58 @@ def ingest_all_providers() -> None:
 
     For remote providers, scans the M3U directory for downloaded files.
     For local_file providers, reads the file path from the database.
+
+    After ingestion, streams belonging to inactive or deleted providers are
+    purged so the library only reflects currently active sources.
     """
     m3u_dir = resolve_path(_M3U_DIR_RELATIVE)
 
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT slug, type, local_file_path FROM providers WHERE is_active = 1"
+        all_provider_rows = conn.execute(
+            "SELECT slug, type, local_file_path, is_active FROM providers"
         ).fetchall()
 
-    if not rows:
+    active_slugs = {r["slug"] for r in all_provider_rows if r["is_active"]}
+    all_slugs    = {r["slug"] for r in all_provider_rows}
+
+    if not active_slugs:
         logger.info("[INGESTION] No active providers found, nothing to ingest")
-        return
+    else:
+        logger.info("[INGESTION] Found %d active provider(s) to ingest", len(active_slugs))
+        for slug in active_slugs:
+            try:
+                ingest_provider_file(slug)
+            except Exception as exc:
+                logger.error(
+                    "[INGESTION] Failed to ingest '%s': %s", slug, exc, exc_info=True
+                )
 
-    logger.info("[INGESTION] Found %d active provider(s) to ingest", len(rows))
+    # Collect provider slugs whose streams should be wiped:
+    # - providers that exist but are inactive
+    # - providers that appear in streams but no longer exist in providers table
+    with get_db() as conn:
+        stream_providers = {
+            r[0] for r in conn.execute("SELECT DISTINCT provider FROM streams").fetchall()
+        }
+        inactive_slugs = {r["slug"] for r in all_provider_rows if not r["is_active"]}
+        slugs_to_purge = inactive_slugs | (stream_providers - all_slugs)
 
-    for row in rows:
-        provider_slug = row["slug"]
-        try:
-            ingest_provider_file(provider_slug)
-        except Exception as exc:
-            logger.error(
-                "[INGESTION] Failed to ingest '%s': %s", provider_slug, exc, exc_info=True
+        if slugs_to_purge:
+            placeholders = ",".join("?" * len(slugs_to_purge))
+            deleted_streams = conn.execute(
+                f"DELETE FROM streams WHERE provider IN ({placeholders})",
+                tuple(slugs_to_purge),
+            ).rowcount
+            deleted_entries = conn.execute(
+                "DELETE FROM entries WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)"
+            ).rowcount
+            logger.info(
+                "[INGESTION] Purged streams for inactive/removed providers %s — "
+                "streams=%d  orphan_entries=%d",
+                sorted(slugs_to_purge), deleted_streams, deleted_entries,
             )
+        else:
+            logger.debug("[INGESTION] No inactive or removed providers to purge")
 
 
 @task("ingest_provider")

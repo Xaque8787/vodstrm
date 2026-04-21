@@ -357,6 +357,10 @@ async def delete_provider(
 ):
     with get_db() as conn:
         conn.execute("DELETE FROM providers WHERE slug = ?", (provider_slug,))
+        conn.execute("DELETE FROM streams WHERE provider = ?", (provider_slug,))
+        conn.execute(
+            "DELETE FROM entries WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)"
+        )
     logger.info("Provider deleted: %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)
 
