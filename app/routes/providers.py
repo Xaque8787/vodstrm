@@ -105,7 +105,6 @@ async def providers_page(
             "request": request,
             "current_user": current_user,
             "providers": providers,
-            "local_m3u_files": _list_local_m3u_files(),
             "error": None,
         },
     )
@@ -128,7 +127,7 @@ async def add_m3u_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": error,
                 "open_type": "m3u",
                 "form_name": name,
@@ -144,7 +143,7 @@ async def add_m3u_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": f'A provider named "{data.name}" already exists.',
                 "open_type": "m3u",
                 "form_name": name,
@@ -186,7 +185,7 @@ async def add_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": error,
                 "open_type": "xtream",
                 "form_name": name,
@@ -204,7 +203,7 @@ async def add_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": f'A provider named "{data.name}" already exists.',
                 "open_type": "xtream",
                 "form_name": name,
@@ -247,7 +246,7 @@ async def edit_m3u_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": error,
                 "edit_provider_slug": provider_slug,
             },
@@ -261,7 +260,7 @@ async def edit_m3u_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": f'A provider named "{data.name}" already exists.',
                 "edit_provider_slug": provider_slug,
             },
@@ -306,7 +305,7 @@ async def edit_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": error,
                 "edit_provider_slug": provider_slug,
             },
@@ -320,7 +319,7 @@ async def edit_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": f'A provider named "{data.name}" already exists.',
                 "edit_provider_slug": provider_slug,
             },
@@ -379,7 +378,7 @@ async def add_local_file_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": error,
                 "open_type": "local_file",
                 "form_name": name,
@@ -395,7 +394,7 @@ async def add_local_file_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": f'A provider named "{data.name}" already exists.',
                 "open_type": "local_file",
                 "form_name": name,
@@ -436,7 +435,7 @@ async def edit_local_file_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": error,
                 "edit_provider_slug": provider_slug,
             },
@@ -450,7 +449,7 @@ async def edit_local_file_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-                "local_m3u_files": _list_local_m3u_files(),
+
                 "error": f'A provider named "{data.name}" already exists.',
                 "edit_provider_slug": provider_slug,
             },
