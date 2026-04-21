@@ -213,15 +213,18 @@ def cleanup_orphan_entries(conn: sqlite3.Connection) -> int:
 # FULL SYNC PIPELINE
 # ---------------------------------------------------------------------------
 
-def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
+def run_sync(conn: sqlite3.Connection, parsed_result: dict, skip_stale_cleanup: bool = False) -> dict:
     """
     Full ingest pipeline for a single provider's parse result.
 
     Steps:
       1. Flatten all entry lists from the parsed result
       2. Upsert entries + streams
-      3. Remove stale streams from this provider
+      3. Remove stale streams from this provider (skipped when skip_stale_cleanup=True)
       4. Remove orphaned entries
+
+    skip_stale_cleanup should be True for local_file providers whose file is
+    always present on disk — stale detection is meaningless for them.
 
     Returns a combined summary dict.
     """
@@ -249,7 +252,7 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
     stale_removed = 0
     orphans_removed = 0
 
-    if provider and batch_id:
+    if provider and batch_id and not skip_stale_cleanup:
         stale_removed = cleanup_stale_streams(conn, provider, batch_id)
         orphans_removed = cleanup_orphan_entries(conn)
 

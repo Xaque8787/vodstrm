@@ -995,3 +995,10 @@ code {
   z-index: 10;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
+
+/* local file provider form */
+.form-hint--warn {
+  color: var(--color-warning, #b45309);
+  font-size: 0.82rem;
+  margin: 0;
+}

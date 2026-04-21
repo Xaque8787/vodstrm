@@ -8,10 +8,25 @@ from pydantic import ValidationError
 
 from app.auth.jwt_handler import TokenData, get_current_user
 from app.database import get_db
-from app.models import ProviderM3UCreate, ProviderM3UUpdate, ProviderXtreamCreate, ProviderXtreamUpdate
+from app.models import (
+    ProviderLocalFileCreate, ProviderLocalFileUpdate,
+    ProviderM3UCreate, ProviderM3UUpdate,
+    ProviderXtreamCreate, ProviderXtreamUpdate,
+)
 from app.utils.slugify import slugify
 
 logger = logging.getLogger(__name__)
+
+_M3U_DIR = os.getenv("M3U_DIR", "data/m3u")
+
+
+def _list_local_m3u_files() -> list[str]:
+    """Return .m3u filenames present in the configured m3u directory."""
+    from app.utils.env import resolve_path
+    directory = resolve_path(_M3U_DIR)
+    if not os.path.isdir(directory):
+        return []
+    return sorted(f for f in os.listdir(directory) if f.lower().endswith(".m3u"))
 
 router = APIRouter(prefix="/providers")
 templates = Jinja2Templates(
@@ -36,7 +51,7 @@ def _provider_name_taken(name: str, exclude_slug: str | None = None) -> bool:
 def _list_providers() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, slug, type, url, username, port, stream_format, is_active, created_at FROM providers ORDER BY name"
+            "SELECT id, name, slug, type, url, username, port, stream_format, is_active, local_file_path, created_at FROM providers ORDER BY name"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -58,7 +73,13 @@ async def providers_page(
     providers = _list_providers()
     return templates.TemplateResponse(
         "providers/index.html",
-        {"request": request, "current_user": current_user, "providers": providers, "error": None},
+        {
+            "request": request,
+            "current_user": current_user,
+            "providers": providers,
+            "local_m3u_files": _list_local_m3u_files(),
+            "error": None,
+        },
     )
 
 
@@ -79,6 +100,7 @@ async def add_m3u_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
                 "error": error,
                 "open_type": "m3u",
                 "form_name": name,
@@ -94,6 +116,7 @@ async def add_m3u_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
                 "error": f'A provider named "{data.name}" already exists.',
                 "open_type": "m3u",
                 "form_name": name,
@@ -135,6 +158,7 @@ async def add_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
                 "error": error,
                 "open_type": "xtream",
                 "form_name": name,
@@ -152,6 +176,7 @@ async def add_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
                 "error": f'A provider named "{data.name}" already exists.',
                 "open_type": "xtream",
                 "form_name": name,
@@ -194,6 +219,7 @@ async def edit_m3u_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
                 "error": error,
                 "edit_provider_slug": provider_slug,
             },
@@ -207,6 +233,7 @@ async def edit_m3u_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
                 "error": f'A provider named "{data.name}" already exists.',
                 "edit_provider_slug": provider_slug,
             },
@@ -251,6 +278,7 @@ async def edit_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
                 "error": error,
                 "edit_provider_slug": provider_slug,
             },
@@ -264,6 +292,7 @@ async def edit_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
                 "error": f'A provider named "{data.name}" already exists.',
                 "edit_provider_slug": provider_slug,
             },
@@ -302,4 +331,109 @@ async def delete_provider(
     with get_db() as conn:
         conn.execute("DELETE FROM providers WHERE slug = ?", (provider_slug,))
     logger.info("Provider deleted: %s by %s", provider_slug, current_user.username)
+    return RedirectResponse("/providers", status_code=302)
+
+
+@router.post("/add/local_file", response_class=HTMLResponse)
+async def add_local_file_provider(
+    request: Request,
+    name: str = Form(...),
+    local_file_path: str = Form(...),
+    current_user: TokenData = Depends(get_current_user),
+):
+    try:
+        data = ProviderLocalFileCreate(name=name, local_file_path=local_file_path)
+    except ValidationError as exc:
+        error = exc.errors()[0]["msg"]
+        return templates.TemplateResponse(
+            "providers/index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
+                "error": error,
+                "open_type": "local_file",
+                "form_name": name,
+                "form_local_file_path": local_file_path,
+            },
+            status_code=422,
+        )
+
+    if _provider_name_taken(data.name):
+        return templates.TemplateResponse(
+            "providers/index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
+                "error": f'A provider named "{data.name}" already exists.',
+                "open_type": "local_file",
+                "form_name": name,
+                "form_local_file_path": local_file_path,
+            },
+            status_code=409,
+        )
+
+    slug = slugify(data.name)
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO providers (name, slug, type, local_file_path) VALUES (?, ?, 'local_file', ?)",
+            (data.name, slug, data.local_file_path),
+        )
+    logger.info("Provider added (local_file): %s → %s", data.name, data.local_file_path)
+    return RedirectResponse("/providers", status_code=302)
+
+
+@router.post("/{provider_slug}/edit/local_file", response_class=HTMLResponse)
+async def edit_local_file_provider(
+    provider_slug: str,
+    request: Request,
+    name: str = Form(...),
+    local_file_path: str = Form(...),
+    current_user: TokenData = Depends(get_current_user),
+):
+    provider = _get_provider_by_slug(provider_slug)
+    if not provider or provider["type"] != "local_file":
+        return RedirectResponse("/providers", status_code=302)
+
+    try:
+        data = ProviderLocalFileUpdate(name=name, local_file_path=local_file_path)
+    except ValidationError as exc:
+        error = exc.errors()[0]["msg"]
+        return templates.TemplateResponse(
+            "providers/index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
+                "error": error,
+                "edit_provider_slug": provider_slug,
+            },
+            status_code=422,
+        )
+
+    if _provider_name_taken(data.name, exclude_slug=provider_slug):
+        return templates.TemplateResponse(
+            "providers/index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "providers": _list_providers(),
+                "local_m3u_files": _list_local_m3u_files(),
+                "error": f'A provider named "{data.name}" already exists.',
+                "edit_provider_slug": provider_slug,
+            },
+            status_code=409,
+        )
+
+    new_slug = slugify(data.name)
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE providers SET name = ?, slug = ?, local_file_path = ? WHERE slug = ?",
+            (data.name, new_slug, data.local_file_path, provider_slug),
+        )
+    logger.info("Provider updated (local_file): %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)

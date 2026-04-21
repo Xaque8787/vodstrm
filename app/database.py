@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS providers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     slug TEXT UNIQUE,
-    type TEXT NOT NULL CHECK(type IN ('m3u', 'xtream')),
+    type TEXT NOT NULL CHECK(type IN ('m3u', 'xtream', 'local_file')),
     url TEXT,
     username TEXT,
     password TEXT,
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS providers (
     stream_format TEXT NOT NULL DEFAULT 'ts',
     is_active INTEGER NOT NULL DEFAULT 1,
     strm_mode TEXT NOT NULL DEFAULT 'generate_all' CHECK(strm_mode IN ('generate_all', 'import_selected')),
+    local_file_path TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

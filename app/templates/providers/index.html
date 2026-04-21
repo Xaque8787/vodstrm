@@ -41,6 +41,15 @@
         <small>Connect via username &amp; password</small>
       </span>
     </label>
+    <label class="radio-option {% if open_type == 'local_file' %}radio-option--active{% endif %}" id="label-local">
+      <input type="radio" name="provider_type" value="local_file" id="type-local"
+        {% if open_type == 'local_file' %}checked{% endif %} />
+      <span class="radio-option__icon">&#128193;</span>
+      <span>
+        <strong>Local File</strong>
+        <small>Pick a file from /data/m3u</small>
+      </span>
+    </label>
   </div>
 
   <form method="post" action="/providers/add/m3u" id="form-m3u"
@@ -104,6 +113,34 @@
       <button type="submit" class="btn btn-primary">Add Provider</button>
     </div>
   </form>
+
+  <form method="post" action="/providers/add/local_file" id="form-local"
+    class="provider-form {% if open_type != 'local_file' %}provider-form--hidden{% endif %}">
+    <div class="form-group">
+      <label for="local-name">Name</label>
+      <input type="text" id="local-name" name="name" placeholder="My Local Playlist"
+        value="{{ form_name or '' }}" required />
+    </div>
+    <div class="form-group">
+      <label for="local-file-path">M3U File <span class="label-optional">(/data/m3u)</span></label>
+      {% if local_m3u_files %}
+      <select id="local-file-path" name="local_file_path" required>
+        <option value="" disabled {% if not form_local_file_path %}selected{% endif %}>— select a file —</option>
+        {% for fname in local_m3u_files %}
+        <option value="{{ fname }}" {% if form_local_file_path == fname %}selected{% endif %}>{{ fname }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
+      <p class="form-hint form-hint--warn">
+        No .m3u files found in <code>/data/m3u</code>. Place your file there (or map a host directory to <code>/data/m3u</code> in Docker) and reload this page.
+      </p>
+      <input type="hidden" name="local_file_path" value="" />
+      {% endif %}
+    </div>
+    <div class="provider-form__footer">
+      <button type="submit" class="btn btn-primary" {% if not local_m3u_files %}disabled{% endif %}>Add Provider</button>
+    </div>
+  </form>
 </div>
 
 <!-- PROVIDERS TABLE -->
@@ -135,16 +172,22 @@
         </td>
         <td><strong>{{ p.name }}</strong></td>
         <td>
-          <span class="badge {% if p.type == 'm3u' %}badge--blue{% else %}badge--green{% endif %}">
-            {{ "M3U" if p.type == "m3u" else "Xtream" }}
-          </span>
+          {% if p.type == 'm3u' %}
+          <span class="badge badge--blue">M3U</span>
+          {% elif p.type == 'xtream' %}
+          <span class="badge badge--green">Xtream</span>
+          {% else %}
+          <span class="badge badge--gray">Local</span>
+          {% endif %}
         </td>
         <td class="text-muted">
           {% if p.type == "m3u" %}
             {{ p.url }}
-          {% else %}
+          {% elif p.type == "xtream" %}
             {{ p.username }}{% if p.port %}:{{ p.port }}{% endif %}
             <span class="badge badge--gray" style="margin-left:6px;">{{ ".ts" if (p.stream_format or "ts") == "ts" else "HLS" }}</span>
+          {% else %}
+            <code>{{ p.local_file_path or "—" }}</code>
           {% endif %}
         </td>
         <td class="text-muted">{{ p.created_at[:10] }}</td>
@@ -180,7 +223,7 @@
                 data-edit-id="{{ p.slug }}">Cancel</button>
             </div>
           </form>
-          {% else %}
+          {% elif p.type == "xtream" %}
           <form method="post" action="/providers/{{ p.slug }}/edit/xtream" class="inline-edit-form">
             <div class="inline-edit-fields">
               <div class="form-group">
@@ -221,6 +264,32 @@
                 data-edit-id="{{ p.slug }}">Cancel</button>
             </div>
           </form>
+          {% else %}
+          <form method="post" action="/providers/{{ p.slug }}/edit/local_file" class="inline-edit-form">
+            <div class="inline-edit-fields">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" name="name" value="{{ p.name }}" required />
+              </div>
+              <div class="form-group" style="flex:2">
+                <label>M3U File</label>
+                {% if local_m3u_files %}
+                <select name="local_file_path" required>
+                  {% for fname in local_m3u_files %}
+                  <option value="{{ fname }}" {% if p.local_file_path == fname %}selected{% endif %}>{{ fname }}</option>
+                  {% endfor %}
+                </select>
+                {% else %}
+                <input type="text" name="local_file_path" value="{{ p.local_file_path or '' }}" required />
+                {% endif %}
+              </div>
+            </div>
+            <div class="inline-edit-actions">
+              <button type="submit" class="btn btn-primary btn-sm">Save</button>
+              <button type="button" class="btn btn-secondary btn-sm cancel-edit-btn"
+                data-edit-id="{{ p.slug }}">Cancel</button>
+            </div>
+          </form>
           {% endif %}
         </td>
       </tr>
@@ -237,15 +306,18 @@
 
 {% block scripts %}
 <script>
-  const panel    = document.getElementById("provider-panel");
-  const openBtn  = document.getElementById("add-provider-btn");
-  const closeBtn = document.getElementById("close-panel-btn");
-  const radioM3u = document.getElementById("type-m3u");
-  const radioXt  = document.getElementById("type-xtream");
-  const formM3u  = document.getElementById("form-m3u");
-  const formXt   = document.getElementById("form-xtream");
-  const labelM3u = document.getElementById("label-m3u");
-  const labelXt  = document.getElementById("label-xtream");
+  const panel      = document.getElementById("provider-panel");
+  const openBtn    = document.getElementById("add-provider-btn");
+  const closeBtn   = document.getElementById("close-panel-btn");
+  const radioM3u   = document.getElementById("type-m3u");
+  const radioXt    = document.getElementById("type-xtream");
+  const radioLocal = document.getElementById("type-local");
+  const formM3u    = document.getElementById("form-m3u");
+  const formXt     = document.getElementById("form-xtream");
+  const formLocal  = document.getElementById("form-local");
+  const labelM3u   = document.getElementById("label-m3u");
+  const labelXt    = document.getElementById("label-xtream");
+  const labelLocal = document.getElementById("label-local");
 
   openBtn.addEventListener("click", () => {
     panel.style.display = "block";
@@ -258,21 +330,19 @@
   });
 
   function switchType(type) {
-    if (type === "m3u") {
-      formM3u.classList.remove("provider-form--hidden");
-      formXt.classList.add("provider-form--hidden");
-      labelM3u.classList.add("radio-option--active");
-      labelXt.classList.remove("radio-option--active");
-    } else {
-      formXt.classList.remove("provider-form--hidden");
-      formM3u.classList.add("provider-form--hidden");
-      labelXt.classList.add("radio-option--active");
-      labelM3u.classList.remove("radio-option--active");
-    }
+    const forms  = { m3u: formM3u, xtream: formXt, local_file: formLocal };
+    const labels = { m3u: labelM3u, xtream: labelXt, local_file: labelLocal };
+    Object.entries(forms).forEach(([t, f]) => {
+      if (f) f.classList.toggle("provider-form--hidden", t !== type);
+    });
+    Object.entries(labels).forEach(([t, l]) => {
+      if (l) l.classList.toggle("radio-option--active", t === type);
+    });
   }
 
-  radioM3u.addEventListener("change", () => switchType("m3u"));
-  radioXt.addEventListener("change",  () => switchType("xtream"));
+  radioM3u.addEventListener("change",   () => switchType("m3u"));
+  radioXt.addEventListener("change",    () => switchType("xtream"));
+  radioLocal.addEventListener("change", () => switchType("local_file"));
 
   document.querySelectorAll(".edit-open-btn").forEach(btn => {
     btn.addEventListener("click", () => {

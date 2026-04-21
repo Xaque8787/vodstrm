@@ -79,7 +79,7 @@ class ProviderXtreamCreate(BaseModel):
 class ProviderRecord(BaseModel):
     id: int
     name: str
-    type: Literal["m3u", "xtream"]
+    type: Literal["m3u", "xtream", "local_file"]
     url: Optional[str]
     username: Optional[str]
     password: Optional[str]
@@ -87,10 +87,53 @@ class ProviderRecord(BaseModel):
     stream_format: Literal["ts", "hls"] = "ts"
     is_active: bool = True
     strm_mode: Literal["generate_all", "import_selected"] = "generate_all"
+    local_file_path: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ProviderLocalFileCreate(BaseModel):
+    name: str
+    local_file_path: str
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name is required")
+        return v
+
+    @field_validator("local_file_path")
+    @classmethod
+    def path_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("A file must be selected")
+        return v
+
+
+class ProviderLocalFileUpdate(BaseModel):
+    name: str
+    local_file_path: str
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name is required")
+        return v
+
+    @field_validator("local_file_path")
+    @classmethod
+    def path_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("A file must be selected")
+        return v
 
 
 class ProviderM3UUpdate(BaseModel):

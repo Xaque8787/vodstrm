@@ -4,11 +4,16 @@ Ingestion tasks — parse downloaded M3U files and sync them to the database.
 These tasks are triggered by the downloader after a successful download.
 They are also registerable as standalone scheduled tasks if needed.
 
-Flow per provider:
+Flow per remote provider (m3u / xtream):
   1. Locate the downloaded .m3u file for the provider slug
   2. Parse it into structured entry dicts   (ingestion.parser)
   3. Sync parsed entries to the database    (ingestion.sync)
   4. Delete the .m3u file to keep disk clean
+
+Flow per local_file provider:
+  Steps 1-3 are the same, but step 4 is skipped — the file is owned by the
+  user and must not be removed. Stale-stream cleanup is also skipped because
+  the file is always present and its full content is re-read on every run.
 """
 import logging
 import os
@@ -40,14 +45,36 @@ def _delete_m3u(file_path: str, provider_slug: str) -> None:
         )
 
 
+def _get_provider_row(provider_slug: str) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT type, local_file_path FROM providers WHERE slug = ?",
+            (provider_slug,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def ingest_provider_file(provider_slug: str) -> None:
     """
-    Parse and sync a single provider's downloaded M3U file, then delete it.
+    Parse and sync a single provider's M3U file.
 
-    Called directly from the downloader after a successful download.
-    Can also be invoked as a standalone task.
+    For remote providers (m3u / xtream) the downloaded file is deleted after
+    ingestion.  For local_file providers the file is never deleted and stale
+    stream cleanup is skipped — the user controls the file on disk.
     """
-    file_path = _m3u_path(provider_slug)
+    provider = _get_provider_row(provider_slug)
+    is_local = provider is not None and provider["type"] == "local_file"
+
+    if is_local:
+        local_filename = (provider.get("local_file_path") or "").strip()
+        if not local_filename:
+            logger.warning(
+                "[INGESTION] local_file provider '%s' has no file configured", provider_slug
+            )
+            return
+        file_path = os.path.join(resolve_path(_M3U_DIR_RELATIVE), local_filename)
+    else:
+        file_path = _m3u_path(provider_slug)
 
     if not os.path.exists(file_path):
         logger.warning(
@@ -57,8 +84,8 @@ def ingest_provider_file(provider_slug: str) -> None:
         return
 
     logger.info(
-        "[INGESTION] Starting ingest — provider=%s  file=%s",
-        provider_slug, file_path,
+        "[INGESTION] Starting ingest — provider=%s  file=%s  local=%s",
+        provider_slug, file_path, is_local,
     )
 
     parsed = parse_m3u(file_path, provider=provider_slug)
@@ -72,7 +99,7 @@ def ingest_provider_file(provider_slug: str) -> None:
     )
 
     with get_db() as conn:
-        sync_summary = run_sync(conn, parsed)
+        sync_summary = run_sync(conn, parsed, skip_stale_cleanup=is_local)
 
     logger.info(
         "[INGESTION] Sync complete — provider=%s  "
@@ -87,33 +114,33 @@ def ingest_provider_file(provider_slug: str) -> None:
         sync_summary["orphan_entries_removed"],
     )
 
-    _delete_m3u(file_path, provider_slug)
+    if not is_local:
+        _delete_m3u(file_path, provider_slug)
 
 
 @task("ingest_all_providers")
 def ingest_all_providers() -> None:
     """
-    Ingest downloaded M3U files for all active providers.
+    Ingest M3U files for all active providers.
 
-    Scans the M3U directory for any .m3u files and ingests each one,
-    deriving the provider slug from the filename.
+    For remote providers, scans the M3U directory for downloaded files.
+    For local_file providers, reads the file path from the database.
     """
     m3u_dir = resolve_path(_M3U_DIR_RELATIVE)
 
-    if not os.path.isdir(m3u_dir):
-        logger.info("[INGESTION] M3U directory does not exist, nothing to ingest: %s", m3u_dir)
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT slug, type, local_file_path FROM providers WHERE is_active = 1"
+        ).fetchall()
+
+    if not rows:
+        logger.info("[INGESTION] No active providers found, nothing to ingest")
         return
 
-    m3u_files = [f for f in os.listdir(m3u_dir) if f.endswith(".m3u")]
+    logger.info("[INGESTION] Found %d active provider(s) to ingest", len(rows))
 
-    if not m3u_files:
-        logger.info("[INGESTION] No .m3u files found in %s", m3u_dir)
-        return
-
-    logger.info("[INGESTION] Found %d .m3u file(s) to ingest", len(m3u_files))
-
-    for filename in m3u_files:
-        provider_slug = filename[:-4]  # strip .m3u
+    for row in rows:
+        provider_slug = row["slug"]
         try:
             ingest_provider_file(provider_slug)
         except Exception as exc:
