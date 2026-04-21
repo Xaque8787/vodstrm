@@ -209,6 +209,41 @@ def cleanup_orphan_entries(conn: sqlite3.Connection) -> int:
     return deleted
 
 
+def purge_inactive_and_deleted_providers(conn: sqlite3.Connection) -> tuple[int, int]:
+    """
+    Delete streams (and then orphaned entries) for any provider that is either
+    inactive or no longer present in the providers table.
+
+    Returns (streams_deleted, entries_deleted).
+    """
+    all_rows = conn.execute("SELECT slug, is_active FROM providers").fetchall()
+    all_slugs      = {r["slug"] for r in all_rows}
+    inactive_slugs = {r["slug"] for r in all_rows if not r["is_active"]}
+
+    stream_providers = {
+        r[0] for r in conn.execute("SELECT DISTINCT provider FROM streams").fetchall()
+    }
+    slugs_to_purge = inactive_slugs | (stream_providers - all_slugs)
+
+    if not slugs_to_purge:
+        logger.debug("[SYNC] No inactive or removed providers to purge")
+        return 0, 0
+
+    placeholders = ",".join("?" * len(slugs_to_purge))
+    deleted_streams = conn.execute(
+        f"DELETE FROM streams WHERE provider IN ({placeholders})",
+        tuple(slugs_to_purge),
+    ).rowcount
+    deleted_entries = conn.execute(
+        "DELETE FROM entries WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)"
+    ).rowcount
+    logger.info(
+        "[SYNC] Purged inactive/removed providers %s — streams=%d  orphan_entries=%d",
+        sorted(slugs_to_purge), deleted_streams, deleted_entries,
+    )
+    return deleted_streams, deleted_entries
+
+
 # ---------------------------------------------------------------------------
 # FULL SYNC PIPELINE
 # ---------------------------------------------------------------------------

@@ -20,7 +20,7 @@ import os
 
 from app.database import get_db
 from app.ingestion.parser import parse_m3u
-from app.ingestion.sync import run_sync
+from app.ingestion.sync import purge_inactive_and_deleted_providers, run_sync
 from app.tasks.base import task
 from app.utils.env import resolve_path
 
@@ -123,6 +123,11 @@ def ingest_provider_file(provider_slug: str) -> None:
         _delete_m3u(file_path, provider_slug)
 
 
+def _purge() -> None:
+    with get_db() as conn:
+        purge_inactive_and_deleted_providers(conn)
+
+
 @task("ingest_all_providers")
 def ingest_all_providers() -> None:
     """
@@ -156,32 +161,7 @@ def ingest_all_providers() -> None:
                     "[INGESTION] Failed to ingest '%s': %s", slug, exc, exc_info=True
                 )
 
-    # Collect provider slugs whose streams should be wiped:
-    # - providers that exist but are inactive
-    # - providers that appear in streams but no longer exist in providers table
-    with get_db() as conn:
-        stream_providers = {
-            r[0] for r in conn.execute("SELECT DISTINCT provider FROM streams").fetchall()
-        }
-        inactive_slugs = {r["slug"] for r in all_provider_rows if not r["is_active"]}
-        slugs_to_purge = inactive_slugs | (stream_providers - all_slugs)
-
-        if slugs_to_purge:
-            placeholders = ",".join("?" * len(slugs_to_purge))
-            deleted_streams = conn.execute(
-                f"DELETE FROM streams WHERE provider IN ({placeholders})",
-                tuple(slugs_to_purge),
-            ).rowcount
-            deleted_entries = conn.execute(
-                "DELETE FROM entries WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)"
-            ).rowcount
-            logger.info(
-                "[INGESTION] Purged streams for inactive/removed providers %s — "
-                "streams=%d  orphan_entries=%d",
-                sorted(slugs_to_purge), deleted_streams, deleted_entries,
-            )
-        else:
-            logger.debug("[INGESTION] No inactive or removed providers to purge")
+    _purge()
 
 
 @task("ingest_provider")

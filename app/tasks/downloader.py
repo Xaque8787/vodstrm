@@ -13,6 +13,7 @@ import sqlite3
 import requests
 
 from app.database import get_db
+from app.ingestion.sync import purge_inactive_and_deleted_providers
 from app.tasks.base import task
 from app.utils.env import resolve_path
 
@@ -126,6 +127,11 @@ def _download_provider(provider: sqlite3.Row, m3u_dir: str) -> bool:
     return True
 
 
+def _purge() -> None:
+    with get_db() as conn:
+        purge_inactive_and_deleted_providers(conn)
+
+
 @task("download_all_providers")
 def download_all_providers() -> None:
     m3u_dir = _m3u_dir()
@@ -137,6 +143,7 @@ def download_all_providers() -> None:
 
     if not rows:
         logger.info("[DOWNLOADER] No active providers found, nothing to download")
+        _purge()
         return
 
     logger.info("[DOWNLOADER] Starting download for %d active provider(s)", len(rows))
@@ -154,6 +161,8 @@ def download_all_providers() -> None:
     logger.info(
         "[DOWNLOADER] Completed — %d succeeded, %d failed", success, failed
     )
+
+    _purge()
 
 
 @task("download_provider")
