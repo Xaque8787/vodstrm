@@ -1002,3 +1002,123 @@ code {
   font-size: 0.82rem;
   margin: 0;
 }
+
+/* ===========================
+   FILE BROWSER
+   =========================== */
+
+.file-browser {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+.fb-toolbar {
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--color-border);
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.fb-path {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  word-break: break-all;
+}
+
+.fb-list {
+  padding: 4px 0;
+}
+
+.fb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.fb-item:hover {
+  background: #e8f0fe;
+}
+
+.fb-item--dir {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.fb-item--file {
+  color: var(--color-text-muted);
+}
+
+.fb-item--selected {
+  background: #dbeafe;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.fb-item--selected:hover {
+  background: #bfdbfe;
+}
+
+.fb-icon {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.fb-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fb-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.fb-loading, .fb-error {
+  padding: 12px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.fb-error { color: var(--color-danger); }
+
+.file-browser-selected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  padding: 4px 0 2px;
+}
+
+.file-browser-selected__path {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  word-break: break-all;
+  color: var(--color-text);
+}
+
+.file-browser-selected__placeholder {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.file-browser-selected__icon {
+  flex-shrink: 0;
+}

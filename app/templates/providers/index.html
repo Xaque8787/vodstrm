@@ -122,23 +122,22 @@
         value="{{ form_name or '' }}" required />
     </div>
     <div class="form-group">
-      <label for="local-file-path">M3U File <span class="label-optional">(/data/m3u)</span></label>
-      {% if local_m3u_files %}
-      <select id="local-file-path" name="local_file_path" required>
-        <option value="" disabled {% if not form_local_file_path %}selected{% endif %}>— select a file —</option>
-        {% for fname in local_m3u_files %}
-        <option value="{{ fname }}" {% if form_local_file_path == fname %}selected{% endif %}>{{ fname }}</option>
-        {% endfor %}
-      </select>
-      {% else %}
-      <p class="form-hint form-hint--warn">
-        No .m3u files found in <code>/data/m3u</code>. Place your file there (or map a host directory to <code>/data/m3u</code> in Docker) and reload this page.
-      </p>
-      <input type="hidden" name="local_file_path" value="" />
-      {% endif %}
+      <label>M3U File</label>
+      <div class="file-browser" id="file-browser-add" data-input="local-file-path-add"></div>
+      <input type="hidden" id="local-file-path-add" name="local_file_path"
+        value="{{ form_local_file_path or '' }}" required />
+      <div class="file-browser-selected" id="selected-add">
+        {% if form_local_file_path %}
+        <span class="file-browser-selected__icon">&#128196;</span>
+        <span class="file-browser-selected__path">{{ form_local_file_path }}</span>
+        {% else %}
+        <span class="file-browser-selected__placeholder">No file selected — browse below</span>
+        {% endif %}
+      </div>
     </div>
     <div class="provider-form__footer">
-      <button type="submit" class="btn btn-primary" {% if not local_m3u_files %}disabled{% endif %}>Add Provider</button>
+      <button type="submit" class="btn btn-primary" id="add-local-submit"
+        {% if not form_local_file_path %}disabled{% endif %}>Add Provider</button>
     </div>
   </form>
 </div>
@@ -273,15 +272,18 @@
               </div>
               <div class="form-group" style="flex:2">
                 <label>M3U File</label>
-                {% if local_m3u_files %}
-                <select name="local_file_path" required>
-                  {% for fname in local_m3u_files %}
-                  <option value="{{ fname }}" {% if p.local_file_path == fname %}selected{% endif %}>{{ fname }}</option>
-                  {% endfor %}
-                </select>
-                {% else %}
-                <input type="text" name="local_file_path" value="{{ p.local_file_path or '' }}" required />
-                {% endif %}
+                <div class="file-browser" id="file-browser-edit-{{ p.slug }}"
+                  data-input="edit-file-path-{{ p.slug }}"></div>
+                <input type="hidden" id="edit-file-path-{{ p.slug }}" name="local_file_path"
+                  value="{{ p.local_file_path or '' }}" required />
+                <div class="file-browser-selected" id="selected-edit-{{ p.slug }}">
+                  {% if p.local_file_path %}
+                  <span class="file-browser-selected__icon">&#128196;</span>
+                  <span class="file-browser-selected__path">{{ p.local_file_path }}</span>
+                  {% else %}
+                  <span class="file-browser-selected__placeholder">No file selected</span>
+                  {% endif %}
+                </div>
               </div>
             </div>
             <div class="inline-edit-actions">
@@ -344,6 +346,12 @@
   radioXt.addEventListener("change",    () => switchType("xtream"));
   radioLocal.addEventListener("change", () => switchType("local_file"));
 
+  // When switching to local_file tab, lazy-load the browser
+  radioLocal.addEventListener("change", () => {
+    const browser = document.getElementById("file-browser-add");
+    if (browser && !browser.dataset.loaded) loadBrowser(browser);
+  });
+
   document.querySelectorAll(".edit-open-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.editId;
@@ -351,7 +359,14 @@
         if (r.id !== "edit-row-" + id) r.style.display = "none";
       });
       const row = document.getElementById("edit-row-" + id);
-      if (row) row.style.display = row.style.display === "none" ? "" : "none";
+      if (row) {
+        const wasHidden = row.style.display === "none";
+        row.style.display = wasHidden ? "" : "none";
+        if (wasHidden) {
+          // init any file browsers in this edit row
+          row.querySelectorAll(".file-browser:not([data-loaded])").forEach(loadBrowser);
+        }
+      }
     });
   });
 
@@ -367,5 +382,111 @@
       if (!confirm(form.dataset.confirm)) e.preventDefault();
     });
   });
+
+  // ── File Browser ──────────────────────────────────────────────────────────
+
+  async function loadBrowser(el, path) {
+    el.dataset.loaded = "1";
+    el.innerHTML = '<div class="fb-loading">Loading…</div>';
+    const url = "/providers/browse" + (path ? "?path=" + encodeURIComponent(path) : "");
+    let data;
+    try {
+      const res = await fetch(url);
+      data = await res.json();
+    } catch (e) {
+      el.innerHTML = '<div class="fb-error">Failed to load directory listing.</div>';
+      return;
+    }
+    if (data.error) {
+      el.innerHTML = `<div class="fb-error">${data.error}</div>`;
+      return;
+    }
+    renderBrowser(el, data);
+  }
+
+  function renderBrowser(el, data) {
+    const inputId = el.dataset.input;
+    const input   = document.getElementById(inputId);
+
+    // Determine the submit button associated with this browser
+    const form = el.closest("form");
+
+    let html = `<div class="fb-toolbar">
+      <span class="fb-path" title="${esc(data.current)}">${esc(data.current)}</span>
+    </div><div class="fb-list">`;
+
+    if (data.parent) {
+      html += `<div class="fb-item fb-item--dir" data-path="${esc(data.parent)}" data-type="dir">
+        <span class="fb-icon">&#8593;</span>
+        <span class="fb-name">..</span>
+      </div>`;
+    }
+
+    data.dirs.forEach(d => {
+      html += `<div class="fb-item fb-item--dir" data-path="${esc(d.path)}" data-type="dir">
+        <span class="fb-icon">&#128193;</span>
+        <span class="fb-name">${esc(d.name)}</span>
+      </div>`;
+    });
+
+    if (data.files.length === 0 && data.dirs.length === 0 && !data.parent) {
+      html += `<div class="fb-empty">No .m3u files or subdirectories found here.</div>`;
+    } else if (data.files.length === 0) {
+      html += `<div class="fb-empty">No .m3u files in this directory.</div>`;
+    }
+
+    data.files.forEach(f => {
+      const selected = input && input.value === f.path;
+      html += `<div class="fb-item fb-item--file ${selected ? "fb-item--selected" : ""}"
+        data-path="${esc(f.path)}" data-type="file">
+        <span class="fb-icon">&#128196;</span>
+        <span class="fb-name">${esc(f.name)}</span>
+      </div>`;
+    });
+
+    html += `</div>`;
+    el.innerHTML = html;
+
+    el.querySelectorAll(".fb-item").forEach(item => {
+      item.addEventListener("click", () => {
+        if (item.dataset.type === "dir") {
+          loadBrowser(el, item.dataset.path);
+        } else {
+          // select file
+          const path = item.dataset.path;
+          el.querySelectorAll(".fb-item--file").forEach(i => i.classList.remove("fb-item--selected"));
+          item.classList.add("fb-item--selected");
+
+          if (input) {
+            input.value = path;
+            // update the selected label
+            const selectedEl = document.getElementById("selected-" + inputId.replace("local-file-path-", "").replace("edit-file-path-", "edit-"));
+            // fallback: find sibling .file-browser-selected
+            const selectedSibling = el.closest(".form-group").querySelector(".file-browser-selected");
+            if (selectedSibling) {
+              selectedSibling.innerHTML = `<span class="file-browser-selected__icon">&#128196;</span>
+                <span class="file-browser-selected__path">${esc(path)}</span>`;
+            }
+          }
+
+          // enable submit button if present
+          if (form) {
+            const submitBtn = form.querySelector('[type="submit"]');
+            if (submitBtn) submitBtn.disabled = false;
+          }
+        }
+      });
+    });
+  }
+
+  function esc(str) {
+    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  // Auto-init the add-form browser if local_file tab is already active on page load
+  if (radioLocal && radioLocal.checked) {
+    const browser = document.getElementById("file-browser-add");
+    if (browser) loadBrowser(browser);
+  }
 </script>
 {% endblock %}

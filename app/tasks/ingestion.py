@@ -66,13 +66,18 @@ def ingest_provider_file(provider_slug: str) -> None:
     is_local = provider is not None and provider["type"] == "local_file"
 
     if is_local:
-        local_filename = (provider.get("local_file_path") or "").strip()
-        if not local_filename:
+        stored_path = (provider.get("local_file_path") or "").strip()
+        if not stored_path:
             logger.warning(
                 "[INGESTION] local_file provider '%s' has no file configured", provider_slug
             )
             return
-        file_path = os.path.join(resolve_path(_M3U_DIR_RELATIVE), local_filename)
+        # stored_path may be absolute (from file browser) or a bare filename
+        # (legacy entries saved before the browser was added)
+        if os.path.isabs(stored_path):
+            file_path = stored_path
+        else:
+            file_path = os.path.join(resolve_path(_M3U_DIR_RELATIVE), stored_path)
     else:
         file_path = _m3u_path(provider_slug)
 

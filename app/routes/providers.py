@@ -1,8 +1,8 @@
 import logging
 import os
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
@@ -20,18 +20,46 @@ logger = logging.getLogger(__name__)
 _M3U_DIR = os.getenv("M3U_DIR", "data/m3u")
 
 
-def _list_local_m3u_files() -> list[str]:
-    """Return .m3u filenames present in the configured m3u directory."""
+def _default_browse_root() -> str:
     from app.utils.env import resolve_path
-    directory = resolve_path(_M3U_DIR)
-    if not os.path.isdir(directory):
-        return []
-    return sorted(f for f in os.listdir(directory) if f.lower().endswith(".m3u"))
+    return resolve_path(_M3U_DIR)
 
 router = APIRouter(prefix="/providers")
 templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "..", "templates")
 )
+
+
+@router.get("/browse", response_class=JSONResponse)
+async def browse_directory(
+    path: str = Query(default=""),
+    current_user: TokenData = Depends(get_current_user),
+):
+    root = _default_browse_root()
+    target = os.path.realpath(path) if path else os.path.realpath(root)
+
+    if not os.path.isdir(target):
+        return JSONResponse({"error": "Not a directory"}, status_code=400)
+
+    dirs = []
+    files = []
+    try:
+        for entry in sorted(os.scandir(target), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if entry.is_dir(follow_symlinks=False):
+                dirs.append({"name": entry.name, "path": entry.path})
+            elif entry.is_file() and entry.name.lower().endswith(".m3u"):
+                files.append({"name": entry.name, "path": entry.path})
+    except PermissionError:
+        return JSONResponse({"error": "Permission denied"}, status_code=403)
+
+    parent = str(os.path.dirname(target)) if target != os.path.dirname(target) else None
+
+    return JSONResponse({
+        "current": target,
+        "parent": parent,
+        "dirs": dirs,
+        "files": files,
+    })
 
 
 def _provider_name_taken(name: str, exclude_slug: str | None = None) -> bool:
