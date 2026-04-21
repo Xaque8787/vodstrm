@@ -292,7 +292,7 @@ def parse_m3u(file_path: str, provider: str, ingest_time: str | None = None) -> 
                 if line.startswith("#"):
                     continue
 
-                if line.startswith(("http://", "https://")) and current is not None:
+                if current is not None and not line.startswith("#"):
                     current["stream_url"] = line
                     final = _classify(current.copy())
                     final["entry_id"] = _make_entry_id(final)
