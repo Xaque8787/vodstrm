@@ -63,6 +63,16 @@ def _download_provider(provider: sqlite3.Row, m3u_dir: str) -> bool:
     slug = provider["slug"] or str(provider["id"])
     provider_type = provider["type"]
 
+    if provider_type == "local_file":
+        logger.info("[DOWNLOADER] Local file provider '%s' — skipping download, triggering ingest directly", slug)
+        try:
+            from app.tasks.ingestion import ingest_provider_file
+            ingest_provider_file(slug)
+        except Exception as exc:
+            logger.error("[DOWNLOADER] Ingestion failed for local provider '%s': %s", slug, exc, exc_info=True)
+            return False
+        return True
+
     if provider_type == "m3u":
         url = provider["url"] or ""
     elif provider_type == "xtream":
