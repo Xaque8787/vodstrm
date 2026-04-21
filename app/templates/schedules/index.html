@@ -141,8 +141,8 @@
         <tr class="{% if not p.is_active %}row--inactive{% endif %}">
           <td class="provider-task-table__name">{{ p.name }}</td>
           <td>
-            <span class="badge {% if p.type == 'm3u' %}badge--blue{% else %}badge--green{% endif %}">
-              {{ "M3U" if p.type == "m3u" else "Xtream" }}
+            <span class="badge {% if p.type == 'm3u' %}badge--blue{% elif p.type == 'xtream' %}badge--green{% else %}badge--gray{% endif %}">
+              {% if p.type == "m3u" %}M3U{% elif p.type == "xtream" %}Xtream{% else %}Local{% endif %}
             </span>
           </td>
           <td>
