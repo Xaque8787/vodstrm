@@ -20,7 +20,11 @@ COPY . .
 
 RUN chmod +x docker-entrypoint.sh && \
     mkdir -p /app/data/logs && \
-    mkdir -p /app/data/m3u
+    mkdir -p /app/data/m3u && \
+    mkdir -p /app/data/vod/movies && \
+    mkdir -p /app/data/vod/series && \
+    mkdir -p /app/data/vod/unsorted && \
+    mkdir -p /app/data/vod/livetv
 
 EXPOSE 8000
 

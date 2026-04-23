@@ -122,6 +122,17 @@ def ingest_provider_file(provider_slug: str) -> None:
     if not is_local:
         _delete_m3u(file_path, provider_slug)
 
+    # Run STRM sync for this provider. Scoped to the single provider so
+    # the global orphan sweep (which requires all providers to have been
+    # evaluated) is not triggered here.
+    from app.tasks.strm import generate_strm
+    try:
+        generate_strm(provider_slug=provider_slug)
+    except Exception as exc:
+        logger.error(
+            "[INGESTION] STRM sync failed for '%s': %s", provider_slug, exc, exc_info=True
+        )
+
 
 def _purge() -> None:
     with get_db() as conn:
@@ -162,6 +173,14 @@ def ingest_all_providers() -> None:
                 )
 
     _purge()
+
+    # After all providers are ingested, run the global orphan sweep so any
+    # .strm files left over from removed/renamed content are cleaned up.
+    from app.tasks.strm import generate_strm
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[INGESTION] Global STRM orphan sweep failed: %s", exc, exc_info=True)
 
 
 @task("ingest_provider")

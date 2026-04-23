@@ -113,9 +113,15 @@ def _apply_schedule_to_scheduler(schedule: dict) -> None:
 
 def _resolve_task_fn(task_type: str, provider_slug: str | None):
     from app.tasks.downloader import download_all_providers
+    from app.tasks.strm import generate_strm
 
     if task_type == "download_all_providers":
         return download_all_providers
+
+    if task_type == "generate_strm":
+        if provider_slug:
+            return lambda: generate_strm(provider_slug=provider_slug)
+        return generate_strm
 
     return None
 

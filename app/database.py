@@ -92,10 +92,13 @@ CREATE TABLE IF NOT EXISTS streams (
     ingested_at    TEXT,
     batch_id       TEXT NOT NULL,
     metadata_json  TEXT,
-    filtered_title TEXT,
-    filter_hits    TEXT DEFAULT '[]',
-    exclude        INTEGER DEFAULT 0,
-    include_only   INTEGER DEFAULT 0
+    filtered_title   TEXT,
+    filter_hits      TEXT DEFAULT '[]',
+    exclude          INTEGER DEFAULT 0,
+    include_only     INTEGER DEFAULT 0,
+    strm_path        TEXT,
+    last_written_url TEXT,
+    imported         INTEGER NOT NULL DEFAULT 0
 );
 
 -- One stream per provider per entry (upsert key)
