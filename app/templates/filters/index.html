@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}Filters — VODSTRM{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--actions">
+  <div>
+    <h1>Filters</h1>
+    <p class="page-subtitle">Control how titles are cleaned and which entries are included.</p>
+  </div>
+  <div class="filter-header-actions">
+    <form method="post" action="/filters/reapply">
+      <button type="submit" class="btn btn-secondary">Reapply All Filters</button>
+    </form>
+    <button class="btn btn-primary" id="open-add-btn">+ Add Filter</button>
+  </div>
+</div>
+
+{% if flash == 'created' %}<div class="alert alert-success">Filter created.</div>
+{% elif flash == 'updated' %}<div class="alert alert-success">Filter updated.</div>
+{% elif flash == 'deleted' %}<div class="alert alert-success">Filter deleted.</div>
+{% elif flash == 'reapplied' %}<div class="alert alert-success">Filters reapplied to all streams.</div>
+{% endif %}
+
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+{# ── ADD FILTER PANEL ───────────────────────────────────────────────── #}
+<div class="filter-panel" id="add-panel" style="display:none">
+  <div class="filter-panel__header">
+    <span class="filter-panel__title">New Filter</span>
+    <button class="filter-panel__close" id="close-add-btn" type="button">&times;</button>
+  </div>
+
+  {# Step 1: pick type #}
+  <div id="step-type">
+    <p class="filter-step-label">Choose filter type</p>
+    <div class="filter-type-grid">
+      <label class="filter-type-opt" data-type="remove">
+        <input type="radio" name="_type_pick" value="remove">
+        <div class="filter-type-opt__body">
+          <strong>Remove Terms</strong>
+          <small>Strip matching text from titles</small>
+        </div>
+      </label>
+      <label class="filter-type-opt" data-type="exclude">
+        <input type="radio" name="_type_pick" value="exclude">
+        <div class="filter-type-opt__body">
+          <strong>Exclude Terms</strong>
+          <small>Hide matching entries entirely</small>
+        </div>
+      </label>
+      <label class="filter-type-opt" data-type="include_only">
+        <input type="radio" name="_type_pick" value="include_only">
+        <div class="filter-type-opt__body">
+          <strong>Include Only</strong>
+          <small>Whitelist only matching entries</small>
+        </div>
+      </label>
+      <label class="filter-type-opt" data-type="replace">
+        <input type="radio" name="_type_pick" value="replace">
+        <div class="filter-type-opt__body">
+          <strong>Replace Terms</strong>
+          <small>Substitute text in titles</small>
+        </div>
+      </label>
+    </div>
+    <div class="filter-step-footer">
+      <button class="btn btn-primary" id="type-next-btn" disabled>Continue</button>
+    </div>
+  </div>
+
+  {# Step 2: configure #}
+  <div id="step-config" style="display:none">
+    <form method="post" action="/filters/add" id="add-filter-form">
+      <input type="hidden" name="filter_type" id="add-type-hidden">
+      <div class="filter-form-body">
+        <div class="filter-form-meta-row">
+          <div class="form-group">
+            <label>Label <span class="label-optional">(optional)</span></label>
+            <input type="text" name="label" placeholder="e.g. Remove quality tags" maxlength="120" class="filter-meta-input">
+          </div>
+          <div class="form-group filter-form-order">
+            <label>Order</label>
+            <input type="number" name="order_index" value="0" min="0" max="999" class="filter-meta-input">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Providers</label>
+          <div class="filter-scope-row" id="add-provider-scope">
+            <label class="scope-chip scope-chip--all">
+              <input type="checkbox" name="providers" value="*" checked data-scope="all"> All providers
+            </label>
+            {% for slug in provider_slugs %}
+            <label class="scope-chip">
+              <input type="checkbox" name="providers" value="{{ slug }}" data-scope="specific"> {{ slug }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Entry types</label>
+          <div class="filter-scope-row" id="add-type-scope">
+            <label class="scope-chip scope-chip--all">
+              <input type="checkbox" name="entry_types" value="*" checked data-scope="all"> All types
+            </label>
+            {% for et in entry_types %}
+            <label class="scope-chip">
+              <input type="checkbox" name="entry_types" value="{{ et }}" data-scope="specific"> {{ et }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label id="add-pattern-label">Patterns</label>
+          <div class="filter-pattern-list" id="add-pattern-list" data-ftype=""></div>
+          <button type="button" class="btn btn-sm btn-secondary filter-add-row-btn" data-list="add-pattern-list">+ Add row</button>
+        </div>
+      </div>
+
+      <div class="filter-form-footer">
+        <button type="button" class="btn btn-secondary" id="config-back-btn">Back</button>
+        <button type="submit" class="btn btn-primary">Save Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── FILTER LIST ─────────────────────────────────────────────────────── #}
+{% if not filters %}
+<div class="empty-state">
+  No filters defined yet. Click <strong>+ Add Filter</strong> to create your first rule.
+</div>
+{% else %}
+
+{% for ftype in filter_types %}
+{% set section_filters = filters | selectattr("filter_type", "equalto", ftype) | list %}
+{% if section_filters %}
+<section class="filter-section">
+  <div class="filter-section__header">
+    <span class="filter-section__title">{{ filter_type_labels[ftype] }}</span>
+    <span class="filter-section__count text-muted">{{ section_filters | length }} rule{{ 's' if section_filters | length != 1 }}</span>
+  </div>
+
+  {% for f in section_filters %}
+  <div class="filter-card {% if not f.enabled %}filter-card--disabled{% endif %}">
+    <div class="filter-card__header">
+      <div class="filter-card__meta">
+        <span class="filter-card__label {% if not f.label %}filter-card__label--auto{% endif %}">
+          {{ f.label if f.label else 'Filter #' ~ f.id }}
+        </span>
+        <span class="filter-card__order text-muted">order&nbsp;{{ f.order_index }}</span>
+        {% for p in f.providers %}
+        <span class="badge badge--blue">{{ 'all providers' if p == '*' else p }}</span>
+        {% endfor %}
+        {% for et in f.entry_types %}
+        <span class="badge badge--gray">{{ 'all types' if et == '*' else et }}</span>
+        {% endfor %}
+      </div>
+      <div class="filter-card__actions">
+        <button class="btn btn-sm btn-secondary filter-edit-open-btn" data-id="{{ f.id }}">Edit</button>
+        <form method="post" action="/filters/{{ f.id }}/toggle" style="display:inline">
+          <button type="submit" class="toggle-btn {% if f.enabled %}toggle-btn--active{% else %}toggle-btn--inactive{% endif %}">
+            <span class="toggle-btn__dot"></span>{{ 'Enabled' if f.enabled else 'Disabled' }}
+          </button>
+        </form>
+        <form method="post" action="/filters/{{ f.id }}/delete" style="display:inline"
+              data-confirm="Delete this filter? Filtered titles will remain until filters are reapplied.">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="filter-card__patterns">
+      {% for p in f.patterns %}
+      <div class="filter-pattern-preview">
+        <code class="filter-code">{{ p.pattern }}</code>
+        {% if ftype == 'replace' %}
+        <span class="filter-arrow">→</span>
+        <code class="filter-code filter-code--repl">{{ p.replacement if p.replacement else '(empty)' }}</code>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Inline edit panel #}
+    <div class="filter-edit-panel" id="edit-panel-{{ f.id }}" style="display:none">
+      <form method="post" action="/filters/{{ f.id }}/edit">
+        <div class="filter-form-body">
+          <div class="filter-form-meta-row">
+            <div class="form-group">
+              <label>Label <span class="label-optional">(optional)</span></label>
+              <input type="text" name="label" value="{{ f.label }}" maxlength="120" class="filter-meta-input">
+            </div>
+            <div class="form-group filter-form-order">
+              <label>Order</label>
+              <input type="number" name="order_index" value="{{ f.order_index }}" min="0" max="999" class="filter-meta-input">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Providers</label>
+            <div class="filter-scope-row">
+              <label class="scope-chip scope-chip--all">
+                <input type="checkbox" name="providers" value="*"
+                  {% if '*' in f.providers %}checked{% endif %} data-scope="all"> All providers
+              </label>
+              {% for slug in provider_slugs %}
+              <label class="scope-chip">
+                <input type="checkbox" name="providers" value="{{ slug }}"
+                  {% if slug in f.providers %}checked{% endif %} data-scope="specific"> {{ slug }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Entry types</label>
+            <div class="filter-scope-row">
+              <label class="scope-chip scope-chip--all">
+                <input type="checkbox" name="entry_types" value="*"
+                  {% if '*' in f.entry_types %}checked{% endif %} data-scope="all"> All types
+              </label>
+              {% for et in entry_types %}
+              <label class="scope-chip">
+                <input type="checkbox" name="entry_types" value="{{ et }}"
+                  {% if et in f.entry_types %}checked{% endif %} data-scope="specific"> {{ et }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Patterns</label>
+            <div class="filter-pattern-list" id="edit-plist-{{ f.id }}" data-ftype="{{ f.filter_type }}">
+              {% for p in f.patterns %}
+              <div class="filter-row" data-idx="{{ loop.index0 }}">
+                <input type="text" name="pattern_{{ loop.index0 }}" value="{{ p.pattern }}"
+                       placeholder="{{ 'Find (literal)' if ftype == 'replace' else 'Regex pattern' }}"
+                       class="filter-input">
+                {% if ftype == 'replace' %}
+                <span class="filter-arrow">→</span>
+                <input type="text" name="replacement_{{ loop.index0 }}" value="{{ p.replacement or '' }}"
+                       placeholder="Replace with" class="filter-input filter-input--repl">
+                {% endif %}
+                <button type="button" class="btn btn-sm btn-danger filter-del-row-btn">&times;</button>
+              </div>
+              {% endfor %}
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary filter-add-row-btn"
+                    data-list="edit-plist-{{ f.id }}" data-ftype="{{ f.filter_type }}">+ Add row</button>
+          </div>
+        </div>
+        <div class="filter-form-footer">
+          <button type="button" class="btn btn-secondary filter-edit-cancel-btn" data-id="{{ f.id }}">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endblock %}

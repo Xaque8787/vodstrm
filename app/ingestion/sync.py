@@ -297,10 +297,20 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict, skip_stale_cleanup: 
         "orphan_entries_removed": orphans_removed,
         "provider": provider,
         "batch_id": batch_id,
+        "filter_streams_updated": 0,
     }
 
     logger.info(
         "[SYNC] Sync complete — provider=%s  stale_streams=%d  orphans=%d",
         provider, stale_removed, orphans_removed,
     )
+
+    try:
+        from app.filters.engine import load_filters, run_filters_for_provider
+        filters = load_filters(conn)
+        if filters:
+            summary["filter_streams_updated"] = run_filters_for_provider(conn, filters, provider=provider)
+    except Exception as exc:
+        logger.warning("[SYNC] Filter apply step failed (non-fatal): %s", exc)
+
     return summary
