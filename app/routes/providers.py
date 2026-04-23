@@ -356,10 +356,10 @@ async def toggle_provider(
 
     now_inactive = before and bool(before["is_active"])
     if now_inactive:
-        from app.tasks.strm import deactivate_provider_strm
+        from app.tasks.strm import deactivate_provider_strm_async
         import threading
         threading.Thread(
-            target=deactivate_provider_strm, args=(provider_slug,), daemon=True
+            target=deactivate_provider_strm_async, args=(provider_slug,), daemon=True
         ).start()
         logger.info(
             "STRM handover triggered for provider '%s' (deactivated) by %s",

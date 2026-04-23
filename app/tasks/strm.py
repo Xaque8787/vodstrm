@@ -506,18 +506,31 @@ def deactivate_provider_strm(provider_slug: str) -> dict:
             (provider_slug,),
         )
 
+        # Orphan sweep in the same connection so the NULL-clear above is visible
+        # immediately — catches any files that were never tracked via strm_path
+        # (e.g. written before strm_path tracking was added) as well as any that
+        # slipped through mid-handover errors.
+        orphans = _cleanup_orphans(conn, vod_root)
+        if orphans:
+            logger.info("[STRM] Post-deactivation orphan sweep — deleted=%d", orphans)
+
     logger.info(
         "[STRM] Deactivation — provider=%s  handed_over=%d  deleted=%d  errors=%d",
         provider_slug, stats["handed_over"], stats["deleted"], stats["errors"],
     )
 
-    # Final pass: catch any files that slipped through (e.g. mid-handover failures)
-    with get_db() as conn:
-        orphans = _cleanup_orphans(conn, vod_root)
-    if orphans:
-        logger.info("[STRM] Post-deactivation orphan sweep — deleted=%d", orphans)
-
     return stats
+
+
+def deactivate_provider_strm_async(provider_slug: str) -> None:
+    """Thread-safe wrapper for use with threading.Thread — logs any exception."""
+    try:
+        deactivate_provider_strm(provider_slug)
+    except Exception:
+        logger.error(
+            "[STRM] Unhandled error in deactivate_provider_strm for '%s'",
+            provider_slug, exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------------------
