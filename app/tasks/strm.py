@@ -510,12 +510,34 @@ def deactivate_provider_strm(provider_slug: str) -> dict:
         "[STRM] Deactivation — provider=%s  handed_over=%d  deleted=%d  errors=%d",
         provider_slug, stats["handed_over"], stats["deleted"], stats["errors"],
     )
+
+    # Final pass: catch any files that slipped through (e.g. mid-handover failures)
+    with get_db() as conn:
+        orphans = _cleanup_orphans(conn, vod_root)
+    if orphans:
+        logger.info("[STRM] Post-deactivation orphan sweep — deleted=%d", orphans)
+
     return stats
 
 
 # ---------------------------------------------------------------------------
 # Public task entry points
 # ---------------------------------------------------------------------------
+
+@task("clean_strm_orphans")
+def clean_strm_orphans() -> None:
+    """
+    Scan the vod_root and delete any .strm file that has no matching strm_path
+    row in the DB.  Safe to run at any time — treats the DB as ground truth.
+    """
+    vod_root = _vod_root()
+    if not os.path.isdir(vod_root):
+        logger.info("[STRM] Orphan sweep: vod_root does not exist — nothing to do")
+        return
+    with get_db() as conn:
+        deleted = _cleanup_orphans(conn, vod_root)
+    logger.info("[STRM] Orphan sweep complete — deleted=%d", deleted)
+
 
 @task("generate_strm")
 def generate_strm(provider_slug: str | None = None) -> None:
