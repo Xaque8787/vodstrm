@@ -13,6 +13,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Filters page ─────────────────────────────────────────────────────
   if (document.getElementById("open-add-btn")) initFiltersPage();
 
+  // ── Library inspector ────────────────────────────────────────────────
+  if (document.getElementById("lib-table")) initLibrary();
+
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -238,6 +241,131 @@ function addPatternRow(list, ftype) {
     <button type="button" class="btn btn-sm btn-danger filter-del-row-btn">&times;</button>
   `;
   list.appendChild(row);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// LIBRARY INSPECTOR — search, sort, expand
+// ─────────────────────────────────────────────────────────────────────────
+function initLibrary() {
+  const table    = document.getElementById("lib-table");
+  const tbody    = document.getElementById("lib-tbody");
+  const searchEl = document.getElementById("lib-search");
+  const countEl  = document.getElementById("lib-search-count");
+  const isStreams = table.classList.contains("lib-table--streams");
+
+  // ── Expand/collapse detail rows (streams only) ────────────────────
+  if (isStreams) {
+    tbody.addEventListener("click", (e) => {
+      const btn = e.target.closest(".lib-expand-btn");
+      if (!btn) return;
+      const mainRow   = btn.closest(".lib-stream-row");
+      const idx       = mainRow.dataset.idx;
+      const detailRow = document.getElementById("lib-detail-" + idx);
+      if (!detailRow) return;
+      const open = detailRow.style.display !== "none";
+      detailRow.style.display = open ? "none" : "";
+      btn.classList.toggle("lib-expand-btn--open", !open);
+      btn.innerHTML = open ? "&#x25B6;" : "&#x25BC;";
+    });
+  }
+
+  // ── Sort ─────────────────────────────────────────────────────────────
+  let sortCol = -1;
+  let sortAsc = true;
+
+  table.querySelectorAll(".lib-th-sort").forEach((th) => {
+    th.addEventListener("click", () => {
+      const col = parseInt(th.dataset.col, 10);
+      if (sortCol === col) {
+        sortAsc = !sortAsc;
+      } else {
+        sortCol = col;
+        sortAsc = true;
+      }
+      table.querySelectorAll(".lib-th-sort").forEach((h) => {
+        h.classList.remove("lib-th--asc", "lib-th--desc");
+      });
+      th.classList.add(sortAsc ? "lib-th--asc" : "lib-th--desc");
+      sortTable(col, sortAsc);
+      updateCount();
+    });
+  });
+
+  function sortTable(col, asc) {
+    if (isStreams) {
+      // Pair data rows with their detail rows, sort together
+      const pairs = [];
+      tbody.querySelectorAll(".lib-stream-row").forEach((row) => {
+        const idx = row.dataset.idx;
+        const detail = document.getElementById("lib-detail-" + idx);
+        pairs.push({ row, detail });
+      });
+      pairs.sort((a, b) => {
+        const aVal = cellText(a.row, col);
+        const bVal = cellText(b.row, col);
+        return compare(aVal, bVal, asc);
+      });
+      pairs.forEach(({ row, detail }) => {
+        tbody.appendChild(row);
+        if (detail) tbody.appendChild(detail);
+      });
+    } else {
+      const rows = Array.from(tbody.querySelectorAll("tr"));
+      rows.sort((a, b) => compare(cellText(a, col), cellText(b, col), asc));
+      rows.forEach((r) => tbody.appendChild(r));
+    }
+  }
+
+  function cellText(row, col) {
+    const cell = row.cells[col];
+    return cell ? cell.textContent.trim().toLowerCase() : "";
+  }
+
+  function compare(a, b, asc) {
+    const numA = parseFloat(a);
+    const numB = parseFloat(b);
+    const bothNum = !isNaN(numA) && !isNaN(numB);
+    const result = bothNum ? numA - numB : a.localeCompare(b);
+    return asc ? result : -result;
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────
+  function updateCount() {
+    const visible = tbody.querySelectorAll(
+      isStreams ? ".lib-stream-row:not([hidden])" : "tr:not([hidden])"
+    ).length;
+    const total = tbody.querySelectorAll(
+      isStreams ? ".lib-stream-row" : "tr"
+    ).length;
+    countEl.textContent = searchEl.value ? `${visible} / ${total}` : `${total} rows`;
+  }
+
+  searchEl.addEventListener("input", () => {
+    const q = searchEl.value.toLowerCase().trim();
+    if (isStreams) {
+      tbody.querySelectorAll(".lib-stream-row").forEach((row) => {
+        const idx       = row.dataset.idx;
+        const detail    = document.getElementById("lib-detail-" + idx);
+        const text      = row.textContent.toLowerCase();
+        const detailTxt = detail ? detail.textContent.toLowerCase() : "";
+        const match     = !q || text.includes(q) || detailTxt.includes(q);
+        row.hidden   = !match;
+        if (detail) detail.hidden = !match;
+        if (!match && detail) {
+          detail.style.display = "none";
+          const btn = row.querySelector(".lib-expand-btn");
+          if (btn) { btn.classList.remove("lib-expand-btn--open"); btn.innerHTML = "&#x25B6;"; }
+        }
+      });
+    } else {
+      tbody.querySelectorAll("tr").forEach((row) => {
+        row.hidden = q ? !row.textContent.toLowerCase().includes(q) : false;
+      });
+    }
+    updateCount();
+  });
+
+  updateCount();
 }
 
 function reindexList(list) {

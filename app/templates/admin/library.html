@@ -54,28 +54,36 @@
   </a>
 </div>
 
+<!-- SEARCH -->
+<div class="lib-search-bar">
+  <input type="search" id="lib-search" class="lib-search-input"
+         placeholder="Search {% if tab == 'entries' %}title, type, year…{% else %}title, provider…{% endif %}"
+         autocomplete="off">
+  <span class="lib-search-count" id="lib-search-count"></span>
+</div>
+
 <!-- TABLE -->
 <div class="card lib-table-card">
   {% if rows %}
   <div class="lib-table-wrap">
     {% if tab == "entries" %}
-    <table class="table lib-table">
+    <table class="table lib-table" id="lib-table">
       <thead>
         <tr>
-          <th>entry_id</th>
-          <th>type</th>
-          <th>cleaned_title</th>
-          <th>year</th>
-          <th>S</th>
-          <th>E</th>
-          <th>air_date</th>
-          <th>series_type</th>
-          <th>created_at</th>
+          <th class="lib-th-sort" data-col="0">entry_id</th>
+          <th class="lib-th-sort" data-col="1">type</th>
+          <th class="lib-th-sort" data-col="2">cleaned_title</th>
+          <th class="lib-th-sort" data-col="3">year</th>
+          <th class="lib-th-sort" data-col="4">S</th>
+          <th class="lib-th-sort" data-col="5">E</th>
+          <th class="lib-th-sort" data-col="6">air_date</th>
+          <th class="lib-th-sort" data-col="7">series_type</th>
+          <th class="lib-th-sort" data-col="8">created_at</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="lib-tbody">
         {% for row in rows %}
-        <tr>
+        <tr class="lib-data-row">
           <td><code class="lib-hash">{{ row.entry_id[:12] }}</code></td>
           <td><span class="lib-type-badge lib-type-badge--{{ row.type }}">{{ row.type }}</span></td>
           <td class="lib-title">{{ row.cleaned_title or "—" }}</td>
@@ -91,40 +99,35 @@
     </table>
 
     {% else %}
-    <table class="table lib-table lib-table--streams">
+    {# Streams tab — compact main row + expandable detail row #}
+    <table class="table lib-table lib-table--streams" id="lib-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>entry_id</th>
-          <th>provider</th>
-          <th>cleaned_title</th>
-          <th>filtered_title</th>
-          <th>filter_hits</th>
-          <th>excl</th>
-          <th>incl only</th>
-          <th>stream_url</th>
+          <th class="lib-th-sort" data-col="0">#</th>
+          <th class="lib-th-sort" data-col="1">provider</th>
+          <th class="lib-th-sort" data-col="2">cleaned_title</th>
+          <th class="lib-th-sort" data-col="3">filtered_title</th>
+          <th class="lib-th-sort lib-th-center" data-col="4">hits</th>
+          <th class="lib-th-sort lib-th-center" data-col="5">excl</th>
+          <th class="lib-th-sort lib-th-center" data-col="6">incl only</th>
+          <th class="lib-th-expand"></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="lib-tbody">
         {% for row in rows %}
-        <tr>
+        {% set hits = row.filter_hits %}
+        {% set has_hits = hits and hits != '[]' and hits != 'null' %}
+        {% set meta = row.metadata_json %}
+        {% set has_meta = meta and meta != '{}' and meta != 'null' %}
+        <tr class="lib-data-row lib-stream-row" data-idx="{{ loop.index0 }}">
           <td class="lib-id">{{ row.stream_id }}</td>
-          <td><code class="lib-hash">{{ row.entry_id[:12] }}</code></td>
           <td>{{ row.provider or "—" }}</td>
           <td class="lib-title">{{ row.cleaned_title or "—" }}</td>
           <td class="lib-title {% if row.filtered_title and row.filtered_title != row.cleaned_title %}lib-filtered-changed{% endif %}">
             {{ row.filtered_title or "—" }}
           </td>
-          <td class="lib-filter-hits">
-            {% set hits = row.filter_hits %}
-            {% if hits and hits != '[]' and hits != 'null' %}
-            <details class="lib-meta-details">
-              <summary class="lib-meta-summary">{{ hits | length - 2 > 2 and 'hits' or 'view' }}</summary>
-              <pre class="lib-meta-blob">{{ hits }}</pre>
-            </details>
-            {% else %}
-            <span class="text-muted">—</span>
-            {% endif %}
+          <td class="lib-flag">
+            {% if has_hits %}<span class="lib-flag--info">{{ hits | tojson | length }}</span>{% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td class="lib-flag">
             {% if row.exclude %}<span class="lib-flag--yes">yes</span>{% else %}<span class="text-muted">—</span>{% endif %}
@@ -132,8 +135,34 @@
           <td class="lib-flag">
             {% if row.include_only %}<span class="lib-flag--yes">yes</span>{% else %}<span class="text-muted">—</span>{% endif %}
           </td>
-          <td class="lib-url">
-            <span title="{{ row.stream_url }}">{{ row.stream_url[:60] }}{% if row.stream_url and row.stream_url|length > 60 %}…{% endif %}</span>
+          <td class="lib-expand-cell">
+            <button class="lib-expand-btn" type="button" aria-label="Expand">&#x25B6;</button>
+          </td>
+        </tr>
+        <tr class="lib-detail-row" id="lib-detail-{{ loop.index0 }}" style="display:none">
+          <td colspan="8">
+            <div class="lib-detail-body">
+              <div class="lib-detail-section">
+                <div class="lib-detail-label">stream_url</div>
+                <div class="lib-detail-value lib-detail-url">{{ row.stream_url or "—" }}</div>
+              </div>
+              {% if has_hits %}
+              <div class="lib-detail-section">
+                <div class="lib-detail-label">filter_hits</div>
+                <pre class="lib-detail-pre">{{ hits }}</pre>
+              </div>
+              {% endif %}
+              {% if has_meta %}
+              <div class="lib-detail-section">
+                <div class="lib-detail-label">metadata</div>
+                <pre class="lib-detail-pre">{{ meta }}</pre>
+              </div>
+              {% endif %}
+              <div class="lib-detail-section">
+                <div class="lib-detail-label">entry_id</div>
+                <div class="lib-detail-value"><code>{{ row.entry_id }}</code></div>
+              </div>
+            </div>
           </td>
         </tr>
         {% endfor %}
