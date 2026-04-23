@@ -100,10 +100,13 @@ function initFiltersPage() {
   const typeHid  = document.getElementById("add-type-hidden");
   const patLabel = document.getElementById("add-pattern-label");
 
+  console.log("[filters] initFiltersPage running", { openBtn, panel, stepType, stepCfg, nextBtn });
+
   let chosenType = null;
 
   // Open / close panel
   openBtn.addEventListener("click", () => {
+    console.log("[filters] open button clicked, panel=", panel);
     panel.style.display = "block";
     openBtn.style.display = "none";
     window.scrollTo({ top: 0, behavior: "smooth" });
