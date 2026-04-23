@@ -104,7 +104,7 @@ function initFiltersPage() {
 
   // Open / close panel
   openBtn.addEventListener("click", () => {
-    panel.style.display = "";
+    panel.style.display = "block";
     openBtn.style.display = "none";
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
