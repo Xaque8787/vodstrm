@@ -97,31 +97,43 @@
           <th>#</th>
           <th>entry_id</th>
           <th>provider</th>
+          <th>cleaned_title</th>
+          <th>filtered_title</th>
+          <th>filter_hits</th>
+          <th>excl</th>
+          <th>incl only</th>
           <th>stream_url</th>
-          <th>ingested_at</th>
-          <th>metadata</th>
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
-        {% set meta = row.metadata_json | default('{}') %}
         <tr>
           <td class="lib-id">{{ row.stream_id }}</td>
           <td><code class="lib-hash">{{ row.entry_id[:12] }}</code></td>
           <td>{{ row.provider or "—" }}</td>
-          <td class="lib-url">
-            <span title="{{ row.stream_url }}">{{ row.stream_url[:72] }}{% if row.stream_url and row.stream_url|length > 72 %}…{% endif %}</span>
+          <td class="lib-title">{{ row.cleaned_title or "—" }}</td>
+          <td class="lib-title {% if row.filtered_title and row.filtered_title != row.cleaned_title %}lib-filtered-changed{% endif %}">
+            {{ row.filtered_title or "—" }}
           </td>
-          <td class="lib-date">{{ row.ingested_at or "—" }}</td>
-          <td class="lib-meta-cell">
-            {% if meta and meta != '{}' and meta != 'null' %}
+          <td class="lib-filter-hits">
+            {% set hits = row.filter_hits %}
+            {% if hits and hits != '[]' and hits != 'null' %}
             <details class="lib-meta-details">
-              <summary class="lib-meta-summary">View</summary>
-              <pre class="lib-meta-blob">{{ meta }}</pre>
+              <summary class="lib-meta-summary">{{ hits | length - 2 > 2 and 'hits' or 'view' }}</summary>
+              <pre class="lib-meta-blob">{{ hits }}</pre>
             </details>
             {% else %}
             <span class="text-muted">—</span>
             {% endif %}
+          </td>
+          <td class="lib-flag">
+            {% if row.exclude %}<span class="lib-flag--yes">yes</span>{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="lib-flag">
+            {% if row.include_only %}<span class="lib-flag--yes">yes</span>{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="lib-url">
+            <span title="{{ row.stream_url }}">{{ row.stream_url[:60] }}{% if row.stream_url and row.stream_url|length > 60 %}…{% endif %}</span>
           </td>
         </tr>
         {% endfor %}

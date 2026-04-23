@@ -996,6 +996,29 @@ code {
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
 
+.lib-filtered-changed {
+  color: var(--color-primary);
+  font-style: italic;
+}
+
+.lib-flag {
+  text-align: center;
+}
+
+.lib-flag--yes {
+  display: inline-block;
+  background: #fff3cd;
+  color: #664d03;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 6px;
+}
+
+.lib-filter-hits {
+  min-width: 60px;
+}
+
 /* local file provider form */
 .form-hint--warn {
   color: var(--color-warning, #b45309);

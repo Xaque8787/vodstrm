@@ -79,10 +79,13 @@ async def library_page(
         else:
             rows = conn.execute(
                 """
-                SELECT stream_id, entry_id, provider, stream_url,
-                       ingested_at, batch_id, metadata_json
-                FROM streams
-                ORDER BY provider, entry_id
+                SELECT s.stream_id, s.entry_id, s.provider, s.stream_url,
+                       s.ingested_at, s.metadata_json,
+                       e.cleaned_title,
+                       s.filtered_title, s.filter_hits, s.exclude, s.include_only
+                FROM streams s
+                JOIN entries e ON e.entry_id = s.entry_id
+                ORDER BY s.provider, e.cleaned_title
                 LIMIT ? OFFSET ?
                 """,
                 (_LIBRARY_PAGE_SIZE, offset),
