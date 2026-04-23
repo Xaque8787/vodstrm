@@ -70,9 +70,19 @@ def up(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_filter_patterns_filter
             ON filter_patterns(filter_id);
 
-        ALTER TABLE streams ADD COLUMN filtered_title TEXT;
-        ALTER TABLE streams ADD COLUMN filter_hits     TEXT    DEFAULT '[]';
-        ALTER TABLE streams ADD COLUMN exclude         INTEGER DEFAULT 0;
-        ALTER TABLE streams ADD COLUMN include_only    INTEGER DEFAULT 0;
     """)
+
+    # ALTER TABLE ... ADD COLUMN has no IF NOT EXISTS in SQLite.
+    # On a fresh install database.py already creates these columns, so we
+    # check before adding to avoid an error on the first run.
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
+    for col, definition in [
+        ("filtered_title", "TEXT"),
+        ("filter_hits",    "TEXT DEFAULT '[]'"),
+        ("exclude",        "INTEGER DEFAULT 0"),
+        ("include_only",   "INTEGER DEFAULT 0"),
+    ]:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE streams ADD COLUMN {col} {definition}")
+
     conn.commit()

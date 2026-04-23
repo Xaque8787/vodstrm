@@ -81,15 +81,21 @@ CREATE TABLE IF NOT EXISTS entries (
 -- One row per provider per entry. The same content can be supplied
 -- by multiple providers; each provider may only have one active
 -- stream URL per entry at a time (enforced by unique index below).
+-- Filter output columns (filtered_title, filter_hits, exclude, include_only)
+-- are populated by the filter engine after each ingest or manual reapply.
 CREATE TABLE IF NOT EXISTS streams (
-    stream_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_id      TEXT NOT NULL REFERENCES entries(entry_id),
-    stream_url    TEXT NOT NULL,
-    provider      TEXT NOT NULL,
-    source_file   TEXT,
-    ingested_at   TEXT,
-    batch_id      TEXT NOT NULL,
-    metadata_json TEXT
+    stream_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id       TEXT NOT NULL REFERENCES entries(entry_id),
+    stream_url     TEXT NOT NULL,
+    provider       TEXT NOT NULL,
+    source_file    TEXT,
+    ingested_at    TEXT,
+    batch_id       TEXT NOT NULL,
+    metadata_json  TEXT,
+    filtered_title TEXT,
+    filter_hits    TEXT DEFAULT '[]',
+    exclude        INTEGER DEFAULT 0,
+    include_only   INTEGER DEFAULT 0
 );
 
 -- One stream per provider per entry (upsert key)
@@ -103,6 +109,50 @@ CREATE INDEX IF NOT EXISTS idx_streams_entry_id
 -- Fast lookup of all streams belonging to a batch (used in cleanup)
 CREATE INDEX IF NOT EXISTS idx_streams_batch_id
     ON streams(batch_id);
+
+-- -------------------------------------------------------
+-- FILTERS: rule definitions and scope
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS filters (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    filter_type  TEXT NOT NULL
+                 CHECK(filter_type IN ('remove', 'exclude', 'include_only', 'replace')),
+    label        TEXT NOT NULL DEFAULT '',
+    order_index  INTEGER NOT NULL DEFAULT 0,
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Which providers a filter applies to ('*' = all)
+CREATE TABLE IF NOT EXISTS filter_providers (
+    filter_id INTEGER NOT NULL REFERENCES filters(id) ON DELETE CASCADE,
+    provider  TEXT NOT NULL,
+    PRIMARY KEY (filter_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_filter_providers_filter ON filter_providers(filter_id);
+
+-- Which entry types a filter applies to ('*' = all)
+CREATE TABLE IF NOT EXISTS filter_entry_types (
+    filter_id  INTEGER NOT NULL REFERENCES filters(id) ON DELETE CASCADE,
+    entry_type TEXT NOT NULL
+               CHECK(entry_type IN ('movie', 'series', 'live', 'tv_vod', 'unsorted', '*')),
+    PRIMARY KEY (filter_id, entry_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_filter_entry_types_filter ON filter_entry_types(filter_id);
+
+-- Individual pattern rows per filter rule
+CREATE TABLE IF NOT EXISTS filter_patterns (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    filter_id   INTEGER NOT NULL REFERENCES filters(id) ON DELETE CASCADE,
+    pattern     TEXT NOT NULL,
+    replacement TEXT,
+    order_index INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_filter_patterns_filter ON filter_patterns(filter_id);
 """
 
 
