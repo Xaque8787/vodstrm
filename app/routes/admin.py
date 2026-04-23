@@ -16,6 +16,26 @@ templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), ".
 
 _LIBRARY_PAGE_SIZE = 100
 
+_ENTRIES_SORT_COLS = {
+    "type":         "e.type",
+    "cleaned_title":"e.cleaned_title",
+    "year":         "e.year",
+    "season":       "e.season",
+    "episode":      "e.episode",
+    "air_date":     "e.air_date",
+    "series_type":  "e.series_type",
+    "created_at":   "e.created_at",
+}
+
+_STREAMS_SORT_COLS = {
+    "stream_id":      "s.stream_id",
+    "provider":       "s.provider",
+    "cleaned_title":  "e.cleaned_title",
+    "exclude":        "s.exclude",
+    "include_only":   "s.include_only",
+    "ingested_at":    "s.ingested_at",
+}
+
 
 def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
@@ -53,44 +73,78 @@ async def library_page(
     request: Request,
     tab: str = "entries",
     page: int = 1,
+    q: str = "",
+    sort: str = "",
+    order: str = "asc",
     current_user: TokenData = Depends(get_current_admin),
 ):
-    tab = tab if tab in ("entries", "streams") else "entries"
-    page = max(1, page)
+    tab   = tab if tab in ("entries", "streams") else "entries"
+    page  = max(1, page)
+    order = "asc" if order not in ("asc", "desc") else order
     offset = (page - 1) * _LIBRARY_PAGE_SIZE
+    search = q.strip()
 
     with get_db() as conn:
-        entry_count = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+        entry_count  = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
         stream_count = conn.execute("SELECT COUNT(*) FROM streams").fetchone()[0]
 
         if tab == "entries":
+            sort_col = _ENTRIES_SORT_COLS.get(sort, "e.type")
+            order_sql = "DESC" if order == "desc" else "ASC"
+            where_sql  = ""
+            params: list = []
+            if search:
+                where_sql = "WHERE (e.cleaned_title LIKE ? OR e.type LIKE ? OR CAST(e.year AS TEXT) LIKE ?)"
+                like = f"%{search}%"
+                params = [like, like, like]
+
+            count_sql = f"SELECT COUNT(*) FROM entries e {where_sql}"
+            total = conn.execute(count_sql, params).fetchone()[0]
+
             rows = conn.execute(
-                """
-                SELECT entry_id, type, cleaned_title, raw_title,
-                       year, season, episode, air_date, series_type,
-                       created_at, updated_at
-                FROM entries
-                ORDER BY type, cleaned_title
+                f"""
+                SELECT e.entry_id, e.type, e.cleaned_title, e.raw_title,
+                       e.year, e.season, e.episode, e.air_date, e.series_type,
+                       e.created_at
+                FROM entries e
+                {where_sql}
+                ORDER BY {sort_col} {order_sql}
                 LIMIT ? OFFSET ?
                 """,
-                (_LIBRARY_PAGE_SIZE, offset),
+                params + [_LIBRARY_PAGE_SIZE, offset],
             ).fetchall()
-            total = entry_count
+
         else:
+            sort_col  = _STREAMS_SORT_COLS.get(sort, "e.cleaned_title")
+            order_sql = "DESC" if order == "desc" else "ASC"
+            where_sql  = ""
+            params = []
+            if search:
+                where_sql = "WHERE (e.cleaned_title LIKE ? OR s.provider LIKE ? OR s.stream_url LIKE ?)"
+                like = f"%{search}%"
+                params = [like, like, like]
+
+            count_sql = f"""
+                SELECT COUNT(*) FROM streams s
+                JOIN entries e ON e.entry_id = s.entry_id
+                {where_sql}
+            """
+            total = conn.execute(count_sql, params).fetchone()[0]
+
             rows = conn.execute(
-                """
+                f"""
                 SELECT s.stream_id, s.entry_id, s.provider, s.stream_url,
                        s.ingested_at, s.metadata_json,
                        e.cleaned_title,
                        s.filtered_title, s.filter_hits, s.exclude, s.include_only
                 FROM streams s
                 JOIN entries e ON e.entry_id = s.entry_id
-                ORDER BY s.provider, e.cleaned_title
+                {where_sql}
+                ORDER BY {sort_col} {order_sql}
                 LIMIT ? OFFSET ?
                 """,
-                (_LIBRARY_PAGE_SIZE, offset),
+                params + [_LIBRARY_PAGE_SIZE, offset],
             ).fetchall()
-            total = stream_count
 
     total_pages = max(1, (total + _LIBRARY_PAGE_SIZE - 1) // _LIBRARY_PAGE_SIZE)
     data = [dict(r) for r in rows]
@@ -100,16 +154,19 @@ async def library_page(
     return templates.TemplateResponse(
         "admin/library.html",
         {
-            "request": request,
+            "request":      request,
             "current_user": current_user,
-            "tab": tab,
-            "rows": data,
-            "entry_count": entry_count,
+            "tab":          tab,
+            "rows":         data,
+            "entry_count":  entry_count,
             "stream_count": stream_count,
-            "page": page,
-            "total_pages": total_pages,
-            "total": total,
-            "flash": flash,
+            "page":         page,
+            "total_pages":  total_pages,
+            "total":        total,
+            "flash":        flash,
+            "q":            search,
+            "sort":         sort,
+            "order":        order,
         },
     )
 

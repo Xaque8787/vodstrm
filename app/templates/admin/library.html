@@ -54,36 +54,54 @@
   </a>
 </div>
 
-<!-- SEARCH -->
-<div class="lib-search-bar">
-  <input type="search" id="lib-search" class="lib-search-input"
-         placeholder="Search {% if tab == 'entries' %}title, type, year…{% else %}title, provider…{% endif %}"
+<!-- SEARCH BAR -->
+<form method="get" action="/admin/library" class="lib-search-bar" id="lib-search-form">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <input type="hidden" name="sort" value="{{ sort }}">
+  <input type="hidden" name="order" value="{{ order }}">
+  <input type="search" name="q" id="lib-search" class="lib-search-input"
+         value="{{ q }}"
+         placeholder="Search {% if tab == 'entries' %}title, type, year…{% else %}title, provider, url…{% endif %}"
          autocomplete="off">
-  <span class="lib-search-count" id="lib-search-count"></span>
-</div>
+  {% if q %}
+  <a href="/admin/library?tab={{ tab }}&sort={{ sort }}&order={{ order }}" class="btn btn-secondary btn-sm">Clear</a>
+  {% endif %}
+  <span class="lib-search-count">
+    {% if q %}{{ total }} result{{ total != 1 and 's' or '' }} across all pages{% else %}{{ total }} total{% endif %}
+  </span>
+</form>
 
 <!-- TABLE -->
 <div class="card lib-table-card">
   {% if rows %}
   <div class="lib-table-wrap">
+
+    {# Helper macro: build a sortable header link #}
+    {% macro sort_th(label, col_key) %}
+      {% set next_order = 'desc' if (sort == col_key and order == 'asc') else 'asc' %}
+      <th class="lib-th-sort {% if sort == col_key %}lib-th--{{ order }}{% endif %}">
+        <a class="lib-th-link" href="/admin/library?tab={{ tab }}&q={{ q }}&sort={{ col_key }}&order={{ next_order }}">{{ label }}</a>
+      </th>
+    {% endmacro %}
+
     {% if tab == "entries" %}
     <table class="table lib-table" id="lib-table">
       <thead>
         <tr>
-          <th class="lib-th-sort" data-col="0">entry_id</th>
-          <th class="lib-th-sort" data-col="1">type</th>
-          <th class="lib-th-sort" data-col="2">cleaned_title</th>
-          <th class="lib-th-sort" data-col="3">year</th>
-          <th class="lib-th-sort" data-col="4">S</th>
-          <th class="lib-th-sort" data-col="5">E</th>
-          <th class="lib-th-sort" data-col="6">air_date</th>
-          <th class="lib-th-sort" data-col="7">series_type</th>
-          <th class="lib-th-sort" data-col="8">created_at</th>
+          <th>entry_id</th>
+          {{ sort_th("type", "type") }}
+          {{ sort_th("cleaned_title", "cleaned_title") }}
+          {{ sort_th("year", "year") }}
+          {{ sort_th("S", "season") }}
+          {{ sort_th("E", "episode") }}
+          {{ sort_th("air_date", "air_date") }}
+          {{ sort_th("series_type", "series_type") }}
+          {{ sort_th("created_at", "created_at") }}
         </tr>
       </thead>
-      <tbody id="lib-tbody">
+      <tbody>
         {% for row in rows %}
-        <tr class="lib-data-row">
+        <tr>
           <td><code class="lib-hash">{{ row.entry_id[:12] }}</code></td>
           <td><span class="lib-type-badge lib-type-badge--{{ row.type }}">{{ row.type }}</span></td>
           <td class="lib-title">{{ row.cleaned_title or "—" }}</td>
@@ -99,17 +117,16 @@
     </table>
 
     {% else %}
-    {# Streams tab — compact main row + expandable detail row #}
+    {# Streams: compact columns, detail row on expand #}
     <table class="table lib-table lib-table--streams" id="lib-table">
       <thead>
         <tr>
-          <th class="lib-th-sort" data-col="0">#</th>
-          <th class="lib-th-sort" data-col="1">provider</th>
-          <th class="lib-th-sort" data-col="2">cleaned_title</th>
-          <th class="lib-th-sort" data-col="3">filtered_title</th>
-          <th class="lib-th-sort lib-th-center" data-col="4">hits</th>
-          <th class="lib-th-sort lib-th-center" data-col="5">excl</th>
-          <th class="lib-th-sort lib-th-center" data-col="6">incl only</th>
+          {{ sort_th("#", "stream_id") }}
+          {{ sort_th("provider", "provider") }}
+          {{ sort_th("title", "cleaned_title") }}
+          <th class="lib-th-center">hits</th>
+          {{ sort_th("excl", "exclude") }}
+          {{ sort_th("incl only", "include_only") }}
           <th class="lib-th-expand"></th>
         </tr>
       </thead>
@@ -119,15 +136,12 @@
         {% set has_hits = hits and hits != '[]' and hits != 'null' %}
         {% set meta = row.metadata_json %}
         {% set has_meta = meta and meta != '{}' and meta != 'null' %}
-        <tr class="lib-data-row lib-stream-row" data-idx="{{ loop.index0 }}">
+        <tr class="lib-stream-row" data-idx="{{ loop.index0 }}">
           <td class="lib-id">{{ row.stream_id }}</td>
           <td>{{ row.provider or "—" }}</td>
           <td class="lib-title">{{ row.cleaned_title or "—" }}</td>
-          <td class="lib-title {% if row.filtered_title and row.filtered_title != row.cleaned_title %}lib-filtered-changed{% endif %}">
-            {{ row.filtered_title or "—" }}
-          </td>
           <td class="lib-flag">
-            {% if has_hits %}<span class="lib-flag--info">{{ hits | tojson | length }}</span>{% else %}<span class="text-muted">—</span>{% endif %}
+            {% if has_hits %}<span class="lib-flag--info">{{ hits | length }}</span>{% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td class="lib-flag">
             {% if row.exclude %}<span class="lib-flag--yes">yes</span>{% else %}<span class="text-muted">—</span>{% endif %}
@@ -140,28 +154,43 @@
           </td>
         </tr>
         <tr class="lib-detail-row" id="lib-detail-{{ loop.index0 }}" style="display:none">
-          <td colspan="8">
+          <td colspan="7">
             <div class="lib-detail-body">
-              <div class="lib-detail-section">
+
+              <div class="lib-detail-item">
                 <div class="lib-detail-label">stream_url</div>
                 <div class="lib-detail-value lib-detail-url">{{ row.stream_url or "—" }}</div>
               </div>
+
+              <div class="lib-detail-item">
+                <div class="lib-detail-label">entry_id</div>
+                <div class="lib-detail-value"><code>{{ row.entry_id }}</code></div>
+              </div>
+
+              <div class="lib-detail-item">
+                <div class="lib-detail-label">filtered_title</div>
+                <div class="lib-detail-value {% if row.filtered_title and row.filtered_title != row.cleaned_title %}lib-filtered-changed{% endif %}">
+                  {{ row.filtered_title or "—" }}
+                  {% if row.filtered_title and row.filtered_title != row.cleaned_title %}
+                  <span class="lib-detail-orig">(was: {{ row.cleaned_title }})</span>
+                  {% endif %}
+                </div>
+              </div>
+
               {% if has_hits %}
-              <div class="lib-detail-section">
+              <div class="lib-detail-item">
                 <div class="lib-detail-label">filter_hits</div>
                 <pre class="lib-detail-pre">{{ hits }}</pre>
               </div>
               {% endif %}
+
               {% if has_meta %}
-              <div class="lib-detail-section">
+              <div class="lib-detail-item">
                 <div class="lib-detail-label">metadata</div>
                 <pre class="lib-detail-pre">{{ meta }}</pre>
               </div>
               {% endif %}
-              <div class="lib-detail-section">
-                <div class="lib-detail-label">entry_id</div>
-                <div class="lib-detail-value"><code>{{ row.entry_id }}</code></div>
-              </div>
+
             </div>
           </td>
         </tr>
@@ -179,11 +208,13 @@
     </span>
     <div class="lib-pagination__btns">
       {% if page > 1 %}
-      <a href="/admin/library?tab={{ tab }}&page={{ page - 1 }}" class="btn btn-secondary btn-sm">← Prev</a>
+      <a href="/admin/library?tab={{ tab }}&q={{ q }}&sort={{ sort }}&order={{ order }}&page={{ page - 1 }}"
+         class="btn btn-secondary btn-sm">← Prev</a>
       {% endif %}
       <span class="lib-pagination__page">Page {{ page }} / {{ total_pages }}</span>
       {% if page < total_pages %}
-      <a href="/admin/library?tab={{ tab }}&page={{ page + 1 }}" class="btn btn-secondary btn-sm">Next →</a>
+      <a href="/admin/library?tab={{ tab }}&q={{ q }}&sort={{ sort }}&order={{ order }}&page={{ page + 1 }}"
+         class="btn btn-secondary btn-sm">Next →</a>
       {% endif %}
     </div>
   </div>
@@ -191,7 +222,12 @@
 
   {% else %}
   <div class="empty-state">
+    {% if q %}
+    No {{ tab }} matched <strong>{{ q }}</strong>.
+    <a href="/admin/library?tab={{ tab }}">Clear search</a>
+    {% else %}
     No {{ tab }} found. Run a provider download to populate the library.
+    {% endif %}
   </div>
   {% endif %}
 </div>
