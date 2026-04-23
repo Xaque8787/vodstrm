@@ -64,6 +64,10 @@
       <input type="url" id="m3u-url" name="url" placeholder="http://example.com/playlist.m3u"
         value="{{ form_url or '' }}" required />
     </div>
+    <div class="form-group form-group--sm">
+      <label for="m3u-priority" title="Lower number = higher priority when multiple providers share the same content">Priority</label>
+      <input type="number" id="m3u-priority" name="priority" value="10" min="1" max="999" style="width:88px" />
+    </div>
     <div class="provider-form__footer">
       <button type="submit" class="btn btn-primary">Add Provider</button>
     </div>
@@ -108,6 +112,10 @@
           </label>
         </div>
       </div>
+      <div class="form-group form-group--sm">
+        <label for="xt-priority" title="Lower number = higher priority when multiple providers share the same content">Priority</label>
+        <input type="number" id="xt-priority" name="priority" value="10" min="1" max="999" style="width:88px" />
+      </div>
     </div>
     <div class="provider-form__footer">
       <button type="submit" class="btn btn-primary">Add Provider</button>
@@ -135,6 +143,10 @@
         {% endif %}
       </div>
     </div>
+    <div class="form-group form-group--sm">
+      <label for="local-priority" title="Lower number = higher priority when multiple providers share the same content">Priority</label>
+      <input type="number" id="local-priority" name="priority" value="10" min="1" max="999" style="width:88px" />
+    </div>
     <div class="provider-form__footer">
       <button type="submit" class="btn btn-primary" id="add-local-submit"
         {% if not form_local_file_path %}disabled{% endif %}>Add Provider</button>
@@ -152,6 +164,7 @@
         <th>Name</th>
         <th>Type</th>
         <th>Details</th>
+        <th title="Lower number = higher priority">Priority</th>
         <th>Added</th>
         <th></th>
       </tr>
@@ -189,6 +202,7 @@
             <code>{{ p.local_file_path or "—" }}</code>
           {% endif %}
         </td>
+        <td class="text-muted">{{ p.priority }}</td>
         <td class="text-muted">{{ p.created_at[:10] }}</td>
         <td class="table-actions">
           <button type="button" class="btn btn-secondary btn-sm edit-open-btn"
@@ -203,7 +217,7 @@
       <!-- INLINE EDIT ROW -->
       <tr class="edit-row" id="edit-row-{{ p.slug }}"
         {% if edit_provider_slug != p.slug %}style="display:none"{% endif %}>
-        <td colspan="6" class="edit-row__cell">
+        <td colspan="7" class="edit-row__cell">
           {% if p.type == "m3u" %}
           <form method="post" action="/providers/{{ p.slug }}/edit/m3u" class="inline-edit-form">
             <div class="inline-edit-fields">
@@ -214,6 +228,10 @@
               <div class="form-group" style="flex:2">
                 <label>Playlist URL</label>
                 <input type="url" name="url" value="{{ p.url or '' }}" required />
+              </div>
+              <div class="form-group form-group--sm">
+                <label title="Lower = higher priority">Priority</label>
+                <input type="number" name="priority" value="{{ p.priority }}" min="1" max="999" style="width:72px" />
               </div>
             </div>
             <div class="inline-edit-actions">
@@ -256,6 +274,10 @@
                   </label>
                 </div>
               </div>
+              <div class="form-group form-group--sm">
+                <label title="Lower = higher priority">Priority</label>
+                <input type="number" name="priority" value="{{ p.priority }}" min="1" max="999" style="width:72px" />
+              </div>
             </div>
             <div class="inline-edit-actions">
               <button type="submit" class="btn btn-primary btn-sm">Save</button>
@@ -284,6 +306,10 @@
                   <span class="file-browser-selected__placeholder">No file selected</span>
                   {% endif %}
                 </div>
+              </div>
+              <div class="form-group form-group--sm">
+                <label title="Lower = higher priority">Priority</label>
+                <input type="number" name="priority" value="{{ p.priority }}" min="1" max="999" style="width:72px" />
               </div>
             </div>
             <div class="inline-edit-actions">

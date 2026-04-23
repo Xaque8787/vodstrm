@@ -87,6 +87,7 @@ class ProviderRecord(BaseModel):
     stream_format: Literal["ts", "hls"] = "ts"
     is_active: bool = True
     strm_mode: Literal["generate_all", "import_selected"] = "generate_all"
+    priority: int = 10
     local_file_path: Optional[str] = None
     created_at: datetime
 

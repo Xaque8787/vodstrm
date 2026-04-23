@@ -8,9 +8,18 @@ filesystem (projection).
 Provider gate
 ─────────────
 Only providers with strm_mode = 'generate_all' participate. Providers in
-'import_selected' mode are skipped entirely; their streams rows still exist
-and are filtered normally — STRM generation for them is deferred to a future
+'import_selected' mode are skipped; their streams still exist and are
+filtered normally — STRM generation for them is deferred to a future
 UI-driven pipeline that will use streams.imported = TRUE.
+
+Provider priority
+─────────────────
+Each provider has a numeric `priority` column (lower = higher priority,
+default 10).  When two or more generate_all providers supply the same
+entry, only the stream from the highest-priority (lowest number) provider
+generates the .strm file.  Ties are broken alphabetically by provider slug
+so the winner is always deterministic.  Lower-priority streams for the same
+entry are tracked in the DB but produce no file.
 
 Path derivation
 ───────────────
@@ -23,8 +32,8 @@ entry.cleaned_title) and the entry type:
   live    → <vod_root>/livetv/<title>.strm
   unsorted→ <vod_root>/unsorted/<title>.strm
 
-Sync rules (per stream row)
-───────────────────────────
+Sync rules (per winning stream row)
+────────────────────────────────────
   New stream (strm_path IS NULL):
     create file, write URL, store path + URL in DB.
 
@@ -33,17 +42,27 @@ Sync rules (per stream row)
 
   Path changed (derived path != strm_path):
     move file to new location, update strm_path in DB.
-    After moving, remove the old parent directory if it is now empty.
+    After moving, remove the old parent directory if now empty.
     Do NOT delete-and-recreate — move preserves inode history.
 
   Unchanged:
     do nothing.
+
+Non-winning streams for an entry have their strm_path/last_written_url
+cleared if they somehow acquired values from a previous priority ordering.
 
 Cleanup
 ───────
 After processing all eligible streams, scan the entire vod_root for .strm
 files. Any file whose absolute path does not appear in the DB is deleted.
 Empty directories left behind are also removed.
+
+clear_provider_strm_files(provider_slug)
+────────────────────────────────────────
+Called when a provider switches to import_selected mode.  Deletes every
+.strm file owned by that provider, removes resulting empty directories, and
+clears strm_path + last_written_url on the affected stream rows so the
+state is consistent (no file on disk → NULL in DB).
 """
 import logging
 import os
@@ -138,18 +157,73 @@ def _remove_empty_dirs(directory: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Priority resolution
+# ---------------------------------------------------------------------------
+
+def _winning_stream_ids(conn: sqlite3.Connection, provider_slug: str | None = None) -> set[int]:
+    """
+    Return the set of stream_ids that are the priority winner for their entry.
+
+    For each entry_id that has at least one generate_all stream, exactly one
+    stream wins: the one from the provider with the lowest priority number,
+    breaking ties by provider slug alphabetically.
+
+    If provider_slug is given, only entries that have a stream from that
+    provider are considered — but the winner is still chosen globally across
+    all generate_all providers for those entries.
+    """
+    if provider_slug:
+        rows = conn.execute(
+            """
+            SELECT s.stream_id, s.entry_id, p.priority, p.slug
+            FROM streams s
+            JOIN providers p ON p.slug = s.provider
+            WHERE p.strm_mode = 'generate_all'
+              AND s.exclude = 0
+              AND s.entry_id IN (
+                  SELECT entry_id FROM streams WHERE provider = ?
+              )
+            ORDER BY p.priority, p.slug
+            """,
+            (provider_slug,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT s.stream_id, s.entry_id, p.priority, p.slug
+            FROM streams s
+            JOIN providers p ON p.slug = s.provider
+            WHERE p.strm_mode = 'generate_all'
+              AND s.exclude = 0
+            ORDER BY p.priority, p.slug
+            """,
+        ).fetchall()
+
+    seen: set[str] = set()
+    winners: set[int] = set()
+    for row in rows:
+        entry_id = row["entry_id"]
+        if entry_id not in seen:
+            seen.add(entry_id)
+            winners.add(row["stream_id"])
+    return winners
+
+
+# ---------------------------------------------------------------------------
 # Core sync logic
 # ---------------------------------------------------------------------------
 
 def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
     stats = {
-        "skipped_provider": 0,
-        "created":  0,
-        "url_updated": 0,
-        "moved":    0,
-        "unchanged": 0,
-        "errors":   0,
+        "skipped_priority": 0,
+        "created":          0,
+        "url_updated":      0,
+        "moved":            0,
+        "unchanged":        0,
+        "errors":           0,
     }
+
+    winners = _winning_stream_ids(conn)
 
     rows = conn.execute(
         """
@@ -167,6 +241,17 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
     ).fetchall()
 
     for row in rows:
+        if row["stream_id"] not in winners:
+            # This provider lost the priority contest for this entry.
+            # If it somehow holds a strm_path (e.g. priority was changed),
+            # clear it — the file belongs to the winner now.
+            if row["strm_path"]:
+                conn.execute(
+                    "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
+                    (row["stream_id"],),
+                )
+            stats["skipped_priority"] += 1
+            continue
         try:
             _sync_one(conn, row, vod_root, stats)
         except Exception as exc:
@@ -278,6 +363,47 @@ def _cleanup_orphans(conn: sqlite3.Connection, vod_root: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Mode-switch cleanup
+# ---------------------------------------------------------------------------
+
+def clear_provider_strm_files(provider_slug: str) -> int:
+    """
+    Delete all .strm files owned by provider_slug and clear the DB fields.
+
+    Called when a provider is switched to import_selected mode so that the
+    filesystem stays consistent with the DB (no file = NULL strm_path).
+    Returns the number of files deleted.
+    """
+    deleted = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT stream_id, strm_path FROM streams WHERE provider = ? AND strm_path IS NOT NULL",
+            (provider_slug,),
+        ).fetchall()
+
+        for row in rows:
+            path = row["strm_path"]
+            try:
+                if path and os.path.exists(path):
+                    os.remove(path)
+                    deleted += 1
+                    _remove_empty_dirs(os.path.dirname(path))
+                    logger.debug("[STRM] Removed file on mode switch: %s", path)
+            except OSError as exc:
+                logger.warning("[STRM] Could not remove %s: %s", path, exc)
+
+        conn.execute(
+            "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE provider = ?",
+            (provider_slug,),
+        )
+
+    logger.info(
+        "[STRM] Mode-switch cleanup — provider=%s  files_deleted=%d", provider_slug, deleted
+    )
+    return deleted
+
+
+# ---------------------------------------------------------------------------
 # Public task entry points
 # ---------------------------------------------------------------------------
 
@@ -288,9 +414,8 @@ def generate_strm(provider_slug: str | None = None) -> None:
 
     provider_slug=None runs the full sync for every eligible provider and
     performs the orphan cleanup pass.  Passing a slug limits processing to
-    that provider's streams only and skips the global orphan sweep (to avoid
-    deleting files that belong to other providers whose paths haven't been
-    evaluated yet).
+    that provider's streams only (but priority is still evaluated globally
+    across all providers for those entries) and skips the global orphan sweep.
     """
     vod_root = _vod_root()
     os.makedirs(vod_root, exist_ok=True)
@@ -299,7 +424,6 @@ def generate_strm(provider_slug: str | None = None) -> None:
 
     with get_db() as conn:
         if provider_slug:
-            # Check provider exists and is in generate_all mode
             row = conn.execute(
                 "SELECT strm_mode FROM providers WHERE slug = ?", (provider_slug,)
             ).fetchone()
@@ -312,7 +436,8 @@ def generate_strm(provider_slug: str | None = None) -> None:
                 )
                 return
 
-            # Scope the sync to this provider only
+            winners = _winning_stream_ids(conn, provider_slug=provider_slug)
+
             rows = conn.execute(
                 """
                 SELECT s.stream_id, s.stream_url, s.provider,
@@ -329,10 +454,18 @@ def generate_strm(provider_slug: str | None = None) -> None:
             ).fetchall()
 
             stats: dict = {
-                "skipped_provider": 0, "created": 0, "url_updated": 0,
+                "skipped_priority": 0, "created": 0, "url_updated": 0,
                 "moved": 0, "unchanged": 0, "errors": 0,
             }
             for row_data in rows:
+                if row_data["stream_id"] not in winners:
+                    if row_data["strm_path"]:
+                        conn.execute(
+                            "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
+                            (row_data["stream_id"],),
+                        )
+                    stats["skipped_priority"] += 1
+                    continue
                 try:
                     _sync_one(conn, row_data, vod_root, stats)
                 except Exception as exc:
@@ -348,11 +481,12 @@ def generate_strm(provider_slug: str | None = None) -> None:
 
     logger.info(
         "[STRM] Sync done — provider=%s  created=%d  moved=%d  url_updated=%d  "
-        "unchanged=%d  errors=%d",
+        "skipped_priority=%d  unchanged=%d  errors=%d",
         provider_slug or "*",
         stats["created"],
         stats["moved"],
         stats["url_updated"],
+        stats["skipped_priority"],
         stats["unchanged"],
         stats["errors"],
     )

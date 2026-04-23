@@ -272,11 +272,39 @@ async def set_strm_mode(
 ):
     if strm_mode not in ("generate_all", "import_selected"):
         return RedirectResponse("/schedules", status_code=302)
+
+    with get_db() as conn:
+        current = conn.execute(
+            "SELECT strm_mode FROM providers WHERE slug = ?", (provider_slug,)
+        ).fetchone()
+
+    if not current:
+        return RedirectResponse("/schedules", status_code=302)
+
+    switching_to_selected = (
+        current["strm_mode"] != "import_selected"
+        and strm_mode == "import_selected"
+    )
+
     with get_db() as conn:
         conn.execute(
             "UPDATE providers SET strm_mode = ? WHERE slug = ?",
             (strm_mode, provider_slug),
         )
+
+    if switching_to_selected:
+        from app.tasks.strm import clear_provider_strm_files
+        import threading
+        threading.Thread(
+            target=clear_provider_strm_files,
+            args=(provider_slug,),
+            daemon=True,
+        ).start()
+        logger.info(
+            "STRM file cleanup triggered for provider '%s' (switched to import_selected) by %s",
+            provider_slug, current_user.username,
+        )
+
     logger.info(
         "Provider strm_mode set to '%s': %s by %s",
         strm_mode, provider_slug, current_user.username,

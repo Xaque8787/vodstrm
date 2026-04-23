@@ -79,7 +79,7 @@ def _provider_name_taken(name: str, exclude_slug: str | None = None) -> bool:
 def _list_providers() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, slug, type, url, username, port, stream_format, is_active, local_file_path, created_at FROM providers ORDER BY name"
+            "SELECT id, name, slug, type, url, username, port, stream_format, is_active, priority, local_file_path, created_at FROM providers ORDER BY priority, name"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -115,6 +115,7 @@ async def add_m3u_provider(
     request: Request,
     name: str = Form(...),
     url: str = Form(...),
+    priority: int = Form(10),
     current_user: TokenData = Depends(get_current_user),
 ):
     try:
@@ -155,8 +156,8 @@ async def add_m3u_provider(
     slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO providers (name, slug, type, url) VALUES (?, ?, 'm3u', ?)",
-            (data.name, slug, data.url),
+            "INSERT INTO providers (name, slug, type, url, priority) VALUES (?, ?, 'm3u', ?, ?)",
+            (data.name, slug, data.url, max(1, priority)),
         )
     logger.info("Provider added (m3u): %s", data.name)
     return RedirectResponse("/providers", status_code=302)
@@ -170,6 +171,7 @@ async def add_xtream_provider(
     password: str = Form(...),
     port: str = Form(""),
     stream_format: str = Form("ts"),
+    priority: int = Form(10),
     current_user: TokenData = Depends(get_current_user),
 ):
     try:
@@ -217,8 +219,8 @@ async def add_xtream_provider(
     slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO providers (name, slug, type, username, password, port, stream_format) VALUES (?, ?, 'xtream', ?, ?, ?, ?)",
-            (data.name, slug, data.username, data.password, data.port, data.stream_format),
+            "INSERT INTO providers (name, slug, type, username, password, port, stream_format, priority) VALUES (?, ?, 'xtream', ?, ?, ?, ?, ?)",
+            (data.name, slug, data.username, data.password, data.port, data.stream_format, max(1, priority)),
         )
     logger.info("Provider added (xtream): %s", data.name)
     return RedirectResponse("/providers", status_code=302)
@@ -230,6 +232,7 @@ async def edit_m3u_provider(
     request: Request,
     name: str = Form(...),
     url: str = Form(...),
+    priority: int = Form(10),
     current_user: TokenData = Depends(get_current_user),
 ):
     provider = _get_provider_by_slug(provider_slug)
@@ -270,8 +273,8 @@ async def edit_m3u_provider(
     new_slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "UPDATE providers SET name = ?, slug = ?, url = ? WHERE slug = ?",
-            (data.name, new_slug, data.url, provider_slug),
+            "UPDATE providers SET name = ?, slug = ?, url = ?, priority = ? WHERE slug = ?",
+            (data.name, new_slug, data.url, max(1, priority), provider_slug),
         )
     logger.info("Provider updated (m3u): %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)
@@ -286,6 +289,7 @@ async def edit_xtream_provider(
     password: str = Form(...),
     port: str = Form(""),
     stream_format: str = Form("ts"),
+    priority: int = Form(10),
     current_user: TokenData = Depends(get_current_user),
 ):
     provider = _get_provider_by_slug(provider_slug)
@@ -329,8 +333,8 @@ async def edit_xtream_provider(
     new_slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "UPDATE providers SET name = ?, slug = ?, username = ?, password = ?, port = ?, stream_format = ? WHERE slug = ?",
-            (data.name, new_slug, data.username, data.password, data.port, data.stream_format, provider_slug),
+            "UPDATE providers SET name = ?, slug = ?, username = ?, password = ?, port = ?, stream_format = ?, priority = ? WHERE slug = ?",
+            (data.name, new_slug, data.username, data.password, data.port, data.stream_format, max(1, priority), provider_slug),
         )
     logger.info("Provider updated (xtream): %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)
@@ -370,6 +374,7 @@ async def add_local_file_provider(
     request: Request,
     name: str = Form(...),
     local_file_path: str = Form(...),
+    priority: int = Form(10),
     current_user: TokenData = Depends(get_current_user),
 ):
     try:
@@ -410,8 +415,8 @@ async def add_local_file_provider(
     slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO providers (name, slug, type, local_file_path) VALUES (?, ?, 'local_file', ?)",
-            (data.name, slug, data.local_file_path),
+            "INSERT INTO providers (name, slug, type, local_file_path, priority) VALUES (?, ?, 'local_file', ?, ?)",
+            (data.name, slug, data.local_file_path, max(1, priority)),
         )
     logger.info("Provider added (local_file): %s → %s", data.name, data.local_file_path)
     return RedirectResponse("/providers", status_code=302)
@@ -423,6 +428,7 @@ async def edit_local_file_provider(
     request: Request,
     name: str = Form(...),
     local_file_path: str = Form(...),
+    priority: int = Form(10),
     current_user: TokenData = Depends(get_current_user),
 ):
     provider = _get_provider_by_slug(provider_slug)
@@ -463,8 +469,8 @@ async def edit_local_file_provider(
     new_slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "UPDATE providers SET name = ?, slug = ?, local_file_path = ? WHERE slug = ?",
-            (data.name, new_slug, data.local_file_path, provider_slug),
+            "UPDATE providers SET name = ?, slug = ?, local_file_path = ?, priority = ? WHERE slug = ?",
+            (data.name, new_slug, data.local_file_path, max(1, priority), provider_slug),
         )
     logger.info("Provider updated (local_file): %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)
