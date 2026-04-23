@@ -346,10 +346,26 @@ async def toggle_provider(
     current_user: TokenData = Depends(get_current_user),
 ):
     with get_db() as conn:
+        before = conn.execute(
+            "SELECT is_active FROM providers WHERE slug = ?", (provider_slug,)
+        ).fetchone()
         conn.execute(
             "UPDATE providers SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE slug = ?",
             (provider_slug,),
         )
+
+    now_inactive = before and bool(before["is_active"])
+    if now_inactive:
+        from app.tasks.strm import deactivate_provider_strm
+        import threading
+        threading.Thread(
+            target=deactivate_provider_strm, args=(provider_slug,), daemon=True
+        ).start()
+        logger.info(
+            "STRM handover triggered for provider '%s' (deactivated) by %s",
+            provider_slug, current_user.username,
+        )
+
     logger.info("Provider toggled: %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)
 

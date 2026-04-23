@@ -5,21 +5,23 @@ Generates and maintains .strm files from the streams table, acting as a
 synchronisation layer between the database (source of truth) and the
 filesystem (projection).
 
-Provider gate
-─────────────
-Only providers with strm_mode = 'generate_all' participate. Providers in
-'import_selected' mode are skipped; their streams still exist and are
-filtered normally — STRM generation for them is deferred to a future
-UI-driven pipeline that will use streams.imported = TRUE.
+Provider eligibility
+────────────────────
+A provider participates in STRM generation only when:
+  - is_active = 1
+  - strm_mode = 'generate_all'
+
+Inactive providers and providers in import_selected mode are excluded.
+Their stream rows remain in the DB for filter tracking but produce no files.
 
 Provider priority
 ─────────────────
 Each provider has a numeric `priority` column (lower = higher priority,
-default 10).  When two or more generate_all providers supply the same
-entry, only the stream from the highest-priority (lowest number) provider
-generates the .strm file.  Ties are broken alphabetically by provider slug
-so the winner is always deterministic.  Lower-priority streams for the same
-entry are tracked in the DB but produce no file.
+default 10).  When two or more eligible providers supply the same entry,
+only the stream from the highest-priority (lowest number) provider generates
+the .strm file.  Ties are broken alphabetically by provider slug so the
+winner is always deterministic.  Lower-priority streams for the same entry
+are tracked in the DB but produce no file.
 
 Path derivation
 ───────────────
@@ -57,12 +59,21 @@ After processing all eligible streams, scan the entire vod_root for .strm
 files. Any file whose absolute path does not appear in the DB is deleted.
 Empty directories left behind are also removed.
 
-clear_provider_strm_files(provider_slug)
+deactivate_provider_strm(provider_slug)
 ────────────────────────────────────────
-Called when a provider switches to import_selected mode.  Deletes every
-.strm file owned by that provider, removes resulting empty directories, and
-clears strm_path + last_written_url on the affected stream rows so the
-state is consistent (no file on disk → NULL in DB).
+Called when a provider is disabled (is_active → 0) or switches to
+import_selected mode.  For each entry where this provider currently owns the
+.strm file (has strm_path), the function:
+  1. Searches for the next eligible winner from the remaining active
+     generate_all providers, excluding the departing provider.
+  2. If a replacement exists:
+       - Derives the replacement's target path.
+       - If the current file path matches the replacement's path: overwrite
+         the URL in place.
+       - If the paths differ: move the file to the replacement's path.
+       - Records the replacement's strm_path + last_written_url in the DB.
+  3. If no replacement exists: deletes the file and removes empty dirs.
+  4. Clears strm_path + last_written_url on the departing provider's row.
 """
 import logging
 import os
@@ -178,7 +189,8 @@ def _winning_stream_ids(conn: sqlite3.Connection, provider_slug: str | None = No
             SELECT s.stream_id, s.entry_id, p.priority, p.slug
             FROM streams s
             JOIN providers p ON p.slug = s.provider
-            WHERE p.strm_mode = 'generate_all'
+            WHERE p.is_active = 1
+              AND p.strm_mode = 'generate_all'
               AND s.exclude = 0
               AND s.entry_id IN (
                   SELECT entry_id FROM streams WHERE provider = ?
@@ -193,7 +205,8 @@ def _winning_stream_ids(conn: sqlite3.Connection, provider_slug: str | None = No
             SELECT s.stream_id, s.entry_id, p.priority, p.slug
             FROM streams s
             JOIN providers p ON p.slug = s.provider
-            WHERE p.strm_mode = 'generate_all'
+            WHERE p.is_active = 1
+              AND p.strm_mode = 'generate_all'
               AND s.exclude = 0
             ORDER BY p.priority, p.slug
             """,
@@ -234,7 +247,8 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
         FROM streams s
         JOIN entries e ON e.entry_id = s.entry_id
         JOIN providers p ON p.slug = s.provider
-        WHERE p.strm_mode = 'generate_all'
+        WHERE p.is_active = 1
+          AND p.strm_mode = 'generate_all'
           AND s.exclude = 0
         ORDER BY s.stream_id
         """
@@ -363,44 +377,140 @@ def _cleanup_orphans(conn: sqlite3.Connection, vod_root: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Mode-switch cleanup
+# Provider deactivation — handover + cleanup
 # ---------------------------------------------------------------------------
 
-def clear_provider_strm_files(provider_slug: str) -> int:
+def deactivate_provider_strm(provider_slug: str) -> dict:
     """
-    Delete all .strm files owned by provider_slug and clear the DB fields.
+    Handle STRM state when a provider is disabled or switched to import_selected.
 
-    Called when a provider is switched to import_selected mode so that the
-    filesystem stays consistent with the DB (no file = NULL strm_path).
-    Returns the number of files deleted.
+    For every entry where provider_slug currently owns the .strm file
+    (strm_path IS NOT NULL), finds the next eligible winner from the remaining
+    active generate_all providers and either:
+      - hands the file over to that winner (overwrite URL in place, or move if
+        the replacement's derived path differs), or
+      - deletes the file if no replacement exists.
+
+    Always clears strm_path + last_written_url on provider_slug's stream rows.
+
+    The caller must have already committed the is_active=0 or strm_mode change
+    to the DB before calling this, so the departing provider is excluded from
+    the replacement search automatically.
+
+    Returns a stats dict with keys: handed_over, deleted, errors.
     """
-    deleted = 0
+    stats = {"handed_over": 0, "deleted": 0, "errors": 0}
+    vod_root = _vod_root()
+
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT stream_id, strm_path FROM streams WHERE provider = ? AND strm_path IS NOT NULL",
+        # Streams that this provider currently owns (wrote to disk)
+        owned = conn.execute(
+            """
+            SELECT s.stream_id, s.entry_id, s.strm_path,
+                   s.filtered_title,
+                   e.type, e.cleaned_title, e.year, e.season, e.episode
+            FROM streams s
+            JOIN entries e ON e.entry_id = s.entry_id
+            WHERE s.provider = ?
+              AND s.strm_path IS NOT NULL
+            """,
             (provider_slug,),
         ).fetchall()
 
-        for row in rows:
-            path = row["strm_path"]
-            try:
-                if path and os.path.exists(path):
-                    os.remove(path)
-                    deleted += 1
-                    _remove_empty_dirs(os.path.dirname(path))
-                    logger.debug("[STRM] Removed file on mode switch: %s", path)
-            except OSError as exc:
-                logger.warning("[STRM] Could not remove %s: %s", path, exc)
+        for owned_row in owned:
+            entry_id   = owned_row["entry_id"]
+            owned_path = owned_row["strm_path"]
 
+            # Find the best replacement: active, generate_all, not this provider,
+            # lowest priority then slug alphabetically
+            replacement = conn.execute(
+                """
+                SELECT s.stream_id, s.stream_url,
+                       s.filtered_title,
+                       e.type, e.cleaned_title, e.year, e.season, e.episode
+                FROM streams s
+                JOIN entries e ON e.entry_id = s.entry_id
+                JOIN providers p ON p.slug = s.provider
+                WHERE s.entry_id = ?
+                  AND s.provider != ?
+                  AND p.is_active = 1
+                  AND p.strm_mode = 'generate_all'
+                  AND s.exclude = 0
+                ORDER BY p.priority, p.slug
+                LIMIT 1
+                """,
+                (entry_id, provider_slug),
+            ).fetchone()
+
+            try:
+                if replacement:
+                    rep_title = (
+                        replacement["filtered_title"] or replacement["cleaned_title"] or ""
+                    ).strip()
+                    if not rep_title:
+                        # Replacement has no usable title; fall through to delete
+                        replacement = None
+                    else:
+                        rep_path = _derive_path(
+                            entry_type=replacement["type"],
+                            title=rep_title,
+                            year=replacement["year"],
+                            season=replacement["season"],
+                            episode=replacement["episode"],
+                            vod_root=vod_root,
+                        )
+                        rep_url = replacement["stream_url"]
+
+                        if owned_path and os.path.exists(owned_path):
+                            if os.path.abspath(owned_path) == os.path.abspath(rep_path):
+                                # Same path — just overwrite the URL
+                                _write_strm(rep_path, rep_url)
+                            else:
+                                # Different path — move then the file is at rep_path;
+                                # content will be overwritten with the replacement URL
+                                _move_strm(owned_path, rep_path)
+                                _write_strm(rep_path, rep_url)
+                        else:
+                            # Owned file missing — write fresh
+                            _write_strm(rep_path, rep_url)
+
+                        conn.execute(
+                            "UPDATE streams SET strm_path = ?, last_written_url = ? WHERE stream_id = ?",
+                            (rep_path, rep_url, replacement["stream_id"]),
+                        )
+                        stats["handed_over"] += 1
+                        logger.debug(
+                            "[STRM] Handed over entry %s from %s to stream_id=%s",
+                            entry_id, provider_slug, replacement["stream_id"],
+                        )
+
+                if not replacement:
+                    # No eligible successor — delete the file
+                    if owned_path and os.path.exists(owned_path):
+                        os.remove(owned_path)
+                        _remove_empty_dirs(os.path.dirname(owned_path))
+                    stats["deleted"] += 1
+                    logger.debug(
+                        "[STRM] No replacement for entry %s — file deleted", entry_id
+                    )
+
+            except Exception as exc:
+                logger.error(
+                    "[STRM] Handover error for entry %s: %s", entry_id, exc, exc_info=True
+                )
+                stats["errors"] += 1
+
+        # Clear all strm state for this provider regardless of what happened above
         conn.execute(
             "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE provider = ?",
             (provider_slug,),
         )
 
     logger.info(
-        "[STRM] Mode-switch cleanup — provider=%s  files_deleted=%d", provider_slug, deleted
+        "[STRM] Deactivation — provider=%s  handed_over=%d  deleted=%d  errors=%d",
+        provider_slug, stats["handed_over"], stats["deleted"], stats["errors"],
     )
-    return deleted
+    return stats
 
 
 # ---------------------------------------------------------------------------
@@ -425,10 +535,13 @@ def generate_strm(provider_slug: str | None = None) -> None:
     with get_db() as conn:
         if provider_slug:
             row = conn.execute(
-                "SELECT strm_mode FROM providers WHERE slug = ?", (provider_slug,)
+                "SELECT is_active, strm_mode FROM providers WHERE slug = ?", (provider_slug,)
             ).fetchone()
             if not row:
                 logger.warning("[STRM] Provider '%s' not found — aborting", provider_slug)
+                return
+            if not row["is_active"]:
+                logger.info("[STRM] Provider '%s' is inactive — skipping", provider_slug)
                 return
             if row["strm_mode"] != "generate_all":
                 logger.info(
