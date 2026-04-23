@@ -375,6 +375,12 @@ async def delete_provider(
     provider_slug: str,
     current_user: TokenData = Depends(get_current_user),
 ):
+    from app.tasks.strm import deactivate_provider_strm
+
+    # Run handover/cleanup before touching the DB so replacements can still be
+    # found and files are dealt with while stream rows still exist.
+    deactivate_provider_strm(provider_slug)
+
     with get_db() as conn:
         conn.execute("DELETE FROM providers WHERE slug = ?", (provider_slug,))
         conn.execute("DELETE FROM streams WHERE provider = ?", (provider_slug,))
