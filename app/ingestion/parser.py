@@ -137,7 +137,9 @@ def _extract_air_date(value: str) -> tuple[str | None, str]:
     raw = match.group(0)
     # normalise separator to '-'
     formatted = re.sub(r"[ ._]", "-", raw)
-    cleaned = re.sub(re.escape(raw), "", value).strip()
+    # Keep only the text before the date — mirrors how movie year stripping works.
+    # Everything after the date is encoding noise (quality tags, release group, etc.)
+    cleaned = value[: match.start()]
     return formatted, cleaned
 
 

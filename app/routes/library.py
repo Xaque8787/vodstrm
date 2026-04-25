@@ -125,71 +125,58 @@ async def list_entries(
     extra_where = (" AND " + " AND ".join(conditions)) if conditions else ""
 
     with get_db() as conn:
-        if type_filter in ("series", ""):
-            series_query = f"""
+        if type_filter == "series":
+            series_query = _series_group_query(extra_where)
+            total = conn.execute(f"SELECT COUNT(*) FROM ({series_query})", params).fetchone()[0]
+            rows = conn.execute(series_query + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
+            entries = [_format_series_group(r) for r in rows]
+
+        elif type_filter == "tv_vod":
+            tv_query = _tv_vod_group_query(extra_where)
+            total = conn.execute(f"SELECT COUNT(*) FROM ({tv_query})", params).fetchone()[0]
+            rows = conn.execute(tv_query + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
+            entries = [_format_tv_vod_group(r) for r in rows]
+
+        elif type_filter == "":
+            # All types: series groups + tv_vod groups + individual items
+            series_query = _series_group_query(extra_where)
+            tv_query = _tv_vod_group_query(extra_where)
+            individual_query = f"""
                 SELECT
-                    e.cleaned_title,
-                    MIN({_FILTERED_TITLE_SUBQUERY}) AS filtered_title,
-                    'series' AS type,
-                    MIN(e.year) AS year,
-                    COUNT(DISTINCT e.season) AS season_count,
-                    COUNT(e.entry_id) AS episode_count,
-                    MAX(e.cover_art) AS cover_art,
-                    SUM(CASE WHEN s2.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
-                    SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
-                                  AND s2.exclude = 0 AND s2.imported = 0
-                             THEN 1 ELSE 0 END) AS can_add_count
+                    e.entry_id, e.type, e.cleaned_title, e.year,
+                    e.season, e.episode, e.cover_art,
+                    {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
+                    (SELECT s3.provider FROM streams s3 WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
+                    (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
+                    {_CAN_ADD_SUBQUERY} AS can_add_count
                 FROM entries e
-                LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
-                LEFT JOIN providers _p2 ON _p2.slug = s2.provider
-                WHERE e.type = 'series' {extra_where}
-                GROUP BY e.cleaned_title
+                WHERE e.type NOT IN ('series', 'tv_vod') {extra_where}
                 ORDER BY e.cleaned_title
             """
-            if type_filter == "series":
-                total = conn.execute(
-                    f"SELECT COUNT(*) FROM ({series_query})", params
-                ).fetchone()[0]
-                rows = conn.execute(
-                    series_query + " LIMIT ? OFFSET ?", params + [per_page, offset]
-                ).fetchall()
-                entries = [_format_series_group(r) for r in rows]
-            else:
-                individual_query = f"""
-                    SELECT
-                        e.entry_id, e.type, e.cleaned_title, e.year,
-                        e.season, e.episode, e.cover_art,
-                        {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
-                        (SELECT s3.provider FROM streams s3 WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
-                        (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
-                        {_CAN_ADD_SUBQUERY} AS can_add_count
-                    FROM entries e
-                    WHERE e.type NOT IN ('series') {extra_where}
-                    ORDER BY e.cleaned_title
-                """
-                series_count = conn.execute(
-                    f"SELECT COUNT(*) FROM ({series_query})", params
-                ).fetchone()[0]
-                individual_count = conn.execute(
-                    f"SELECT COUNT(*) FROM ({individual_query})", params
-                ).fetchone()[0]
-                total = series_count + individual_count
+            series_count = conn.execute(f"SELECT COUNT(*) FROM ({series_query})", params).fetchone()[0]
+            tv_count = conn.execute(f"SELECT COUNT(*) FROM ({tv_query})", params).fetchone()[0]
+            individual_count = conn.execute(f"SELECT COUNT(*) FROM ({individual_query})", params).fetchone()[0]
+            total = series_count + tv_count + individual_count
 
-                series_rows = conn.execute(
-                    series_query + " LIMIT ? OFFSET ?",
-                    params + [per_page, offset],
-                ).fetchall()
-                remaining = per_page - len(series_rows)
-                indiv_offset = max(0, offset - series_count)
-                indiv_rows = []
-                if remaining > 0:
-                    indiv_rows = conn.execute(
-                        individual_query + " LIMIT ? OFFSET ?",
-                        params + [remaining, indiv_offset],
-                    ).fetchall()
+            # Paginate across the three result sets in order
+            series_rows = conn.execute(series_query + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
+            remaining = per_page - len(series_rows)
+            tv_offset = max(0, offset - series_count)
+            tv_rows = []
+            if remaining > 0:
+                tv_rows = conn.execute(tv_query + " LIMIT ? OFFSET ?", params + [remaining, tv_offset]).fetchall()
+            remaining -= len(tv_rows)
+            indiv_offset = max(0, offset - series_count - tv_count)
+            indiv_rows = []
+            if remaining > 0:
+                indiv_rows = conn.execute(individual_query + " LIMIT ? OFFSET ?", params + [remaining, indiv_offset]).fetchall()
 
-                entries = [_format_series_group(r) for r in series_rows] + \
-                          [_format_individual(r) for r in indiv_rows]
+            entries = (
+                [_format_series_group(r) for r in series_rows]
+                + [_format_tv_vod_group(r) for r in tv_rows]
+                + [_format_individual(r) for r in indiv_rows]
+            )
+
         else:
             q = f"""
                 SELECT
@@ -215,6 +202,51 @@ async def list_entries(
     })
 
 
+def _series_group_query(extra_where: str) -> str:
+    return f"""
+        SELECT
+            e.cleaned_title,
+            MIN({_FILTERED_TITLE_SUBQUERY}) AS filtered_title,
+            'series' AS type,
+            MIN(e.year) AS year,
+            COUNT(DISTINCT e.season) AS season_count,
+            COUNT(e.entry_id) AS episode_count,
+            MAX(e.cover_art) AS cover_art,
+            SUM(CASE WHEN s2.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
+            SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
+                          AND s2.exclude = 0 AND s2.imported = 0
+                     THEN 1 ELSE 0 END) AS can_add_count
+        FROM entries e
+        LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
+        LEFT JOIN providers _p2 ON _p2.slug = s2.provider
+        WHERE e.type = 'series' {extra_where}
+        GROUP BY e.cleaned_title
+        ORDER BY e.cleaned_title
+    """
+
+
+def _tv_vod_group_query(extra_where: str) -> str:
+    return f"""
+        SELECT
+            e.cleaned_title,
+            MIN({_FILTERED_TITLE_SUBQUERY}) AS filtered_title,
+            'tv_vod' AS type,
+            COUNT(DISTINCT substr(e.air_date, 1, 4)) AS year_count,
+            COUNT(e.entry_id) AS episode_count,
+            MAX(e.cover_art) AS cover_art,
+            SUM(CASE WHEN s2.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
+            SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
+                          AND s2.exclude = 0 AND s2.imported = 0
+                     THEN 1 ELSE 0 END) AS can_add_count
+        FROM entries e
+        LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
+        LEFT JOIN providers _p2 ON _p2.slug = s2.provider
+        WHERE e.type = 'tv_vod' {extra_where}
+        GROUP BY e.cleaned_title
+        ORDER BY e.cleaned_title
+    """
+
+
 def _display_title(r) -> str:
     try:
         ft = r["filtered_title"]
@@ -237,6 +269,23 @@ def _format_series_group(r) -> dict:
         "owned_count": r["owned_count"] or 0,
         "can_add": (r["can_add_count"] or 0) > 0,
         "is_series_group": True,
+    }
+
+
+def _format_tv_vod_group(r) -> dict:
+    return {
+        "entry_id": None,
+        "type": "tv_vod",
+        "cleaned_title": r["cleaned_title"],
+        "display_title": _display_title(r),
+        "year_count": r["year_count"],
+        "episode_count": r["episode_count"],
+        "cover_art": r["cover_art"],
+        "is_owned": (r["owned_count"] or 0) > 0,
+        "owned_count": r["owned_count"] or 0,
+        "can_add": (r["can_add_count"] or 0) > 0,
+        "is_tv_vod_group": True,
+        "is_series_group": False,
     }
 
 
@@ -367,6 +416,241 @@ async def list_episodes(
     } for r in rows]
 
     return JSONResponse({"title": title, "season": season, "episodes": episodes})
+
+
+@router.get("/tv_vod/{title}/years", response_class=JSONResponse)
+async def list_tv_vod_years(
+    title: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Return years for a tv_vod show title with per-year ownership info."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                substr(e.air_date, 1, 4) AS year,
+                COUNT(e.entry_id) AS episode_count,
+                MAX(e.cover_art) AS cover_art,
+                SUM(CASE WHEN s.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
+                SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
+                              AND s.exclude = 0 AND s.imported = 0
+                         THEN 1 ELSE 0 END) AS can_add_count
+            FROM entries e
+            LEFT JOIN streams s ON s.entry_id = e.entry_id
+            LEFT JOIN providers p ON p.slug = s.provider
+            WHERE e.type = 'tv_vod' AND lower(e.cleaned_title) = lower(?)
+            GROUP BY substr(e.air_date, 1, 4)
+            ORDER BY substr(e.air_date, 1, 4) DESC
+            """,
+            (title,),
+        ).fetchall()
+
+    years = [{
+        "year": r["year"] or "Unknown",
+        "episode_count": r["episode_count"],
+        "cover_art": r["cover_art"],
+        "owned_count": r["owned_count"] or 0,
+        "is_owned": (r["owned_count"] or 0) > 0,
+        "can_add": (r["can_add_count"] or 0) > 0,
+    } for r in rows]
+
+    return JSONResponse({"title": title, "years": years})
+
+
+@router.get("/tv_vod/{title}/years/{year}/episodes", response_class=JSONResponse)
+async def list_tv_vod_episodes(
+    title: str,
+    year: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Return individual episodes for a tv_vod show title + year."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                e.entry_id, e.air_date, e.cover_art,
+                (SELECT s2.provider FROM streams s2 WHERE s2.entry_id = e.entry_id AND s2.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
+                (SELECT COUNT(*) FROM streams s2 WHERE s2.entry_id = e.entry_id) AS stream_count,
+                (SELECT COUNT(*) FROM streams s2
+                 JOIN providers p2 ON p2.slug = s2.provider
+                 WHERE s2.entry_id = e.entry_id
+                   AND p2.strm_mode = 'import_selected' AND p2.is_active = 1
+                   AND s2.exclude = 0 AND s2.imported = 0
+                ) AS can_add_count
+            FROM entries e
+            WHERE e.type = 'tv_vod'
+              AND lower(e.cleaned_title) = lower(?)
+              AND substr(e.air_date, 1, 4) = ?
+            ORDER BY e.air_date DESC
+            """,
+            (title, year),
+        ).fetchall()
+
+    episodes = [{
+        "entry_id": r["entry_id"],
+        "air_date": r["air_date"],
+        "cover_art": r["cover_art"],
+        "is_owned": r["owner_slug"] is not None,
+        "owner_slug": r["owner_slug"],
+        "stream_count": r["stream_count"],
+        "can_add": (r["can_add_count"] or 0) > 0,
+    } for r in rows]
+
+    return JSONResponse({"title": title, "year": year, "episodes": episodes})
+
+
+@router.post("/tv_vod/{title}/years/{year}/add")
+async def add_tv_vod_year(
+    title: str,
+    year: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    from app.tasks.strm import generate_strm
+    with get_db() as conn:
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='tv_vod' AND lower(cleaned_title)=lower(?) AND substr(air_date,1,4)=?",
+                (title, year),
+            ).fetchall()
+        ]
+        marked = 0
+        for eid in entry_ids:
+            stream = conn.execute(
+                """
+                SELECT s.stream_id FROM streams s
+                JOIN providers p ON p.slug = s.provider
+                WHERE s.entry_id = ?
+                  AND p.strm_mode = 'import_selected' AND p.is_active = 1
+                  AND s.exclude = 0 AND s.imported = 0
+                ORDER BY p.priority, p.slug LIMIT 1
+                """,
+                (eid,),
+            ).fetchone()
+            if stream:
+                conn.execute("UPDATE streams SET imported = 1 WHERE stream_id = ?", (stream["stream_id"],))
+                marked += 1
+        logger.info("[LIBRARY] Add tv_vod title=%r year=%s episodes=%d by=%s", title, year, marked, current_user.username)
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after tv_vod year Add failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True, "marked": marked})
+
+
+@router.post("/tv_vod/{title}/years/{year}/remove")
+async def remove_tv_vod_year(
+    title: str,
+    year: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    from app.tasks.strm import generate_strm
+    with get_db() as conn:
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='tv_vod' AND lower(cleaned_title)=lower(?) AND substr(air_date,1,4)=?",
+                (title, year),
+            ).fetchall()
+        ]
+        cleared = 0
+        for eid in entry_ids:
+            owned = conn.execute(
+                """
+                SELECT s.stream_id, s.strm_path FROM streams s
+                JOIN providers p ON p.slug = s.provider
+                WHERE s.entry_id = ? AND p.strm_mode = 'import_selected' AND s.imported = 1
+                """,
+                (eid,),
+            ).fetchall()
+            for row in owned:
+                if row["strm_path"]:
+                    _delete_strm_file(row["strm_path"])
+                conn.execute(
+                    "UPDATE streams SET imported = 0, strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
+                    (row["stream_id"],),
+                )
+                cleared += 1
+        logger.info("[LIBRARY] Remove tv_vod title=%r year=%s cleared=%d by=%s", title, year, cleared, current_user.username)
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after tv_vod year Remove failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True, "cleared": cleared})
+
+
+@router.post("/tv_vod/{title}/add")
+async def add_tv_vod_all(
+    title: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    from app.tasks.strm import generate_strm
+    with get_db() as conn:
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='tv_vod' AND lower(cleaned_title)=lower(?)",
+                (title,),
+            ).fetchall()
+        ]
+        marked = 0
+        for eid in entry_ids:
+            stream = conn.execute(
+                """
+                SELECT s.stream_id FROM streams s
+                JOIN providers p ON p.slug = s.provider
+                WHERE s.entry_id = ?
+                  AND p.strm_mode = 'import_selected' AND p.is_active = 1
+                  AND s.exclude = 0 AND s.imported = 0
+                ORDER BY p.priority, p.slug LIMIT 1
+                """,
+                (eid,),
+            ).fetchone()
+            if stream:
+                conn.execute("UPDATE streams SET imported = 1 WHERE stream_id = ?", (stream["stream_id"],))
+                marked += 1
+        logger.info("[LIBRARY] Add tv_vod all title=%r episodes=%d by=%s", title, marked, current_user.username)
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after tv_vod Add All failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True, "marked": marked})
+
+
+@router.post("/tv_vod/{title}/remove")
+async def remove_tv_vod_all(
+    title: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    from app.tasks.strm import generate_strm
+    with get_db() as conn:
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='tv_vod' AND lower(cleaned_title)=lower(?)",
+                (title,),
+            ).fetchall()
+        ]
+        cleared = 0
+        for eid in entry_ids:
+            owned = conn.execute(
+                """
+                SELECT s.stream_id, s.strm_path FROM streams s
+                JOIN providers p ON p.slug = s.provider
+                WHERE s.entry_id = ? AND p.strm_mode = 'import_selected' AND s.imported = 1
+                """,
+                (eid,),
+            ).fetchall()
+            for row in owned:
+                if row["strm_path"]:
+                    _delete_strm_file(row["strm_path"])
+                conn.execute(
+                    "UPDATE streams SET imported = 0, strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
+                    (row["stream_id"],),
+                )
+                cleared += 1
+        logger.info("[LIBRARY] Remove tv_vod all title=%r cleared=%d by=%s", title, cleared, current_user.username)
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after tv_vod Remove All failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True, "cleared": cleared})
 
 
 # ---------------------------------------------------------------------------

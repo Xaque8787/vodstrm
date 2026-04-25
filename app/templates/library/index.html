@@ -604,17 +604,35 @@ function renderCard(e, idx) {
           </div>
         </div>
       </div>`;
+  } else if (e.is_tv_vod_group) {
+    const ownedClass = e.is_owned ? ' is-owned' : '';
+    const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
+    const meta = [
+      `${e.year_count} year${e.year_count !== 1 ? 's' : ''}`,
+      `${e.episode_count} ep`,
+    ].filter(Boolean).join(' · ');
+    const displayTitle = e.display_title || e.cleaned_title;
+    return `
+      <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="tv_vod_group">
+        ${artEl(e.cover_art, displayTitle, 'tv_vod')}
+        <div class="card-body">
+          <div class="card-title">${esc(displayTitle)}</div>
+          <div class="card-meta">${esc(meta)}</div>
+          <div class="card-badges">
+            <span class="${typeBadgeClass('tv_vod')}">TV VOD</span>
+            ${ownedBadge}
+          </div>
+          <div class="card-actions">
+            <button class="btn-action btn-add" data-action="add-tv-vod" ${!e.can_add ? 'disabled' : ''}>Add All</button>
+            <button class="btn-action btn-remove" data-action="remove-tv-vod" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+          </div>
+        </div>
+      </div>`;
   } else {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
-    const isTvVod = e.type === 'tv_vod';
     const displayTitle = e.display_title || e.cleaned_title;
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
-    const actionsHtml = !isTvVod ? `
-      <div class="card-actions">
-        <button class="btn-action btn-add" data-action="add-entry" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}>Add</button>
-        <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
-      </div>` : '';
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}">
         ${artEl(e.cover_art, displayTitle, e.type)}
@@ -625,7 +643,10 @@ function renderCard(e, idx) {
             <span class="${typeBadgeClass(e.type)}">${esc(e.type)}</span>
             ${ownedBadge}
           </div>
-          ${actionsHtml}
+          <div class="card-actions">
+            <button class="btn-action btn-add" data-action="add-entry" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}>Add</button>
+            <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+          </div>
         </div>
       </div>`;
   }
@@ -694,6 +715,7 @@ function closeExpand() {
   const existing = document.getElementById('expand-panel');
   if (existing) existing.remove();
   expandedTitle = null;
+  closeTvVodExpand();
 }
 
 async function toggleSeriesExpand(cardEl, title) {
@@ -809,6 +831,121 @@ async function toggleEpisodes(season, seriesTitle) {
   }
 }
 
+// ── TV VOD expand / year drill-down ──────────────────────────────────────────
+
+let expandedTvVodTitle = null;
+
+function closeTvVodExpand() {
+  const existing = document.getElementById('tv-vod-expand-panel');
+  if (existing) existing.remove();
+  expandedTvVodTitle = null;
+}
+
+async function toggleTvVodExpand(cardEl, title) {
+  if (expandedTvVodTitle === title) { closeTvVodExpand(); return; }
+  closeTvVodExpand();
+  expandedTvVodTitle = title;
+
+  const panel = document.createElement('div');
+  panel.id = 'tv-vod-expand-panel';
+  panel.className = 'expand-panel';
+  panel.innerHTML = `
+    <div class="expand-panel-header">
+      <span>${esc(title)}</span>
+      <button class="expand-close" onclick="closeTvVodExpand()">&#215;</button>
+    </div>
+    <div class="season-list" id="tv-vod-year-list"><div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">Loading years…</div></div>
+  `;
+
+  if (cardEl.nextSibling) {
+    cardEl.parentNode.insertBefore(panel, cardEl.nextSibling);
+  } else {
+    cardEl.parentNode.appendChild(panel);
+  }
+
+  try {
+    const data = await fetch(`/library/tv_vod/${encodeURIComponent(title)}/years`).then(r => r.json());
+    renderTvVodYears(data, title);
+  } catch(err) {
+    const yl = document.getElementById('tv-vod-year-list');
+    if (yl) yl.innerHTML = `<div style="padding:16px;color:var(--color-danger);">Failed to load years.</div>`;
+  }
+}
+
+function renderTvVodYears(data, title) {
+  const list = document.getElementById('tv-vod-year-list');
+  if (!data.years || !data.years.length) {
+    list.innerHTML = '<div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">No years found.</div>';
+    return;
+  }
+
+  list._tvVodTitle = title;
+
+  list.innerHTML = data.years.map(y => {
+    const yr = y.year;
+    const ownedInfo = y.owned_count > 0
+      ? `<span style="font-size:0.72rem;color:#198754;font-weight:600;">${y.owned_count} owned</span>`
+      : '';
+    return `
+      <div class="season-row" id="tv-vod-year-${yr}" data-year="${yr}">
+        <div class="season-header">
+          <div class="season-expand-area" data-action="toggle-tv-vod-episodes" data-year="${yr}">
+            <span class="season-chevron" id="tv-vod-chev-${yr}">&#9654;</span>
+            <span class="season-label">${esc(yr)}</span>
+            <span class="season-meta">${y.episode_count} episode${y.episode_count !== 1 ? 's' : ''}</span>
+          </div>
+          ${ownedInfo}
+          <div class="season-actions">
+            <button class="btn-action btn-add" style="padding:3px 8px;font-size:0.72rem;"
+              data-action="add-tv-vod-year" data-year="${yr}" ${!y.can_add ? 'disabled' : ''}>Add</button>
+            <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
+              data-action="remove-tv-vod-year" data-year="${yr}" ${!y.is_owned ? 'disabled' : ''}>Remove</button>
+          </div>
+        </div>
+        <div class="episode-list" id="tv-vod-eps-${yr}"></div>
+      </div>`;
+  }).join('');
+}
+
+async function toggleTvVodEpisodes(year, title) {
+  const epList = document.getElementById(`tv-vod-eps-${year}`);
+  const chev = document.getElementById(`tv-vod-chev-${year}`);
+  if (!epList) return;
+  const isOpen = epList.classList.contains('open');
+
+  if (isOpen) {
+    epList.classList.remove('open');
+    chev && chev.classList.remove('open');
+    return;
+  }
+
+  epList.classList.add('open');
+  chev && chev.classList.add('open');
+
+  if (epList.dataset.loaded) return;
+  epList.innerHTML = '<div style="padding:12px 32px;font-size:0.82rem;color:var(--color-text-muted);">Loading…</div>';
+
+  try {
+    const data = await fetch(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/episodes`).then(r => r.json());
+    epList.dataset.loaded = '1';
+    epList.innerHTML = data.episodes.map(ep => {
+      return `
+      <div class="episode-row" data-entry-id="${esc(ep.entry_id)}">
+        <span class="episode-num" style="min-width:90px;">${esc(ep.air_date || '?')}</span>
+        <span class="episode-label">${ep.is_owned ? `<span class="ep-owned-badge">&#10003;</span> ` : ''}${esc(ep.air_date || '?')}</span>
+        <div class="episode-actions">
+          <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
+            ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
+          <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
+            ${!ep.is_owned ? 'disabled' : ''}>Remove</button>
+        </div>
+      </div>`;
+    }).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
+  } catch(e) {
+    epList.innerHTML = '<div style="padding:12px 32px;color:var(--color-danger);font-size:0.82rem;">Failed to load episodes.</div>';
+  }
+}
+
 // ── Single event delegation handler for all library actions ──────────────────
 // Using document-level listener to avoid stopPropagation conflicts between
 // the card grid and the expand panel (which lives inside the grid).
@@ -822,12 +959,49 @@ document.addEventListener('click', async function(e) {
     return;
   }
 
+  // ── TV VOD card expand: click on card body (not a button) ──
+  const tvVodCard = e.target.closest('[data-card-idx][data-type="tv_vod_group"]');
+  if (tvVodCard && !e.target.closest('[data-action]')) {
+    const d = cardData[parseInt(tvVodCard.dataset.cardIdx)];
+    if (d) toggleTvVodExpand(tvVodCard, d.cleaned_title);
+    return;
+  }
+
   const btn = e.target.closest('[data-action]');
   if (!btn || btn.disabled) return;
 
   const action = btn.dataset.action;
 
-  // ── Season list actions (inside expand panel) ──
+  // ── TV VOD year list actions (inside tv-vod expand panel) ──
+  const tvVodYearList = document.getElementById('tv-vod-year-list');
+  if (tvVodYearList && tvVodYearList.contains(btn)) {
+    const title = tvVodYearList._tvVodTitle;
+    const year = btn.dataset.year;
+    const entryId = btn.dataset.entryId;
+
+    if (action === 'toggle-tv-vod-episodes' && title && year) {
+      toggleTvVodEpisodes(year, title);
+    } else if (action === 'add-tv-vod-year' && title && year) {
+      btn.disabled = true;
+      await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/add`, 'POST');
+      refreshAfterTvVodAction();
+    } else if (action === 'remove-tv-vod-year' && title && year) {
+      btn.disabled = true;
+      await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/remove`, 'POST');
+      refreshAfterTvVodAction();
+    } else if (action === 'add-entry' && entryId) {
+      btn.disabled = true;
+      await api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST');
+      refreshAfterTvVodAction();
+    } else if (action === 'remove-entry' && entryId) {
+      btn.disabled = true;
+      await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
+      refreshAfterTvVodAction();
+    }
+    return;
+  }
+
+  // ── Season list actions (inside series expand panel) ──
   const seasonList = document.getElementById('season-list');
   if (seasonList && seasonList.contains(btn)) {
     const seriesTitle = seasonList._seriesTitle;
@@ -868,7 +1042,6 @@ document.addEventListener('click', async function(e) {
   const card = btn.closest('[data-card-idx]');
 
   if (action === 'add-entry') {
-    // entry_id is on the card element (for non-series individual items)
     const cardEl = btn.closest('[data-entry-id]');
     const entryId = cardEl ? cardEl.dataset.entryId : null;
     if (!entryId) return;
@@ -904,6 +1077,18 @@ document.addEventListener('click', async function(e) {
     btn.disabled = true;
     await api(`/library/series/${encodeURIComponent(d.cleaned_title)}/unfollow`, 'POST');
     refreshAfterAction();
+  } else if (action === 'add-tv-vod' && card) {
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
+    btn.disabled = true;
+    await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/add`, 'POST');
+    refreshAfterAction();
+  } else if (action === 'remove-tv-vod' && card) {
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
+    btn.disabled = true;
+    await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/remove`, 'POST');
+    refreshAfterAction();
   }
 });
 
@@ -916,6 +1101,22 @@ function refreshAfterAction() {
         const d = cardData[parseInt(c.dataset.cardIdx)];
         if (d && d.cleaned_title === savedTitle) {
           toggleSeriesExpand(c, savedTitle);
+          break;
+        }
+      }
+    }
+  });
+}
+
+function refreshAfterTvVodAction() {
+  const savedTitle = expandedTvVodTitle;
+  fetchEntries().then(() => {
+    if (savedTitle) {
+      const allCards = document.querySelectorAll('[data-card-idx][data-type="tv_vod_group"]');
+      for (const c of allCards) {
+        const d = cardData[parseInt(c.dataset.cardIdx)];
+        if (d && d.cleaned_title === savedTitle) {
+          toggleTvVodExpand(c, savedTitle);
           break;
         }
       }

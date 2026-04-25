@@ -112,6 +112,7 @@ def _derive_path(
     season: int | None,
     episode: int | None,
     vod_root: str,
+    air_date: str | None = None,
 ) -> str:
     t = _safe(title)
 
@@ -127,7 +128,11 @@ def _derive_path(
         return os.path.join(vod_root, "series", t, season_dir, filename)
 
     if entry_type == "tv_vod":
-        return os.path.join(vod_root, "series", t, f"{t}.strm")
+        # Year-based subdirectory mirrors how media servers organise daily shows.
+        # air_date is YYYY-MM-DD; year dir is the 4-digit year prefix.
+        year_dir = air_date[:4] if air_date and len(air_date) >= 4 else "Unknown"
+        filename = f"{t} {air_date}.strm" if air_date else f"{t}.strm"
+        return os.path.join(vod_root, "series", t, year_dir, filename)
 
     if entry_type == "live":
         return os.path.join(vod_root, "livetv", f"{t}.strm")
@@ -229,7 +234,7 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
         SELECT s.stream_id, s.stream_url, s.provider,
                s.strm_path, s.last_written_url,
                s.filtered_title,
-               e.type, e.cleaned_title, e.year, e.season, e.episode
+               e.type, e.cleaned_title, e.year, e.season, e.episode, e.air_date
         FROM streams s
         JOIN entries e ON e.entry_id = s.entry_id
         JOIN providers p ON p.slug = s.provider
@@ -293,6 +298,7 @@ def _sync_one(
         season=row["season"],
         episode=row["episode"],
         vod_root=vod_root,
+        air_date=row["air_date"] if "air_date" in row.keys() else None,
     )
 
     # ── New stream ────────────────────────────────────────────────────────
@@ -401,7 +407,7 @@ def deactivate_provider_strm(provider_slug: str) -> dict:
             """
             SELECT s.stream_id, s.entry_id, s.strm_path,
                    s.filtered_title,
-                   e.type, e.cleaned_title, e.year, e.season, e.episode
+                   e.type, e.cleaned_title, e.year, e.season, e.episode, e.air_date
             FROM streams s
             JOIN entries e ON e.entry_id = s.entry_id
             WHERE s.provider = ?
@@ -420,7 +426,7 @@ def deactivate_provider_strm(provider_slug: str) -> dict:
                 """
                 SELECT s.stream_id, s.stream_url,
                        s.filtered_title,
-                       e.type, e.cleaned_title, e.year, e.season, e.episode
+                       e.type, e.cleaned_title, e.year, e.season, e.episode, e.air_date
                 FROM streams s
                 JOIN entries e ON e.entry_id = s.entry_id
                 JOIN providers p ON p.slug = s.provider
@@ -454,6 +460,7 @@ def deactivate_provider_strm(provider_slug: str) -> dict:
                             season=replacement["season"],
                             episode=replacement["episode"],
                             vod_root=vod_root,
+                            air_date=replacement["air_date"] if "air_date" in replacement.keys() else None,
                         )
                         rep_url = replacement["stream_url"]
 
