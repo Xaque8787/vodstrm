@@ -357,10 +357,12 @@ async def toggle_provider(
     now_inactive = before and bool(before["is_active"])
     if now_inactive:
         from app.tasks.strm import deactivate_provider_strm_async
+        from app.tasks.live_m3u import deactivate_provider_live_m3u_async
         import threading
         threading.Thread(
             target=deactivate_provider_strm_async, args=(provider_slug,), daemon=True
         ).start()
+        deactivate_provider_live_m3u_async(provider_slug)
         logger.info(
             "STRM handover triggered for provider '%s' (deactivated) by %s",
             provider_slug, current_user.username,
@@ -376,10 +378,12 @@ async def delete_provider(
     current_user: TokenData = Depends(get_current_user),
 ):
     from app.tasks.strm import deactivate_provider_strm
+    from app.tasks.live_m3u import deactivate_provider_live_m3u
 
     # Run handover/cleanup before touching the DB so replacements can still be
     # found and files are dealt with while stream rows still exist.
     deactivate_provider_strm(provider_slug)
+    deactivate_provider_live_m3u(provider_slug)
 
     with get_db() as conn:
         conn.execute("DELETE FROM providers WHERE slug = ?", (provider_slug,))

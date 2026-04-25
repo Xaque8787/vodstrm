@@ -171,6 +171,12 @@ def ingest_all_providers() -> None:
     except Exception as exc:
         logger.error("[INGESTION] Global STRM orphan sweep failed: %s", exc, exc_info=True)
 
+    from app.tasks.live_m3u import generate_live_m3u
+    try:
+        generate_live_m3u()
+    except Exception as exc:
+        logger.error("[INGESTION] Live M3U generation failed: %s", exc, exc_info=True)
+
 
 @task("ingest_provider")
 def ingest_provider(provider_slug: str) -> None:
@@ -187,4 +193,11 @@ def ingest_provider(provider_slug: str) -> None:
     except Exception as exc:
         logger.error(
             "[INGESTION] STRM sync failed after ingest of '%s': %s", provider_slug, exc, exc_info=True
+        )
+    from app.tasks.live_m3u import generate_live_m3u
+    try:
+        generate_live_m3u()
+    except Exception as exc:
+        logger.error(
+            "[INGESTION] Live M3U generation failed after ingest of '%s': %s", provider_slug, exc, exc_info=True
         )

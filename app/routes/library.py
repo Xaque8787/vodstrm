@@ -669,6 +669,20 @@ async def remove_tv_vod_all(
 # Add / Remove — episode level (by entry_id)
 # ---------------------------------------------------------------------------
 
+def _entry_type(conn, entry_id: str) -> str | None:
+    row = conn.execute("SELECT type FROM entries WHERE entry_id = ?", (entry_id,)).fetchone()
+    return row["type"] if row else None
+
+
+def _maybe_generate_live_m3u(entry_type: str | None) -> None:
+    if entry_type == "live":
+        from app.tasks.live_m3u import generate_live_m3u
+        try:
+            generate_live_m3u()
+        except Exception as exc:
+            logger.error("[LIBRARY] generate_live_m3u failed: %s", exc, exc_info=True)
+
+
 @router.post("/entries/{entry_id}/add")
 async def add_entry(
     entry_id: str,
@@ -676,6 +690,7 @@ async def add_entry(
 ):
     from app.tasks.strm import generate_strm
     with get_db() as conn:
+        etype = _entry_type(conn, entry_id)
         stream = conn.execute(
             """
             SELECT s.stream_id FROM streams s
@@ -695,6 +710,7 @@ async def add_entry(
         generate_strm()
     except Exception as exc:
         logger.error("[LIBRARY] generate_strm after Add failed: %s", exc, exc_info=True)
+    _maybe_generate_live_m3u(etype)
     return JSONResponse({"ok": True})
 
 
@@ -705,6 +721,7 @@ async def remove_entry(
 ):
     from app.tasks.strm import generate_strm
     with get_db() as conn:
+        etype = _entry_type(conn, entry_id)
         owned = conn.execute(
             """
             SELECT s.stream_id, s.strm_path FROM streams s
@@ -725,6 +742,7 @@ async def remove_entry(
         generate_strm()
     except Exception as exc:
         logger.error("[LIBRARY] generate_strm after Remove failed: %s", exc, exc_info=True)
+    _maybe_generate_live_m3u(etype)
     return JSONResponse({"ok": True})
 
 
