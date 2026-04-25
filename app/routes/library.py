@@ -77,6 +77,31 @@ _FILTERED_TITLE_SUBQUERY = """
      LIMIT 1)
 """
 
+# Subquery: owner_slug for individual entries.
+# For non-live types: use strm_path (written to disk by the STRM engine).
+# For live entries: live channels are owned when any eligible stream exists
+# (generate_all: non-excluded; import_selected: imported=1). Returns the
+# highest-priority eligible provider slug, or NULL if none.
+_OWNER_SLUG_SUBQUERY = """
+    CASE WHEN e.type = 'live' THEN (
+        SELECT _sl.provider FROM streams _sl
+        JOIN providers _pl ON _pl.slug = _sl.provider
+        WHERE _sl.entry_id = e.entry_id
+          AND _pl.is_active = 1
+          AND _sl.exclude = 0
+          AND (
+              _pl.strm_mode = 'generate_all'
+              OR (_pl.strm_mode = 'import_selected' AND _sl.imported = 1)
+          )
+        ORDER BY _pl.priority, _pl.slug
+        LIMIT 1
+    ) ELSE (
+        SELECT s3.provider FROM streams s3
+        WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL
+        LIMIT 1
+    ) END
+"""
+
 
 @router.get("/entries", response_class=JSONResponse)
 async def list_entries(
@@ -110,14 +135,29 @@ async def list_entries(
         conditions.append("lower(e.cleaned_title) LIKE lower(?)")
         params.append(f"%{search}%")
 
+    _OWNED_EXISTS = """
+        EXISTS (
+            SELECT 1 FROM streams _so
+            JOIN providers _po ON _po.slug = _so.provider
+            WHERE _so.entry_id = e.entry_id
+              AND _po.is_active = 1
+              AND (
+                  CASE WHEN e.type = 'live' THEN (
+                      _so.exclude = 0
+                      AND (
+                          _po.strm_mode = 'generate_all'
+                          OR (_po.strm_mode = 'import_selected' AND _so.imported = 1)
+                      )
+                  ) ELSE (
+                      _so.strm_path IS NOT NULL
+                  ) END
+              )
+        )
+    """
     if owned == "true":
-        conditions.append(
-            "EXISTS (SELECT 1 FROM streams s2 WHERE s2.entry_id = e.entry_id AND s2.strm_path IS NOT NULL)"
-        )
+        conditions.append(_OWNED_EXISTS)
     elif owned == "false":
-        conditions.append(
-            "NOT EXISTS (SELECT 1 FROM streams s2 WHERE s2.entry_id = e.entry_id AND s2.strm_path IS NOT NULL)"
-        )
+        conditions.append(f"NOT {_OWNED_EXISTS}")
 
     # Always restrict to import_selected provider content
     conditions.append(_HAS_IMPORT_SELECTED)
@@ -146,7 +186,7 @@ async def list_entries(
                     e.entry_id, e.type, e.cleaned_title, e.year,
                     e.season, e.episode, e.cover_art,
                     {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
-                    (SELECT s3.provider FROM streams s3 WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
+                    {_OWNER_SLUG_SUBQUERY} AS owner_slug,
                     (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
                     {_CAN_ADD_SUBQUERY} AS can_add_count
                 FROM entries e
@@ -183,7 +223,7 @@ async def list_entries(
                     e.entry_id, e.type, e.cleaned_title, e.year,
                     e.season, e.episode, e.cover_art,
                     {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
-                    (SELECT s3.provider FROM streams s3 WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
+                    {_OWNER_SLUG_SUBQUERY} AS owner_slug,
                     (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
                     {_CAN_ADD_SUBQUERY} AS can_add_count
                 FROM entries e

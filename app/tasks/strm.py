@@ -192,9 +192,11 @@ def _winning_stream_ids(conn: sqlite3.Connection) -> set[int]:
         """
         SELECT s.stream_id, s.entry_id, p.priority, p.slug
         FROM streams s
+        JOIN entries e ON e.entry_id = s.entry_id
         JOIN providers p ON p.slug = s.provider
         WHERE p.is_active = 1
           AND s.exclude = 0
+          AND e.type != 'live'
           AND (
               p.strm_mode = 'generate_all'
               OR (p.strm_mode = 'import_selected' AND s.imported = 1)
@@ -240,6 +242,7 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
         JOIN providers p ON p.slug = s.provider
         WHERE p.is_active = 1
           AND s.exclude = 0
+          AND e.type != 'live'
           AND (
               p.strm_mode = 'generate_all'
               OR (p.strm_mode = 'import_selected' AND s.imported = 1)
@@ -564,6 +567,10 @@ def generate_strm() -> None:
     a single winner per entry based on priority, writes/moves/deletes files,
     and clears ownership from losers. Always runs globally — never scoped to
     a single provider — because STRM ownership is a global property.
+
+    Live (type='live') entries are excluded from .strm generation entirely —
+    they are covered by per-provider and combined .m3u files in livetv/.
+    Any pre-existing live .strm files are removed during the orphan sweep.
     """
     vod_root = _vod_root()
     os.makedirs(vod_root, exist_ok=True)
@@ -571,6 +578,15 @@ def generate_strm() -> None:
     logger.info("[STRM] Sync start — vod_root=%s", vod_root)
 
     with get_db() as conn:
+        # Clear any strm_path values left on live streams from before this
+        # change so the orphan sweep picks them up for deletion.
+        conn.execute(
+            """
+            UPDATE streams SET strm_path = NULL, last_written_url = NULL
+            WHERE strm_path IS NOT NULL
+              AND entry_id IN (SELECT entry_id FROM entries WHERE type = 'live')
+            """
+        )
         stats = _sync_streams(conn, vod_root)
         orphans = _cleanup_orphans(conn, vod_root)
 
