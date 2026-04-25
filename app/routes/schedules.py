@@ -122,8 +122,6 @@ def _resolve_task_fn(task_type: str, provider_slug: str | None):
         return clean_strm_orphans
 
     if task_type == "generate_strm":
-        if provider_slug:
-            return lambda: generate_strm(provider_slug=provider_slug)
         return generate_strm
 
     return None

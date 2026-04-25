@@ -99,6 +99,8 @@ CREATE TABLE IF NOT EXISTS streams (
     include_only     INTEGER DEFAULT 0,
     strm_path        TEXT,
     last_written_url TEXT,
+    -- 1 = eligible for STRM ownership (set by manual Add or follow engine;
+    --     cleared only by manual Remove; never cleared by Unfollow)
     imported         INTEGER NOT NULL DEFAULT 0
 );
 
@@ -157,6 +159,32 @@ CREATE TABLE IF NOT EXISTS filter_patterns (
 );
 
 CREATE INDEX IF NOT EXISTS idx_filter_patterns_filter ON filter_patterns(filter_id);
+
+-- -------------------------------------------------------
+-- LIBRARY: follow rules (import_selected eligibility)
+-- -------------------------------------------------------
+-- One row per rule: when this provider ingests content matching
+-- entry_type + entry_title (+ optional season), mark those streams
+-- as imported=1 so they become eligible for STRM ownership.
+-- season NULL = match all seasons; non-NULL = match exact season only.
+-- entry_type is restricted to movie/series; tv_vod is intentionally excluded.
+CREATE TABLE IF NOT EXISTS follows (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+    entry_type  TEXT NOT NULL CHECK(entry_type IN ('movie', 'series')),
+    entry_title TEXT NOT NULL,
+    season      INTEGER,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_follows_provider_id ON follows(provider_id);
+
+-- Enforce: only one stream per entry may hold a strm_path at a time.
+-- This is a partial unique index so NULL strm_path rows (non-owners) are
+-- excluded — multiple non-owners per entry is valid and expected.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_strm_owner
+    ON streams(entry_id)
+    WHERE strm_path IS NOT NULL;
 """
 
 

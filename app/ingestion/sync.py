@@ -11,12 +11,32 @@ Responsibilities:
 This layer never modifies raw parsed data and never touches the M3U files.
 """
 import logging
+import os
 import sqlite3
 from typing import Iterable
 
-from app.utils.env import local_now_iso
+from app.utils.env import local_now_iso, resolve_path
 
 logger = logging.getLogger("app.ingestion.sync")
+
+_VOD_ROOT_RELATIVE = os.getenv("VOD_DIR", "data/vod")
+
+
+def _delete_strm_file(path: str) -> None:
+    """Delete a .strm file and remove empty parent directories up to vod_root."""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+        vod_root = os.path.abspath(resolve_path(_VOD_ROOT_RELATIVE))
+        parent = os.path.dirname(os.path.abspath(path))
+        while parent and parent != vod_root:
+            if os.path.isdir(parent) and not os.listdir(parent):
+                os.rmdir(parent)
+                parent = os.path.dirname(parent)
+            else:
+                break
+    except OSError as exc:
+        logger.warning("[SYNC] Failed to delete strm file %s: %s", path, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +192,16 @@ def cleanup_stale_streams(conn: sqlite3.Connection, provider: str, current_batch
     """
     Delete streams for *provider* that were NOT seen in *current_batch_id*.
     This removes content that the provider has dropped since the last ingest.
+    Deletes .strm files for any stale rows that owned them before removing rows.
     Returns the number of rows deleted.
     """
+    stale_owned = conn.execute(
+        "SELECT strm_path FROM streams WHERE provider = ? AND batch_id != ? AND strm_path IS NOT NULL",
+        (provider, current_batch_id),
+    ).fetchall()
+    for row in stale_owned:
+        _delete_strm_file(row["strm_path"])
+
     cursor = conn.execute(
         "DELETE FROM streams WHERE provider = ? AND batch_id != ?",
         (provider, current_batch_id),
@@ -230,6 +258,13 @@ def purge_inactive_and_deleted_providers(conn: sqlite3.Connection) -> tuple[int,
         return 0, 0
 
     placeholders = ",".join("?" * len(slugs_to_purge))
+    owned_rows = conn.execute(
+        f"SELECT strm_path FROM streams WHERE provider IN ({placeholders}) AND strm_path IS NOT NULL",
+        tuple(slugs_to_purge),
+    ).fetchall()
+    for row in owned_rows:
+        _delete_strm_file(row["strm_path"])
+
     deleted_streams = conn.execute(
         f"DELETE FROM streams WHERE provider IN ({placeholders})",
         tuple(slugs_to_purge),
@@ -242,6 +277,68 @@ def purge_inactive_and_deleted_providers(conn: sqlite3.Connection) -> tuple[int,
         sorted(slugs_to_purge), deleted_streams, deleted_entries,
     )
     return deleted_streams, deleted_entries
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW RULES ENGINE
+# ---------------------------------------------------------------------------
+
+def apply_follow_rules(conn: sqlite3.Connection, provider_id: int) -> int:
+    """
+    Mark streams as eligible (imported=1) for follow rules matching provider_id.
+
+    For each follow rule, finds streams from that provider where the entry
+    type and title match the rule pattern. Season NULL matches all seasons;
+    an integer season matches only that exact season number.
+
+    Only sets imported=1 (never clears it — removal is a separate manual action).
+    Returns count of newly marked streams.
+    """
+    provider_row = conn.execute(
+        "SELECT slug FROM providers WHERE id = ?", (provider_id,)
+    ).fetchone()
+    if not provider_row:
+        return 0
+
+    rules = conn.execute(
+        "SELECT entry_type, entry_title, season FROM follows WHERE provider_id = ?",
+        (provider_id,),
+    ).fetchall()
+    if not rules:
+        return 0
+
+    marked = 0
+    slug = provider_row["slug"]
+    for rule in rules:
+        if rule["season"] is not None:
+            conn.execute(
+                """
+                UPDATE streams SET imported = 1
+                WHERE provider = ? AND imported = 0
+                  AND entry_id IN (
+                      SELECT entry_id FROM entries
+                      WHERE type = ? AND season = ?
+                        AND lower(cleaned_title) LIKE lower(?)
+                  )
+                """,
+                (slug, rule["entry_type"], rule["season"], f"%{rule['entry_title']}%"),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE streams SET imported = 1
+                WHERE provider = ? AND imported = 0
+                  AND entry_id IN (
+                      SELECT entry_id FROM entries
+                      WHERE type = ?
+                        AND lower(cleaned_title) LIKE lower(?)
+                  )
+                """,
+                (slug, rule["entry_type"], f"%{rule['entry_title']}%"),
+            )
+        marked += conn.execute("SELECT changes()").fetchone()[0]
+
+    return marked
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +395,7 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict, skip_stale_cleanup: 
         "provider": provider,
         "batch_id": batch_id,
         "filter_streams_updated": 0,
+        "follow_streams_marked": 0,
     }
 
     logger.info(
@@ -312,5 +410,20 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict, skip_stale_cleanup: 
             summary["filter_streams_updated"] = run_filters_for_provider(conn, filters, provider=provider)
     except Exception as exc:
         logger.warning("[SYNC] Filter apply step failed (non-fatal): %s", exc)
+
+    try:
+        provider_row = conn.execute(
+            "SELECT id, strm_mode FROM providers WHERE slug = ?", (provider,)
+        ).fetchone()
+        if provider_row and provider_row["strm_mode"] == "import_selected":
+            follow_marked = apply_follow_rules(conn, provider_row["id"])
+            summary["follow_streams_marked"] = follow_marked
+            if follow_marked:
+                logger.info(
+                    "[SYNC] Follow rules matched — provider=%s  streams_marked=%d",
+                    provider, follow_marked,
+                )
+    except Exception as exc:
+        logger.warning("[SYNC] Follow rules step failed (non-fatal): %s", exc)
 
     return summary

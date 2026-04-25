@@ -1,0 +1,626 @@
+{% extends "base.html" %}
+{% block title %}Library — VODSTRM{% endblock %}
+
+{% block head %}
+<style>
+  .library-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: calc(var(--spacing) * 3);
+    align-items: start;
+  }
+
+  /* ── Browser panel ── */
+  .browser-panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .browser-header {
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 1.5);
+  }
+
+  .browser-title {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .browser-controls {
+    display: flex;
+    gap: var(--spacing);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .search-input {
+    flex: 1;
+    min-width: 180px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    font-family: var(--font);
+    background: var(--color-bg);
+    color: var(--color-text);
+    transition: border-color 0.15s;
+  }
+  .search-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+  }
+
+  .filter-select {
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    font-family: var(--font);
+    background: var(--color-bg);
+    color: var(--color-text);
+    cursor: pointer;
+  }
+
+  /* ── Type tabs ── */
+  .type-tabs {
+    display: flex;
+    gap: 4px;
+    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-border);
+    overflow-x: auto;
+  }
+
+  .type-tab {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .type-tab:hover {
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+  .type-tab.active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+
+  /* ── Entry list ── */
+  .entry-list {
+    min-height: 200px;
+  }
+
+  .entry-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-border);
+    transition: background 0.1s;
+  }
+  .entry-row:last-child {
+    border-bottom: none;
+  }
+  .entry-row:hover {
+    background: var(--color-bg);
+  }
+
+  .entry-meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .entry-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .entry-sub {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    margin-top: 1px;
+  }
+
+  .entry-badges {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .badge-movie   { background: #cfe2ff; color: #084298; }
+  .badge-series  { background: #d1e7dd; color: #0a3622; }
+  .badge-live    { background: #fff3cd; color: #664d03; }
+  .badge-tv_vod  { background: #f0e0ff; color: #3e1a6c; }
+  .badge-unsorted{ background: #e9ecef; color: #495057; }
+  .badge-owned   { background: #d1e7dd; color: #0a3622; }
+
+  .entry-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .btn-sm {
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: var(--font);
+    font-weight: 500;
+    transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+    white-space: nowrap;
+  }
+  .btn-sm:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn-add {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+  .btn-add:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+  }
+  .btn-remove {
+    background: transparent;
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+  }
+  .btn-remove:hover:not(:disabled) {
+    background: var(--color-danger);
+    color: #fff;
+  }
+
+  /* ── Pagination ── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
+    border-top: 1px solid var(--color-border);
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+  }
+
+  .pagination-btns {
+    display: flex;
+    gap: 4px;
+  }
+
+  .btn-page {
+    padding: 4px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 0.82rem;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: background 0.12s;
+  }
+  .btn-page:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn-page:hover:not(:disabled) {
+    background: var(--color-bg);
+  }
+
+  .empty-state {
+    padding: calc(var(--spacing) * 5) calc(var(--spacing) * 3);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+  }
+
+  /* ── Follow rules panel ── */
+  .follows-panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .follows-header {
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .follows-list {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .follow-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.85rem;
+  }
+  .follow-row:last-child {
+    border-bottom: none;
+  }
+
+  .follow-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .follow-title {
+    font-weight: 500;
+    word-break: break-word;
+  }
+
+  .follow-detail {
+    font-size: 0.76rem;
+    color: var(--color-text-muted);
+    margin-top: 2px;
+  }
+
+  .follows-empty {
+    padding: calc(var(--spacing) * 3);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+  }
+
+  /* ── Add follow form ── */
+  .follow-form {
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 1.5);
+  }
+
+  .form-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    font-family: var(--font);
+    background: var(--color-bg);
+    color: var(--color-text);
+    transition: border-color 0.15s;
+  }
+  .form-control:focus {
+    outline: none;
+    border-color: var(--color-primary);
+  }
+
+  .btn-primary {
+    padding: 7px 16px;
+    background: var(--color-primary);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius);
+    color: #fff;
+    font-size: 0.875rem;
+    font-family: var(--font);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .btn-primary:hover {
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .loading-row {
+    padding: calc(var(--spacing) * 3);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 900px) {
+    .library-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="padding: calc(var(--spacing) * 3);">
+  <h1 style="font-size: 1.4rem; font-weight: 700; margin-bottom: calc(var(--spacing) * 3);">Library</h1>
+
+  <div class="library-layout">
+
+    <!-- ── Content Browser ── -->
+    <div class="browser-panel">
+      <div class="browser-header">
+        <div class="browser-title">Content Browser</div>
+        <div class="browser-controls">
+          <input
+            id="search-input"
+            class="search-input"
+            type="search"
+            placeholder="Search titles…"
+            autocomplete="off"
+          />
+          <select id="owned-filter" class="filter-select">
+            <option value="">All</option>
+            <option value="true">Owned</option>
+            <option value="false">Not owned</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="type-tabs">
+        <button class="type-tab active" data-type="">All</button>
+        <button class="type-tab" data-type="movie">Movies</button>
+        <button class="type-tab" data-type="series">Series</button>
+        <button class="type-tab" data-type="live">Live</button>
+        <button class="type-tab" data-type="tv_vod">TV VOD</button>
+        <button class="type-tab" data-type="unsorted">Unsorted</button>
+      </div>
+
+      <div class="entry-list" id="entry-list">
+        <div class="loading-row">Loading…</div>
+      </div>
+
+      <div class="pagination" id="pagination" style="display:none;">
+        <span id="pagination-info"></span>
+        <div class="pagination-btns">
+          <button class="btn-page" id="btn-prev" disabled>&#8592; Prev</button>
+          <button class="btn-page" id="btn-next" disabled>Next &#8594;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Follow Rules Panel ── -->
+    <div class="follows-panel">
+      <div class="follows-header">Follow Rules</div>
+
+      {% if follows %}
+      <div class="follows-list">
+        {% for rule in follows %}
+        <div class="follow-row">
+          <div class="follow-info">
+            <div class="follow-title">{{ rule.entry_title }}</div>
+            <div class="follow-detail">
+              {{ rule.provider_name }} &middot;
+              {{ rule.entry_type }}
+              {% if rule.season is not none %} &middot; Season {{ rule.season }}{% endif %}
+            </div>
+          </div>
+          <form method="post" action="/library/follows/{{ rule.id }}/delete" style="flex-shrink:0;">
+            <button type="submit" class="btn-sm btn-remove" title="Remove rule">&#215;</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="follows-empty">No follow rules yet.</div>
+      {% endif %}
+
+      {% if import_selected_providers %}
+      <form class="follow-form" method="post" action="/library/follows">
+        <div>
+          <label class="form-label" for="f-provider">Provider</label>
+          <select id="f-provider" name="provider_id" class="form-control" required>
+            {% for p in import_selected_providers %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="f-type">Content Type</label>
+          <select id="f-type" name="entry_type" class="form-control" required onchange="toggleSeasonField(this)">
+            <option value="movie">Movie</option>
+            <option value="series">Series</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="f-title">Title (partial match)</label>
+          <input id="f-title" name="entry_title" class="form-control" type="text" required placeholder="e.g. Breaking Bad" />
+        </div>
+        <div id="season-field" style="display:none;">
+          <label class="form-label" for="f-season">Season (leave blank for all)</label>
+          <input id="f-season" name="season" class="form-control" type="number" min="1" placeholder="e.g. 2" />
+        </div>
+        <button type="submit" class="btn-primary">Add Rule</button>
+      </form>
+      {% else %}
+      <div class="follows-empty" style="padding: calc(var(--spacing)*2) calc(var(--spacing)*2.5);">
+        No active <em>import_selected</em> providers configured.
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const PER_PAGE = 50;
+  let state = { page: 1, type: '', search: '', owned: '', total: 0 };
+  let debounceTimer = null;
+
+  function typeBadge(type) {
+    const labels = { movie: 'Movie', series: 'Series', live: 'Live', tv_vod: 'TV VOD', unsorted: 'Unsorted' };
+    return `<span class="badge badge-${type}">${labels[type] || type}</span>`;
+  }
+
+  function entrySubtext(e) {
+    const parts = [];
+    if (e.year) parts.push(e.year);
+    if (e.season != null) parts.push(`S${String(e.season).padStart(2,'0')}`);
+    if (e.episode != null) parts.push(`E${String(e.episode).padStart(2,'0')}`);
+    parts.push(`${e.stream_count} source${e.stream_count !== 1 ? 's' : ''}`);
+    if (e.owner_slug) parts.push(`via ${e.owner_slug}`);
+    return parts.join(' · ');
+  }
+
+  function renderEntries(data) {
+    state.total = data.total;
+    const list = document.getElementById('entry-list');
+    const pagination = document.getElementById('pagination');
+
+    if (!data.entries.length) {
+      list.innerHTML = '<div class="empty-state">No content found.</div>';
+      pagination.style.display = 'none';
+      return;
+    }
+
+    list.innerHTML = data.entries.map(e => {
+      const isTvVod = e.type === 'tv_vod';
+      const addDisabled = !e.can_add || isTvVod || e.is_owned;
+      const removeDisabled = !e.is_owned;
+      const addTitle = isTvVod ? 'tv_vod STRM generation not yet supported' : (e.is_owned ? 'Already owned' : 'Add to library');
+      const removeTitle = e.is_owned ? 'Remove from library' : 'Not owned';
+
+      return `
+        <div class="entry-row">
+          <div class="entry-meta">
+            <div class="entry-title">${escHtml(e.cleaned_title || '')}</div>
+            <div class="entry-sub">${escHtml(entrySubtext(e))}</div>
+          </div>
+          <div class="entry-badges">
+            ${typeBadge(e.type)}
+            ${e.is_owned ? '<span class="badge badge-owned">Owned</span>' : ''}
+          </div>
+          <div class="entry-actions">
+            <form method="post" action="/library/entries/${encodeURIComponent(e.entry_id)}/add" style="display:inline;">
+              <button type="submit" class="btn-sm btn-add" ${addDisabled ? 'disabled' : ''} title="${escHtml(addTitle)}">Add</button>
+            </form>
+            <form method="post" action="/library/entries/${encodeURIComponent(e.entry_id)}/remove" style="display:inline;">
+              <button type="submit" class="btn-sm btn-remove" ${removeDisabled ? 'disabled' : ''} title="${escHtml(removeTitle)}">Remove</button>
+            </form>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Pagination
+    const totalPages = Math.ceil(data.total / PER_PAGE);
+    const start = (state.page - 1) * PER_PAGE + 1;
+    const end = Math.min(state.page * PER_PAGE, data.total);
+    document.getElementById('pagination-info').textContent = `${start}–${end} of ${data.total}`;
+    document.getElementById('btn-prev').disabled = state.page <= 1;
+    document.getElementById('btn-next').disabled = state.page >= totalPages;
+    pagination.style.display = 'flex';
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async function fetchEntries() {
+    document.getElementById('entry-list').innerHTML = '<div class="loading-row">Loading…</div>';
+    const params = new URLSearchParams({
+      page: state.page,
+      per_page: PER_PAGE,
+    });
+    if (state.type)   params.set('type', state.type);
+    if (state.search) params.set('search', state.search);
+    if (state.owned)  params.set('owned', state.owned);
+
+    try {
+      const res = await fetch('/library/entries?' + params.toString());
+      const data = await res.json();
+      renderEntries(data);
+    } catch (err) {
+      document.getElementById('entry-list').innerHTML = '<div class="empty-state">Failed to load entries.</div>';
+    }
+  }
+
+  // Type tabs
+  document.querySelectorAll('.type-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.type-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      state.type = tab.dataset.type;
+      state.page = 1;
+      fetchEntries();
+    });
+  });
+
+  // Search
+  document.getElementById('search-input').addEventListener('input', e => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      state.search = e.target.value.trim();
+      state.page = 1;
+      fetchEntries();
+    }, 300);
+  });
+
+  // Owned filter
+  document.getElementById('owned-filter').addEventListener('change', e => {
+    state.owned = e.target.value;
+    state.page = 1;
+    fetchEntries();
+  });
+
+  // Pagination
+  document.getElementById('btn-prev').addEventListener('click', () => {
+    if (state.page > 1) { state.page--; fetchEntries(); }
+  });
+  document.getElementById('btn-next').addEventListener('click', () => {
+    const totalPages = Math.ceil(state.total / PER_PAGE);
+    if (state.page < totalPages) { state.page++; fetchEntries(); }
+  });
+
+  // Season field visibility
+  function toggleSeasonField(sel) {
+    document.getElementById('season-field').style.display =
+      sel.value === 'series' ? 'block' : 'none';
+  }
+
+  // Initial load
+  fetchEntries();
+</script>
+{% endblock %}

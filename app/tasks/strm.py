@@ -7,12 +7,12 @@ filesystem (projection).
 
 Provider eligibility
 ────────────────────
-A provider participates in STRM generation only when:
-  - is_active = 1
-  - strm_mode = 'generate_all'
+A stream is eligible for STRM ownership when its provider meets ONE of:
+  - strm_mode = 'generate_all'  AND is_active = 1
+  - strm_mode = 'import_selected'  AND is_active = 1  AND streams.imported = 1
 
-Inactive providers and providers in import_selected mode are excluded.
-Their stream rows remain in the DB for filter tracking but produce no files.
+For import_selected providers, the imported flag is set by the follow-rule
+engine during ingest, or manually via the Library UI Add action.
 
 Provider priority
 ─────────────────
@@ -171,46 +171,32 @@ def _remove_empty_dirs(directory: str) -> None:
 # Priority resolution
 # ---------------------------------------------------------------------------
 
-def _winning_stream_ids(conn: sqlite3.Connection, provider_slug: str | None = None) -> set[int]:
+def _winning_stream_ids(conn: sqlite3.Connection) -> set[int]:
     """
     Return the set of stream_ids that are the priority winner for their entry.
 
-    For each entry_id that has at least one generate_all stream, exactly one
-    stream wins: the one from the provider with the lowest priority number,
-    breaking ties by provider slug alphabetically.
+    For each entry_id, exactly one stream wins: the eligible stream from the
+    highest-priority (lowest number) active provider. Ties broken alphabetically
+    by provider slug.
 
-    If provider_slug is given, only entries that have a stream from that
-    provider are considered — but the winner is still chosen globally across
-    all generate_all providers for those entries.
+    Eligibility:
+      - generate_all providers: all non-excluded streams
+      - import_selected providers: only streams with imported = 1
     """
-    if provider_slug:
-        rows = conn.execute(
-            """
-            SELECT s.stream_id, s.entry_id, p.priority, p.slug
-            FROM streams s
-            JOIN providers p ON p.slug = s.provider
-            WHERE p.is_active = 1
-              AND p.strm_mode = 'generate_all'
-              AND s.exclude = 0
-              AND s.entry_id IN (
-                  SELECT entry_id FROM streams WHERE provider = ?
-              )
-            ORDER BY p.priority, p.slug
-            """,
-            (provider_slug,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT s.stream_id, s.entry_id, p.priority, p.slug
-            FROM streams s
-            JOIN providers p ON p.slug = s.provider
-            WHERE p.is_active = 1
-              AND p.strm_mode = 'generate_all'
-              AND s.exclude = 0
-            ORDER BY p.priority, p.slug
-            """,
-        ).fetchall()
+    rows = conn.execute(
+        """
+        SELECT s.stream_id, s.entry_id, p.priority, p.slug
+        FROM streams s
+        JOIN providers p ON p.slug = s.provider
+        WHERE p.is_active = 1
+          AND s.exclude = 0
+          AND (
+              p.strm_mode = 'generate_all'
+              OR (p.strm_mode = 'import_selected' AND s.imported = 1)
+          )
+        ORDER BY p.priority, p.slug
+        """,
+    ).fetchall()
 
     seen: set[str] = set()
     winners: set[int] = set()
@@ -248,8 +234,11 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
         JOIN entries e ON e.entry_id = s.entry_id
         JOIN providers p ON p.slug = s.provider
         WHERE p.is_active = 1
-          AND p.strm_mode = 'generate_all'
           AND s.exclude = 0
+          AND (
+              p.strm_mode = 'generate_all'
+              OR (p.strm_mode = 'import_selected' AND s.imported = 1)
+          )
         ORDER BY s.stream_id
         """
     ).fetchall()
@@ -421,7 +410,7 @@ def deactivate_provider_strm(provider_slug: str) -> dict:
             entry_id   = owned_row["entry_id"]
             owned_path = owned_row["strm_path"]
 
-            # Find the best replacement: active, generate_all, not this provider,
+            # Find the best replacement: active, eligible, not this provider,
             # lowest priority then slug alphabetically
             replacement = conn.execute(
                 """
@@ -434,8 +423,11 @@ def deactivate_provider_strm(provider_slug: str) -> dict:
                 WHERE s.entry_id = ?
                   AND s.provider != ?
                   AND p.is_active = 1
-                  AND p.strm_mode = 'generate_all'
                   AND s.exclude = 0
+                  AND (
+                      p.strm_mode = 'generate_all'
+                      OR (p.strm_mode = 'import_selected' AND s.imported = 1)
+                  )
                 ORDER BY p.priority, p.slug
                 LIMIT 1
                 """,
@@ -553,88 +545,32 @@ def clean_strm_orphans() -> None:
 
 
 @task("generate_strm")
-def generate_strm(provider_slug: str | None = None) -> None:
+def generate_strm() -> None:
     """
-    Synchronise .strm files for all generate_all providers (or one provider).
+    Idempotent global reconciliation of .strm files against current DB state.
 
-    provider_slug=None runs the full sync for every eligible provider and
-    performs the orphan cleanup pass.  Passing a slug limits processing to
-    that provider's streams only (but priority is still evaluated globally
-    across all providers for those entries) and skips the global orphan sweep.
+    Evaluates ALL eligible streams across ALL providers in one pass, selects
+    a single winner per entry based on priority, writes/moves/deletes files,
+    and clears ownership from losers. Always runs globally — never scoped to
+    a single provider — because STRM ownership is a global property.
     """
     vod_root = _vod_root()
     os.makedirs(vod_root, exist_ok=True)
 
-    logger.info("[STRM] Sync start — provider=%s  vod_root=%s", provider_slug or "*", vod_root)
+    logger.info("[STRM] Sync start — vod_root=%s", vod_root)
 
     with get_db() as conn:
-        if provider_slug:
-            row = conn.execute(
-                "SELECT is_active, strm_mode FROM providers WHERE slug = ?", (provider_slug,)
-            ).fetchone()
-            if not row:
-                logger.warning("[STRM] Provider '%s' not found — aborting", provider_slug)
-                return
-            if not row["is_active"]:
-                logger.info("[STRM] Provider '%s' is inactive — skipping", provider_slug)
-                return
-            if row["strm_mode"] != "generate_all":
-                logger.info(
-                    "[STRM] Provider '%s' is in import_selected mode — skipping", provider_slug
-                )
-                return
-
-            winners = _winning_stream_ids(conn, provider_slug=provider_slug)
-
-            rows = conn.execute(
-                """
-                SELECT s.stream_id, s.stream_url, s.provider,
-                       s.strm_path, s.last_written_url,
-                       s.filtered_title,
-                       e.type, e.cleaned_title, e.year, e.season, e.episode
-                FROM streams s
-                JOIN entries e ON e.entry_id = s.entry_id
-                WHERE s.provider = ?
-                  AND s.exclude = 0
-                ORDER BY s.stream_id
-                """,
-                (provider_slug,),
-            ).fetchall()
-
-            stats: dict = {
-                "skipped_priority": 0, "created": 0, "url_updated": 0,
-                "moved": 0, "unchanged": 0, "errors": 0,
-            }
-            for row_data in rows:
-                if row_data["stream_id"] not in winners:
-                    if row_data["strm_path"]:
-                        conn.execute(
-                            "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
-                            (row_data["stream_id"],),
-                        )
-                    stats["skipped_priority"] += 1
-                    continue
-                try:
-                    _sync_one(conn, row_data, vod_root, stats)
-                except Exception as exc:
-                    logger.error(
-                        "[STRM] Error syncing stream_id=%s: %s",
-                        row_data["stream_id"], exc, exc_info=True,
-                    )
-                    stats["errors"] += 1
-        else:
-            stats = _sync_streams(conn, vod_root)
-            orphans = _cleanup_orphans(conn, vod_root)
-            logger.info("[STRM] Orphan cleanup — deleted=%d", orphans)
+        stats = _sync_streams(conn, vod_root)
+        orphans = _cleanup_orphans(conn, vod_root)
 
     logger.info(
-        "[STRM] Sync done — provider=%s  created=%d  moved=%d  url_updated=%d  "
-        "skipped_priority=%d  unchanged=%d  errors=%d",
-        provider_slug or "*",
+        "[STRM] Sync done — created=%d  moved=%d  url_updated=%d  "
+        "skipped_priority=%d  unchanged=%d  orphans=%d  errors=%d",
         stats["created"],
         stats["moved"],
         stats["url_updated"],
         stats["skipped_priority"],
         stats["unchanged"],
+        orphans,
         stats["errors"],
     )
