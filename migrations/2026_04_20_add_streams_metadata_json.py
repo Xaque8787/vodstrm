@@ -12,7 +12,7 @@ import sqlite3
 
 
 def up(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "ALTER TABLE streams ADD COLUMN metadata_json TEXT"
-    )
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
+    if "metadata_json" not in existing:
+        conn.execute("ALTER TABLE streams ADD COLUMN metadata_json TEXT")
     conn.commit()

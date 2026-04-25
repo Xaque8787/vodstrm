@@ -16,11 +16,21 @@ Steps:
   - Copy all rows over
   - Drop the temporary table
   - Recreate indexes
+
+On a fresh install database.py already creates the table with all columns and
+the updated CHECK constraint, so this migration is a no-op in that case.
 """
 import sqlite3
 
 
 def up(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(providers)").fetchall()}
+    if "local_file_path" in existing:
+        # Fresh install — _SCHEMA already has this column; nothing to do.
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_slug ON providers (slug)")
+        conn.commit()
+        return
+
     conn.executescript("""
         ALTER TABLE providers RENAME TO _providers_old;
 

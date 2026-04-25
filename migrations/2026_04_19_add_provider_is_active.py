@@ -7,9 +7,9 @@ import sqlite3
 
 
 def up(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        ALTER TABLE providers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1
-        """
-    )
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(providers)").fetchall()}
+    if "is_active" not in existing:
+        conn.execute(
+            "ALTER TABLE providers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1"
+        )
     conn.commit()

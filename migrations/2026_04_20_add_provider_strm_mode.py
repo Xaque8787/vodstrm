@@ -12,11 +12,13 @@ import sqlite3
 
 
 def up(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        ALTER TABLE providers
-        ADD COLUMN strm_mode TEXT NOT NULL DEFAULT 'generate_all'
-        CHECK(strm_mode IN ('generate_all', 'import_selected'))
-        """
-    )
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(providers)").fetchall()}
+    if "strm_mode" not in existing:
+        conn.execute(
+            """
+            ALTER TABLE providers
+            ADD COLUMN strm_mode TEXT NOT NULL DEFAULT 'generate_all'
+            CHECK(strm_mode IN ('generate_all', 'import_selected'))
+            """
+        )
     conn.commit()

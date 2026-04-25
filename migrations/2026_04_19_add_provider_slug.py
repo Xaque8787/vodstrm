@@ -28,12 +28,14 @@ def _slugify(value: str) -> str:
 
 
 def up(conn: sqlite3.Connection) -> None:
-    conn.execute("ALTER TABLE providers ADD COLUMN slug TEXT")
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(providers)").fetchall()}
+    if "slug" not in existing:
+        conn.execute("ALTER TABLE providers ADD COLUMN slug TEXT")
 
-    rows = conn.execute("SELECT id, name FROM providers").fetchall()
-    for row in rows:
-        slug = _slugify(row["name"])
-        conn.execute("UPDATE providers SET slug = ? WHERE id = ?", (slug, row["id"]))
+        rows = conn.execute("SELECT id, name FROM providers").fetchall()
+        for row in rows:
+            slug = _slugify(row["name"])
+            conn.execute("UPDATE providers SET slug = ? WHERE id = ?", (slug, row["id"]))
 
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_slug ON providers (slug)")
     conn.commit()
