@@ -100,7 +100,7 @@ async def list_entries(
 
     if type_filter == "series":
         base_condition = "e.type = 'series'"
-    elif type_filter:
+    elif type_filter and type_filter != "tv_vod":
         base_condition = "e.type = ?"
         params.append(type_filter)
     else:
