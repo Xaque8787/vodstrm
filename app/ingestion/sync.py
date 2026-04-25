@@ -316,7 +316,23 @@ def apply_follow_rules(conn: sqlite3.Connection, provider_id: int) -> int:
     marked = 0
     slug = provider_row["slug"]
     for rule in rules:
-        if rule["season"] is not None:
+        if rule["season"] is not None and rule["entry_type"] == "tv_vod":
+            # Year-specific tv_vod follow: season stores the year integer,
+            # matched against the first 4 chars of air_date.
+            conn.execute(
+                """
+                UPDATE streams SET imported = 1
+                WHERE provider = ? AND imported = 0
+                  AND entry_id IN (
+                      SELECT entry_id FROM entries
+                      WHERE type = 'tv_vod'
+                        AND substr(air_date, 1, 4) = ?
+                        AND lower(cleaned_title) LIKE lower(?)
+                  )
+                """,
+                (slug, str(rule["season"]), f"%{rule['entry_title']}%"),
+            )
+        elif rule["season"] is not None:
             conn.execute(
                 """
                 UPDATE streams SET imported = 1

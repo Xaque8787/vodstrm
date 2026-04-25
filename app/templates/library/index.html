@@ -503,7 +503,7 @@
   </div>
 </div>
 
-<!-- Follow confirmation modal -->
+<!-- Follow confirmation modal (series) -->
 <div class="modal-backdrop" id="follow-modal">
   <div class="modal">
     <div class="modal-header">
@@ -517,6 +517,24 @@
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeFollowModal()">Cancel</button>
       <button class="btn-primary" id="modal-confirm-btn">Follow</button>
+    </div>
+  </div>
+</div>
+
+<!-- Follow confirmation modal (tv_vod) -->
+<div class="modal-backdrop" id="tv-vod-follow-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="tv-vod-modal-title">Follow Show</span>
+      <button class="modal-close" onclick="closeTvVodFollowModal()">&#215;</button>
+    </div>
+    <div class="modal-body" id="tv-vod-modal-body">
+      Following this show will automatically add all current and future episodes
+      to your library whenever new content is ingested.
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeTvVodFollowModal()">Cancel</button>
+      <button class="btn-primary" id="tv-vod-modal-confirm-btn">Follow</button>
     </div>
   </div>
 </div>
@@ -607,11 +625,15 @@ function renderCard(e, idx) {
   } else if (e.is_tv_vod_group) {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
+    const followBadge = e.is_following ? `<span class="badge badge-following">Following</span>` : '';
     const meta = [
       `${e.year_count} year${e.year_count !== 1 ? 's' : ''}`,
       `${e.episode_count} ep`,
     ].filter(Boolean).join(' · ');
     const displayTitle = e.display_title || e.cleaned_title;
+    const followBtn = e.is_following
+      ? `<button class="btn-action btn-unfollow" data-action="unfollow-tv-vod" style="font-size:0.68rem;">Unfollow</button>`
+      : `<button class="btn-action btn-follow" data-action="open-tv-vod-follow" style="font-size:0.68rem;">Follow</button>`;
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="tv_vod_group">
         ${artEl(e.cover_art, displayTitle, 'tv_vod')}
@@ -621,10 +643,12 @@ function renderCard(e, idx) {
           <div class="card-badges">
             <span class="${typeBadgeClass('tv_vod')}">TV VOD</span>
             ${ownedBadge}
+            ${followBadge}
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-tv-vod" ${!e.can_add ? 'disabled' : ''}>Add All</button>
             <button class="btn-action btn-remove" data-action="remove-tv-vod" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            ${followBtn}
           </div>
         </div>
       </div>`;
@@ -672,10 +696,15 @@ async function fetchEntries() {
     ]);
     state.total = data.total;
 
-    // Build set of followed series titles (all-season follows only)
-    const followedTitles = new Set(
+    // Build sets of followed titles (all-season/whole-show follows only)
+    const followedSeriesTitles = new Set(
       follows
         .filter(f => f.entry_type === 'series' && f.season === null)
+        .map(f => f.entry_title.toLowerCase())
+    );
+    const followedTvVodTitles = new Set(
+      follows
+        .filter(f => f.entry_type === 'tv_vod' && f.season === null)
         .map(f => f.entry_title.toLowerCase())
     );
 
@@ -686,10 +715,11 @@ async function fetchEntries() {
     }
 
     cardData.length = 0;
-    // Annotate series groups with follow state
     data.entries.forEach(e => {
       if (e.is_series_group) {
-        e.is_following = followedTitles.has((e.cleaned_title || '').toLowerCase());
+        e.is_following = followedSeriesTitles.has((e.cleaned_title || '').toLowerCase());
+      } else if (e.is_tv_vod_group) {
+        e.is_following = followedTvVodTitles.has((e.cleaned_title || '').toLowerCase());
       }
     });
     grid.innerHTML = data.entries.map((e, i) => renderCard(e, i)).join('');
@@ -886,6 +916,11 @@ function renderTvVodYears(data, title) {
     const ownedInfo = y.owned_count > 0
       ? `<span style="font-size:0.72rem;color:#198754;font-weight:600;">${y.owned_count} owned</span>`
       : '';
+    const followBtn = y.is_following
+      ? `<button class="btn-action btn-unfollow" style="padding:3px 8px;font-size:0.68rem;"
+           data-action="unfollow-tv-vod-year" data-year="${yr}">Unfollow</button>`
+      : `<button class="btn-action btn-follow" style="padding:3px 8px;font-size:0.68rem;"
+           data-action="follow-tv-vod-year" data-year="${yr}">Follow</button>`;
     return `
       <div class="season-row" id="tv-vod-year-${yr}" data-year="${yr}">
         <div class="season-header">
@@ -900,6 +935,7 @@ function renderTvVodYears(data, title) {
               data-action="add-tv-vod-year" data-year="${yr}" ${!y.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
               data-action="remove-tv-vod-year" data-year="${yr}" ${!y.is_owned ? 'disabled' : ''}>Remove</button>
+            ${followBtn}
           </div>
         </div>
         <div class="episode-list" id="tv-vod-eps-${yr}"></div>
@@ -988,6 +1024,14 @@ document.addEventListener('click', async function(e) {
     } else if (action === 'remove-tv-vod-year' && title && year) {
       btn.disabled = true;
       await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/remove`, 'POST');
+      refreshAfterTvVodAction();
+    } else if (action === 'follow-tv-vod-year' && title && year) {
+      btn.disabled = true;
+      await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/follow`, 'POST');
+      refreshAfterTvVodAction();
+    } else if (action === 'unfollow-tv-vod-year' && title && year) {
+      btn.disabled = true;
+      await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/unfollow`, 'POST');
       refreshAfterTvVodAction();
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
@@ -1089,6 +1133,16 @@ document.addEventListener('click', async function(e) {
     btn.disabled = true;
     await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/remove`, 'POST');
     refreshAfterAction();
+  } else if (action === 'open-tv-vod-follow' && card) {
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
+    openTvVodFollowModal(d.cleaned_title);
+  } else if (action === 'unfollow-tv-vod' && card) {
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
+    btn.disabled = true;
+    await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/unfollow`, 'POST');
+    refreshAfterAction();
   }
 });
 
@@ -1155,6 +1209,39 @@ document.getElementById('modal-confirm-btn').addEventListener('click', async fun
 
 document.getElementById('follow-modal').addEventListener('click', function(e) {
   if (e.target === this) closeFollowModal();
+});
+
+// ── TV VOD follow modal ───────────────────────────────────────────────────────
+
+let tvVodFollowPendingTitle = null;
+
+function openTvVodFollowModal(title) {
+  tvVodFollowPendingTitle = title;
+  document.getElementById('tv-vod-modal-title').textContent = `Follow: ${title}`;
+  document.getElementById('tv-vod-modal-body').textContent =
+    `Following "${title}" will automatically add all current and future episodes to your library whenever new content is ingested.`;
+  document.getElementById('tv-vod-follow-modal').classList.add('open');
+}
+
+function closeTvVodFollowModal() {
+  document.getElementById('tv-vod-follow-modal').classList.remove('open');
+  tvVodFollowPendingTitle = null;
+}
+
+document.getElementById('tv-vod-modal-confirm-btn').addEventListener('click', async function() {
+  if (!tvVodFollowPendingTitle) return;
+  this.disabled = true;
+  await api('/library/follows', 'POST', {
+    entry_type: 'tv_vod',
+    entry_title: tvVodFollowPendingTitle,
+  });
+  closeTvVodFollowModal();
+  refreshAfterAction();
+  this.disabled = false;
+});
+
+document.getElementById('tv-vod-follow-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeTvVodFollowModal();
 });
 
 // ── Event wiring ──────────────────────────────────────────────────────────────

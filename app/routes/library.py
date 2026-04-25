@@ -423,7 +423,7 @@ async def list_tv_vod_years(
     title: str,
     current_user: TokenData = Depends(get_current_user),
 ):
-    """Return years for a tv_vod show title with per-year ownership info."""
+    """Return years for a tv_vod show title with per-year ownership and follow info."""
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -445,6 +445,17 @@ async def list_tv_vod_years(
             (title,),
         ).fetchall()
 
+        follows = conn.execute(
+            """
+            SELECT f.season FROM follows f
+            WHERE lower(f.entry_title) = lower(?) AND f.entry_type = 'tv_vod'
+            """,
+            (title,),
+        ).fetchall()
+
+    followed_all = any(f["season"] is None for f in follows)
+    followed_years = {str(f["season"]) for f in follows if f["season"] is not None}
+
     years = [{
         "year": r["year"] or "Unknown",
         "episode_count": r["episode_count"],
@@ -452,9 +463,10 @@ async def list_tv_vod_years(
         "owned_count": r["owned_count"] or 0,
         "is_owned": (r["owned_count"] or 0) > 0,
         "can_add": (r["can_add_count"] or 0) > 0,
+        "is_following": followed_all or (r["year"] in followed_years),
     } for r in rows]
 
-    return JSONResponse({"title": title, "years": years})
+    return JSONResponse({"title": title, "years": years, "is_following_all": followed_all})
 
 
 @router.get("/tv_vod/{title}/years/{year}/episodes", response_class=JSONResponse)
@@ -948,7 +960,7 @@ async def add_follow(
 ):
     """Create a follow rule for an entire series and immediately import all existing episodes."""
     from app.tasks.strm import generate_strm
-    if entry_type not in ("movie", "series"):
+    if entry_type not in ("movie", "series", "tv_vod"):
         return JSONResponse({"ok": False, "error": "Invalid entry_type"}, status_code=400)
 
     title = entry_title.strip()
@@ -1067,4 +1079,149 @@ async def unfollow_series(
         )
         deleted = result.rowcount
     logger.info("[LIBRARY] Unfollow series title=%r deleted=%d by=%s", title, deleted, current_user.username)
+    return JSONResponse({"ok": True, "deleted": deleted})
+
+
+# ---------------------------------------------------------------------------
+# TV VOD follow / unfollow (whole show and per-year)
+# ---------------------------------------------------------------------------
+
+@router.post("/tv_vod/{title}/follow", response_class=JSONResponse)
+async def follow_tv_vod(
+    title: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Create a whole-show follow rule for a tv_vod title and import all existing episodes."""
+    from app.tasks.strm import generate_strm
+    with get_db() as conn:
+        providers = conn.execute(
+            "SELECT id FROM providers WHERE strm_mode = 'import_selected' AND is_active = 1"
+        ).fetchall()
+        if not providers:
+            return JSONResponse({"ok": False, "error": "No active import_selected providers"}, status_code=400)
+
+        inserted = 0
+        for p in providers:
+            exists = conn.execute(
+                "SELECT 1 FROM follows WHERE provider_id = ? AND entry_type = 'tv_vod' AND lower(entry_title) = lower(?) AND season IS NULL",
+                (p["id"], title),
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, 'tv_vod', ?, NULL)",
+                    (p["id"], title),
+                )
+                inserted += 1
+
+        marked = _import_entries_for_title(conn, "tv_vod", title, season=None)
+
+    logger.info("[LIBRARY] Follow tv_vod title=%r providers=%d marked=%d by=%s", title, inserted, marked, current_user.username)
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after tv_vod follow failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True, "inserted": inserted, "marked": marked})
+
+
+@router.post("/tv_vod/{title}/unfollow", response_class=JSONResponse)
+async def unfollow_tv_vod(
+    title: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Remove all follow rules for a tv_vod title."""
+    with get_db() as conn:
+        result = conn.execute(
+            "DELETE FROM follows WHERE lower(entry_title) = lower(?) AND entry_type = 'tv_vod'",
+            (title,),
+        )
+        deleted = result.rowcount
+    logger.info("[LIBRARY] Unfollow tv_vod title=%r deleted=%d by=%s", title, deleted, current_user.username)
+    return JSONResponse({"ok": True, "deleted": deleted})
+
+
+@router.post("/tv_vod/{title}/years/{year}/follow", response_class=JSONResponse)
+async def follow_tv_vod_year(
+    title: str,
+    year: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Create a year-specific follow rule for a tv_vod show and import all existing episodes in that year."""
+    from app.tasks.strm import generate_strm
+    # Store year as integer in the season column to reuse the schema
+    try:
+        year_int = int(year)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "Invalid year"}, status_code=400)
+
+    with get_db() as conn:
+        providers = conn.execute(
+            "SELECT id FROM providers WHERE strm_mode = 'import_selected' AND is_active = 1"
+        ).fetchall()
+        if not providers:
+            return JSONResponse({"ok": False, "error": "No active import_selected providers"}, status_code=400)
+
+        inserted = 0
+        for p in providers:
+            exists = conn.execute(
+                "SELECT 1 FROM follows WHERE provider_id = ? AND entry_type = 'tv_vod' AND lower(entry_title) = lower(?) AND season = ?",
+                (p["id"], title, year_int),
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, 'tv_vod', ?, ?)",
+                    (p["id"], title, year_int),
+                )
+                inserted += 1
+
+        # Import all existing episodes in this year
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='tv_vod' AND lower(cleaned_title)=lower(?) AND substr(air_date,1,4)=?",
+                (title, year),
+            ).fetchall()
+        ]
+        marked = 0
+        for eid in entry_ids:
+            stream = conn.execute(
+                """
+                SELECT s.stream_id FROM streams s
+                JOIN providers p ON p.slug = s.provider
+                WHERE s.entry_id = ?
+                  AND p.strm_mode = 'import_selected' AND p.is_active = 1
+                  AND s.exclude = 0 AND s.imported = 0
+                ORDER BY p.priority, p.slug LIMIT 1
+                """,
+                (eid,),
+            ).fetchone()
+            if stream:
+                conn.execute("UPDATE streams SET imported = 1 WHERE stream_id = ?", (stream["stream_id"],))
+                marked += 1
+
+    logger.info("[LIBRARY] Follow tv_vod year title=%r year=%s inserted=%d marked=%d by=%s", title, year, inserted, marked, current_user.username)
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after tv_vod year follow failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True, "inserted": inserted, "marked": marked})
+
+
+@router.post("/tv_vod/{title}/years/{year}/unfollow", response_class=JSONResponse)
+async def unfollow_tv_vod_year(
+    title: str,
+    year: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Remove year-specific follow rules for a tv_vod title."""
+    try:
+        year_int = int(year)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "Invalid year"}, status_code=400)
+
+    with get_db() as conn:
+        result = conn.execute(
+            "DELETE FROM follows WHERE lower(entry_title) = lower(?) AND entry_type = 'tv_vod' AND season = ?",
+            (title, year_int),
+        )
+        deleted = result.rowcount
+    logger.info("[LIBRARY] Unfollow tv_vod year title=%r year=%s deleted=%d by=%s", title, year, deleted, current_user.username)
     return JSONResponse({"ok": True, "deleted": deleted})
