@@ -628,7 +628,6 @@ function artEl(coverArt, title, type) {
 }
 
 function renderCard(e) {
-  const titleEnc = encodeURIComponent(e.cleaned_title);
   if (e.is_series_group) {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
@@ -637,8 +636,23 @@ function renderCard(e) {
       `${e.season_count} season${e.season_count !== 1 ? 's' : ''}`,
       `${e.episode_count} ep`,
     ].filter(Boolean).join(' · ');
+    // Add/Remove only shown when there are import_selected provider streams
+    const hasImportable = e.can_add || e.is_owned;
+    const actionsHtml = hasImportable ? `
+      <div class="card-actions" onclick="event.stopPropagation()">
+        <button class="btn-action btn-add" ${!e.can_add ? 'disabled' : ''}
+          onclick="addSeries(${JSON.stringify(e.cleaned_title)}, this)">Add All</button>
+        <button class="btn-action btn-remove" ${!e.is_owned ? 'disabled' : ''}
+          onclick="removeSeries(${JSON.stringify(e.cleaned_title)}, this)">Remove</button>
+        <button class="btn-action btn-follow" onclick="event.stopPropagation(); openFollowModal(${JSON.stringify(e.cleaned_title)}, null)">Follow</button>
+      </div>` : `
+      <div class="card-actions" onclick="event.stopPropagation()">
+        <button class="btn-action btn-follow" onclick="event.stopPropagation(); openFollowModal(${JSON.stringify(e.cleaned_title)}, null)">Follow</button>
+      </div>`;
+    // Use data-idx for stable lookup after re-render instead of object reference
     return `
-      <div class="content-card${ownedClass}" data-series-title="${esc(e.cleaned_title)}" onclick="toggleSeriesExpand(this, ${JSON.stringify(e.cleaned_title)})">
+      <div class="content-card${ownedClass}" data-series-key="${esc(e.cleaned_title)}"
+           onclick="handleCardClick(event, this, ${JSON.stringify(e.cleaned_title)})">
         ${artEl(e.cover_art, e.cleaned_title, 'series')}
         <div class="card-body">
           <div class="card-title">${esc(e.cleaned_title)}</div>
@@ -647,14 +661,7 @@ function renderCard(e) {
             <span class="${typeBadgeClass('series')}">Series</span>
             ${ownedBadge}
           </div>
-          <div class="card-actions" onclick="event.stopPropagation()">
-            <button class="btn-action btn-add" ${!e.can_add || e.episode_count === 0 ? 'disabled' : ''}
-              onclick="addSeries(${JSON.stringify(e.cleaned_title)}, this)">Add All</button>
-            <button class="btn-action btn-remove" ${!e.is_owned ? 'disabled' : ''}
-              onclick="removeSeries(${JSON.stringify(e.cleaned_title)}, this)">Remove</button>
-            <button class="btn-action btn-follow"
-              onclick="openFollowModal(${JSON.stringify(e.cleaned_title)}, null)">Follow</button>
-          </div>
+          ${actionsHtml}
         </div>
       </div>`;
   } else {
@@ -662,6 +669,15 @@ function renderCard(e) {
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
     const isTvVod = e.type === 'tv_vod';
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
+    // Only show Add/Remove if there are import_selected streams or already owned
+    const hasImportable = e.can_add || e.is_owned;
+    const actionsHtml = hasImportable && !isTvVod ? `
+      <div class="card-actions">
+        <button class="btn-action btn-add" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}
+          onclick="addEntry(${JSON.stringify(e.entry_id)}, this)">Add</button>
+        <button class="btn-action btn-remove" ${!e.is_owned ? 'disabled' : ''}
+          onclick="removeEntry(${JSON.stringify(e.entry_id)}, this)">Remove</button>
+      </div>` : '';
     return `
       <div class="content-card${ownedClass}">
         ${artEl(e.cover_art, e.cleaned_title, e.type)}
@@ -672,15 +688,16 @@ function renderCard(e) {
             <span class="${typeBadgeClass(e.type)}">${esc(e.type)}</span>
             ${ownedBadge}
           </div>
-          <div class="card-actions">
-            <button class="btn-action btn-add" ${(!e.can_add || e.is_owned || isTvVod) ? 'disabled' : ''}
-              title="${isTvVod ? 'tv_vod not supported' : ''}"
-              onclick="addEntry(${JSON.stringify(e.entry_id)}, this)">Add</button>
-            <button class="btn-action btn-remove" ${!e.is_owned ? 'disabled' : ''}
-              onclick="removeEntry(${JSON.stringify(e.entry_id)}, this)">Remove</button>
-          </div>
+          ${actionsHtml}
         </div>
       </div>`;
+  }
+}
+
+function handleCardClick(event, cardEl, title) {
+  // Only expand if the click didn't originate from card-actions or its children
+  if (!event.target.closest('.card-actions')) {
+    toggleSeriesExpand(cardEl, title);
   }
 }
 
@@ -736,7 +753,6 @@ async function toggleSeriesExpand(cardEl, title) {
   closeExpand();
   expandedTitle = title;
 
-  // Insert expand panel after the card's row in the grid
   const panel = document.createElement('div');
   panel.id = 'expand-panel';
   panel.className = 'expand-panel';
@@ -748,22 +764,19 @@ async function toggleSeriesExpand(cardEl, title) {
     <div class="season-list" id="season-list"><div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">Loading seasons…</div></div>
   `;
 
-  // Insert after cardEl in the grid
-  const grid = document.getElementById('card-grid');
-  const cards = Array.from(grid.children);
-  const cardIndex = cards.indexOf(cardEl);
-  const nextCard = cards[cardIndex + 1];
-  if (nextCard) {
-    grid.insertBefore(panel, nextCard);
+  // Insert immediately after cardEl — cardEl is the live DOM node just clicked
+  if (cardEl.nextSibling) {
+    cardEl.parentNode.insertBefore(panel, cardEl.nextSibling);
   } else {
-    grid.appendChild(panel);
+    cardEl.parentNode.appendChild(panel);
   }
 
   try {
     const data = await fetch(`/library/series/${encodeURIComponent(title)}/seasons`).then(r => r.json());
     renderSeasons(data, title);
-  } catch(e) {
-    document.getElementById('season-list').innerHTML = '<div style="padding:16px;color:var(--color-danger);">Failed to load seasons.</div>';
+  } catch(err) {
+    const sl = document.getElementById('season-list');
+    if (sl) sl.innerHTML = `<div style="padding:16px;color:var(--color-danger);">Failed to load seasons: ${esc(String(err))}</div>`;
   }
 }
 
@@ -885,7 +898,7 @@ function refreshAfterAction() {
   const savedTitle = expandedTitle;
   fetchEntries().then(() => {
     if (savedTitle) {
-      const card = document.querySelector(`[data-series-title="${CSS.escape(savedTitle)}"]`);
+      const card = document.querySelector(`[data-series-key="${CSS.escape(savedTitle)}"]`);
       if (card) toggleSeriesExpand(card, savedTitle);
     }
   });

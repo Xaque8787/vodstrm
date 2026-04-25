@@ -243,17 +243,21 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
         """
     ).fetchall()
 
+    # Pass 1 — clear strm_path on all losers first. This ensures no stale
+    # ownership blocks winners during the write pass.
+    for row in rows:
+        if row["stream_id"] not in winners and row["strm_path"]:
+            conn.execute(
+                "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
+                (row["stream_id"],),
+            )
+            stats["skipped_priority"] += 1
+        elif row["stream_id"] not in winners:
+            stats["skipped_priority"] += 1
+
+    # Pass 2 — sync winners now that all losers are cleared.
     for row in rows:
         if row["stream_id"] not in winners:
-            # This provider lost the priority contest for this entry.
-            # If it somehow holds a strm_path (e.g. priority was changed),
-            # clear it — the file belongs to the winner now.
-            if row["strm_path"]:
-                conn.execute(
-                    "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
-                    (row["stream_id"],),
-                )
-            stats["skipped_priority"] += 1
             continue
         try:
             _sync_one(conn, row, vod_root, stats)

@@ -1,5 +1,5 @@
 """
-Add follows table and unique strm owner index.
+Add follows table; remove incorrect unique strm owner index.
 
 New tables:
   - follows: one row per follow rule. Scoped to a provider (by id FK) and
@@ -10,17 +10,20 @@ New tables:
     Columns:
       id          - PK
       provider_id - FK to providers(id), CASCADE DELETE
-      entry_type  - 'movie' or 'series' only (tv_vod excluded by constraint)
+      entry_type  - 'movie' or 'series' only
       entry_title - case-insensitive LIKE match applied during ingest
       season      - NULL = all seasons; integer = exact season match
       created_at  - timestamp
 
 New indexes:
   - idx_follows_provider_id: fast lookup of rules by provider
-  - idx_unique_strm_owner: partial unique index on streams(entry_id) WHERE
-    strm_path IS NOT NULL — enforces that only one stream per entry holds
-    STRM ownership at any time. NULL rows (non-owners) are excluded so
-    multiple providers can track the same entry.
+
+Removed index:
+  - idx_unique_strm_owner (if it was previously applied): this partial unique
+    index on streams(entry_id) WHERE strm_path IS NOT NULL caused UNIQUE
+    constraint violations in _sync_one because losers may not be cleared
+    before the winner's strm_path is set in the same pass. The single-owner
+    invariant is maintained by the sync engine logic, not at DB level.
 """
 import sqlite3
 
@@ -37,24 +40,19 @@ def up(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    existing_indexes = {
+    stream_indexes = {
         row[1]
         for row in conn.execute("PRAGMA index_list(follows)").fetchall()
     }
-    if "idx_follows_provider_id" not in existing_indexes:
+    if "idx_follows_provider_id" not in stream_indexes:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_follows_provider_id ON follows(provider_id)"
         )
 
-    stream_indexes = {
-        row[1]
-        for row in conn.execute("PRAGMA index_list(streams)").fetchall()
-    }
-    if "idx_unique_strm_owner" not in stream_indexes:
-        conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_strm_owner
-                ON streams(entry_id)
-                WHERE strm_path IS NOT NULL
-        """)
+    # Drop the bad unique index if it was applied by an earlier version of this migration
+    try:
+        conn.execute("DROP INDEX IF EXISTS idx_unique_strm_owner")
+    except Exception:
+        pass
 
     conn.commit()

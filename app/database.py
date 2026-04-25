@@ -180,12 +180,6 @@ CREATE TABLE IF NOT EXISTS follows (
 
 CREATE INDEX IF NOT EXISTS idx_follows_provider_id ON follows(provider_id);
 
--- Enforce: only one stream per entry may hold a strm_path at a time.
--- This is a partial unique index so NULL strm_path rows (non-owners) are
--- excluded — multiple non-owners per entry is valid and expected.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_strm_owner
-    ON streams(entry_id)
-    WHERE strm_path IS NOT NULL;
 """
 
 
