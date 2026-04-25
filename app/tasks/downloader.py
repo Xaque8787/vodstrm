@@ -72,7 +72,7 @@ def _download_provider(provider: sqlite3.Row, m3u_dir: str) -> bool:
         except Exception as exc:
             logger.error("[DOWNLOADER] Ingestion failed for local provider '%s': %s", slug, exc, exc_info=True)
             return False
-        return True
+        return True  # generate_strm called by download_all_providers / download_provider after all providers
 
     if provider_type == "m3u":
         url = provider["url"] or ""
@@ -114,7 +114,6 @@ def _download_provider(provider: sqlite3.Row, m3u_dir: str) -> bool:
     )
 
     # Trigger ingestion immediately after a successful download.
-    # Import here to avoid a circular dependency at module load time.
     try:
         from app.tasks.ingestion import ingest_provider_file
         ingest_provider_file(slug)
@@ -124,7 +123,7 @@ def _download_provider(provider: sqlite3.Row, m3u_dir: str) -> bool:
             slug, exc, exc_info=True,
         )
 
-    return True
+    return True  # generate_strm called by download_all_providers / download_provider after all providers
 
 
 def _purge() -> None:
@@ -164,6 +163,12 @@ def download_all_providers() -> None:
 
     _purge()
 
+    from app.tasks.strm import generate_strm
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[DOWNLOADER] generate_strm failed after all downloads: %s", exc, exc_info=True)
+
 
 @task("download_provider")
 def download_provider(provider_slug: str) -> None:
@@ -182,3 +187,9 @@ def download_provider(provider_slug: str) -> None:
         return
 
     _download_provider(row, m3u_dir)
+
+    from app.tasks.strm import generate_strm
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[DOWNLOADER] generate_strm failed after download of '%s': %s", provider_slug, exc, exc_info=True)
