@@ -585,11 +585,12 @@ function renderCard(e, idx) {
       ? `<button class="btn-action btn-unfollow" data-action="unfollow-series">Unfollow</button>`
       : `<button class="btn-action btn-follow" data-action="open-follow">Follow</button>`;
 
+    const displayTitle = e.display_title || e.cleaned_title;
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="series">
-        ${artEl(e.cover_art, e.cleaned_title, 'series')}
+        ${artEl(e.cover_art, displayTitle, 'series')}
         <div class="card-body">
-          <div class="card-title">${esc(e.cleaned_title)}</div>
+          <div class="card-title">${esc(displayTitle)}</div>
           <div class="card-meta">${esc(meta)}</div>
           <div class="card-badges">
             <span class="${typeBadgeClass('series')}">Series</span>
@@ -607,8 +608,8 @@ function renderCard(e, idx) {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
     const isTvVod = e.type === 'tv_vod';
+    const displayTitle = e.display_title || e.cleaned_title;
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
-    // data-entry-id on the card itself so actions can read it regardless of which element is clicked
     const actionsHtml = !isTvVod ? `
       <div class="card-actions">
         <button class="btn-action btn-add" data-action="add-entry" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}>Add</button>
@@ -616,9 +617,9 @@ function renderCard(e, idx) {
       </div>` : '';
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}">
-        ${artEl(e.cover_art, e.cleaned_title, e.type)}
+        ${artEl(e.cover_art, displayTitle, e.type)}
         <div class="card-body">
-          <div class="card-title">${esc(e.cleaned_title)}</div>
+          <div class="card-title">${esc(displayTitle)}</div>
           <div class="card-meta">${esc(meta)}</div>
           <div class="card-badges">
             <span class="${typeBadgeClass(e.type)}">${esc(e.type)}</span>
@@ -789,17 +790,20 @@ async function toggleEpisodes(season, seriesTitle) {
   try {
     const data = await fetch(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${season}/episodes`).then(r => r.json());
     epList.dataset.loaded = '1';
-    epList.innerHTML = data.episodes.map(ep => `
+    epList.innerHTML = data.episodes.map(ep => {
+      const epLabel = ep.display_title || `Episode ${ep.episode || '?'}`;
+      return `
       <div class="episode-row" data-entry-id="${esc(ep.entry_id)}">
         <span class="episode-num">E${String(ep.episode || '?').padStart(2,'0')}</span>
-        <span class="episode-label">${ep.is_owned ? `<span class="ep-owned-badge">&#10003;</span> ` : ''}Episode ${ep.episode || '?'}</span>
+        <span class="episode-label">${ep.is_owned ? `<span class="ep-owned-badge">&#10003;</span> ` : ''}${esc(epLabel)}</span>
         <div class="episode-actions">
           <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
             ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
           <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
             ${!ep.is_owned ? 'disabled' : ''}>Remove</button>
         </div>
-      </div>`).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
+      </div>`;
+    }).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
   } catch(e) {
     epList.innerHTML = '<div style="padding:12px 32px;color:var(--color-danger);font-size:0.82rem;">Failed to load episodes.</div>';
   }

@@ -63,6 +63,20 @@ _CAN_ADD_SUBQUERY = """
        AND _s2.exclude = 0 AND _s2.imported = 0)
 """
 
+# Subquery: filtered_title from the highest-priority eligible import_selected stream.
+# This mirrors the STRM engine's priority resolution so the displayed title matches
+# what will be written to disk.
+_FILTERED_TITLE_SUBQUERY = """
+    (SELECT _sf.filtered_title FROM streams _sf
+     JOIN providers _pf ON _pf.slug = _sf.provider
+     WHERE _sf.entry_id = e.entry_id
+       AND _pf.strm_mode = 'import_selected' AND _pf.is_active = 1
+       AND _sf.exclude = 0
+       AND _sf.filtered_title IS NOT NULL AND _sf.filtered_title != ''
+     ORDER BY _pf.priority, _pf.slug
+     LIMIT 1)
+"""
+
 
 @router.get("/entries", response_class=JSONResponse)
 async def list_entries(
@@ -115,6 +129,7 @@ async def list_entries(
             series_query = f"""
                 SELECT
                     e.cleaned_title,
+                    MIN({_FILTERED_TITLE_SUBQUERY}) AS filtered_title,
                     'series' AS type,
                     MIN(e.year) AS year,
                     COUNT(DISTINCT e.season) AS season_count,
@@ -144,6 +159,7 @@ async def list_entries(
                     SELECT
                         e.entry_id, e.type, e.cleaned_title, e.year,
                         e.season, e.episode, e.cover_art,
+                        {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
                         (SELECT s3.provider FROM streams s3 WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
                         (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
                         {_CAN_ADD_SUBQUERY} AS can_add_count
@@ -179,6 +195,7 @@ async def list_entries(
                 SELECT
                     e.entry_id, e.type, e.cleaned_title, e.year,
                     e.season, e.episode, e.cover_art,
+                    {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
                     (SELECT s3.provider FROM streams s3 WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
                     (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
                     {_CAN_ADD_SUBQUERY} AS can_add_count
@@ -198,11 +215,20 @@ async def list_entries(
     })
 
 
+def _display_title(r) -> str:
+    try:
+        ft = r["filtered_title"]
+    except IndexError:
+        ft = None
+    return (ft or r["cleaned_title"] or "").strip() or (r["cleaned_title"] or "")
+
+
 def _format_series_group(r) -> dict:
     return {
         "entry_id": None,
         "type": "series",
-        "cleaned_title": r["cleaned_title"],
+        "cleaned_title": r["cleaned_title"],   # kept for API lookups (URLs use this)
+        "display_title": _display_title(r),
         "year": r["year"],
         "season_count": r["season_count"],
         "episode_count": r["episode_count"],
@@ -218,7 +244,8 @@ def _format_individual(r) -> dict:
     return {
         "entry_id": r["entry_id"],
         "type": r["type"],
-        "cleaned_title": r["cleaned_title"],
+        "cleaned_title": r["cleaned_title"],   # kept for API lookups
+        "display_title": _display_title(r),
         "year": r["year"],
         "season": r["season"],
         "episode": r["episode"],
@@ -309,7 +336,16 @@ async def list_episodes(
                  WHERE s2.entry_id = e.entry_id
                    AND p2.strm_mode = 'import_selected' AND p2.is_active = 1
                    AND s2.exclude = 0 AND s2.imported = 0
-                ) AS can_add_count
+                ) AS can_add_count,
+                (SELECT s2.filtered_title FROM streams s2
+                 JOIN providers p2 ON p2.slug = s2.provider
+                 WHERE s2.entry_id = e.entry_id
+                   AND p2.strm_mode = 'import_selected' AND p2.is_active = 1
+                   AND s2.exclude = 0
+                   AND s2.filtered_title IS NOT NULL AND s2.filtered_title != ''
+                 ORDER BY p2.priority, p2.slug
+                 LIMIT 1
+                ) AS filtered_title
             FROM entries e
             WHERE e.type = 'series'
               AND lower(e.cleaned_title) = lower(?)
@@ -323,6 +359,7 @@ async def list_episodes(
         "entry_id": r["entry_id"],
         "episode": r["episode"],
         "cover_art": r["cover_art"],
+        "display_title": (r["filtered_title"] or "").strip() or None,
         "is_owned": r["owner_slug"] is not None,
         "owner_slug": r["owner_slug"],
         "stream_count": r["stream_count"],
