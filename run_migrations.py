@@ -71,8 +71,16 @@ def _load_migration(path: str):
     return module
 
 
+def _init_schema(conn: sqlite3.Connection) -> None:
+    """Apply the base schema so migrations can safely ALTER existing tables."""
+    from app.database import _SCHEMA
+    conn.executescript(_SCHEMA)
+    conn.commit()
+
+
 def run_all_migrations() -> None:
     conn = _get_connection()
+    _init_schema(conn)
     _ensure_migrations_table(conn)
     applied = _applied_migrations(conn)
 
