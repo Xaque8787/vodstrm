@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     cron \
     tzdata \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TZ=America/Los_Angeles
