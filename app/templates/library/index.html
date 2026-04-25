@@ -158,9 +158,10 @@
   .badge-movie   { background: #cfe2ff; color: #084298; }
   .badge-series  { background: #d1e7dd; color: #0a3622; }
   .badge-live    { background: #fff3cd; color: #664d03; }
-  .badge-tv_vod  { background: #e8d5fb; color: #4a0e8f; }
+  .badge-tv_vod  { background: #e2d9f3; color: #3d1a78; }
   .badge-unsorted{ background: #e9ecef; color: #495057; }
   .badge-owned   { background: #198754; color: #fff; }
+  .badge-following { background: #0d6efd; color: #fff; }
 
   .card-actions {
     display: flex;
@@ -188,7 +189,9 @@
   .btn-remove:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
   .btn-follow { background: transparent; border-color: var(--color-secondary); color: var(--color-secondary); font-size: 0.68rem; }
   .btn-follow:hover:not(:disabled) { background: var(--color-secondary); color: #fff; }
-  .btn-follow.active { background: var(--color-secondary); color: #fff; }
+  .btn-follow.is-following { background: var(--color-secondary); color: #fff; }
+  .btn-unfollow { background: transparent; border-color: var(--color-danger); color: var(--color-danger); font-size: 0.68rem; }
+  .btn-unfollow:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
 
   /* ── Expand panel (series drill-down) ── */
   .expand-panel {
@@ -240,21 +243,28 @@
     align-items: center;
     gap: var(--spacing);
     padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2);
-    cursor: pointer;
     user-select: none;
-    transition: background 0.1s;
   }
-  .season-header:hover { background: var(--color-bg); }
+
+  .season-expand-area {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing);
+    flex: 1;
+    cursor: pointer;
+    transition: opacity 0.1s;
+  }
+  .season-expand-area:hover { opacity: 0.7; }
 
   .season-chevron {
     font-size: 0.75rem;
     color: var(--color-text-muted);
     transition: transform 0.15s;
+    flex-shrink: 0;
   }
   .season-chevron.open { transform: rotate(90deg); }
 
   .season-label {
-    flex: 1;
     font-weight: 600;
     font-size: 0.88rem;
   }
@@ -262,12 +272,14 @@
   .season-meta {
     font-size: 0.78rem;
     color: var(--color-text-muted);
+    flex-shrink: 0;
   }
 
   .season-actions {
     display: flex;
     gap: 4px;
     align-items: center;
+    flex-shrink: 0;
   }
 
   .episode-list {
@@ -321,7 +333,7 @@
   .ep-btn-remove:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
   .ep-owned-badge { font-size: 0.65rem; color: #198754; font-weight: 700; }
 
-  /* ── Follow modal ── */
+  /* ── Follow confirmation modal ── */
   .modal-backdrop {
     display: none;
     position: fixed;
@@ -337,7 +349,7 @@
     background: var(--color-surface);
     border-radius: var(--radius);
     box-shadow: var(--shadow-md);
-    width: 420px;
+    width: 400px;
     max-width: 95vw;
     overflow: hidden;
   }
@@ -359,36 +371,14 @@
     color: var(--color-text-muted);
     line-height: 1;
   }
+  .modal-close:hover { color: var(--color-text); }
 
   .modal-body {
     padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
-    display: flex;
-    flex-direction: column;
-    gap: calc(var(--spacing) * 1.5);
-  }
-
-  .form-label {
-    font-size: 0.76rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 0.88rem;
     color: var(--color-text-muted);
-    display: block;
-    margin-bottom: 3px;
+    line-height: 1.5;
   }
-
-  .form-control {
-    width: 100%;
-    padding: 7px 10px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    font-size: 0.875rem;
-    font-family: var(--font);
-    background: var(--color-bg);
-    color: var(--color-text);
-    transition: border-color 0.15s;
-  }
-  .form-control:focus { outline: none; border-color: var(--color-primary); }
 
   .modal-footer {
     padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
@@ -424,35 +414,6 @@
     transition: background 0.12s;
   }
   .btn-secondary:hover { background: var(--color-bg); }
-
-  /* ── Follow list in modal ── */
-  .follow-chips {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .follow-chip {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 8px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    font-size: 0.8rem;
-  }
-
-  .follow-chip-info { flex: 1; }
-  .follow-chip-del {
-    background: none;
-    border: none;
-    color: var(--color-danger);
-    cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
-    padding: 0 2px;
-  }
 
   /* ── Pagination ── */
   .pagination {
@@ -542,42 +503,20 @@
   </div>
 </div>
 
-<!-- Follow modal -->
+<!-- Follow confirmation modal -->
 <div class="modal-backdrop" id="follow-modal">
   <div class="modal">
     <div class="modal-header">
-      <span id="modal-title">Follow</span>
+      <span id="modal-title">Follow Series</span>
       <button class="modal-close" onclick="closeFollowModal()">&#215;</button>
     </div>
     <div class="modal-body" id="modal-body">
-      <!-- Existing follows for this title -->
-      <div>
-        <label class="form-label">Existing rules</label>
-        <div class="follow-chips" id="existing-follows"></div>
-      </div>
-      {% if import_selected_providers %}
-      <!-- Add new follow -->
-      <div>
-        <label class="form-label" for="m-provider">Provider</label>
-        <select id="m-provider" class="form-control">
-          {% for p in import_selected_providers %}
-          <option value="{{ p.id }}">{{ p.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="form-label" for="m-season">Season (blank = all seasons)</label>
-        <input id="m-season" class="form-control" type="number" min="1" placeholder="e.g. 2" />
-      </div>
-      {% else %}
-      <p style="font-size:0.85rem;color:var(--color-text-muted);">No active import_selected providers configured.</p>
-      {% endif %}
+      Following a series will automatically add all current and future episodes
+      from this series to your library whenever new content is ingested.
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeFollowModal()">Cancel</button>
-      {% if import_selected_providers %}
-      <button class="btn-primary" id="modal-add-btn" onclick="submitFollow()">Add Rule</button>
-      {% endif %}
+      <button class="btn-primary" id="modal-confirm-btn">Follow</button>
     </div>
   </div>
 </div>
@@ -588,7 +527,7 @@
 const PER_PAGE = 48;
 let state = { page: 1, type: '', search: '', owned: '', total: 0 };
 let debounceTimer = null;
-let expandedTitle = null;  // currently expanded series title
+let expandedTitle = null;
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -627,7 +566,7 @@ function artEl(coverArt, title, type) {
   return `<div class="card-art-placeholder"><span class="card-art-placeholder-icon">${typeIcon(type)}</span></div>`;
 }
 
-// Store entry data by index for event delegation (avoids HTML attribute quoting issues)
+// Store entry data by index for event delegation
 const cardData = [];
 
 function renderCard(e, idx) {
@@ -635,16 +574,20 @@ function renderCard(e, idx) {
   if (e.is_series_group) {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
+    const followBadge = e.is_following ? `<span class="badge badge-following">Following</span>` : '';
     const meta = [
       e.year || null,
       `${e.season_count} season${e.season_count !== 1 ? 's' : ''}`,
       `${e.episode_count} ep`,
     ].filter(Boolean).join(' · ');
-    const hasImportable = e.can_add || e.is_owned;
-    const addBtn = hasImportable
-      ? `<button class="btn-action btn-add" data-action="add-series" ${!e.can_add ? 'disabled' : ''}>Add All</button>
-         <button class="btn-action btn-remove" data-action="remove-series" ${!e.is_owned ? 'disabled' : ''}>Remove</button>`
-      : '';
+
+    let followBtn;
+    if (e.is_following) {
+      followBtn = `<button class="btn-action btn-unfollow" data-action="unfollow-series">Unfollow</button>`;
+    } else {
+      followBtn = `<button class="btn-action btn-follow" data-action="open-follow">Follow</button>`;
+    }
+
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="series">
         ${artEl(e.cover_art, e.cleaned_title, 'series')}
@@ -654,10 +597,12 @@ function renderCard(e, idx) {
           <div class="card-badges card-expand-trigger">
             <span class="${typeBadgeClass('series')}">Series</span>
             ${ownedBadge}
+            ${followBadge}
           </div>
           <div class="card-actions">
-            ${addBtn}
-            <button class="btn-action btn-follow" data-action="open-follow">Follow</button>
+            <button class="btn-action btn-add" data-action="add-series" ${!e.can_add ? 'disabled' : ''}>Add All</button>
+            <button class="btn-action btn-remove" data-action="remove-series" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            ${followBtn}
           </div>
         </div>
       </div>`;
@@ -666,8 +611,7 @@ function renderCard(e, idx) {
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
     const isTvVod = e.type === 'tv_vod';
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
-    const hasImportable = e.can_add || e.is_owned;
-    const actionsHtml = hasImportable && !isTvVod ? `
+    const actionsHtml = !isTvVod ? `
       <div class="card-actions">
         <button class="btn-action btn-add" data-action="add-entry" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}>Add</button>
         <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
@@ -701,8 +645,19 @@ async function fetchEntries() {
   if (state.owned)  params.set('owned', state.owned);
 
   try {
-    const data = await fetch('/library/entries?' + params).then(r => r.json());
+    // Fetch entries and follows in parallel
+    const [data, follows] = await Promise.all([
+      fetch('/library/entries?' + params).then(r => r.json()),
+      fetch('/library/follows').then(r => r.json()),
+    ]);
     state.total = data.total;
+
+    // Build set of followed series titles (all-season follows only)
+    const followedTitles = new Set(
+      follows
+        .filter(f => f.entry_type === 'series' && f.season === null)
+        .map(f => f.entry_title.toLowerCase())
+    );
 
     if (!data.entries.length) {
       grid.innerHTML = '<div class="empty-state">No content found.</div>';
@@ -711,6 +666,12 @@ async function fetchEntries() {
     }
 
     cardData.length = 0;
+    // Annotate series groups with follow state
+    data.entries.forEach(e => {
+      if (e.is_series_group) {
+        e.is_following = followedTitles.has((e.cleaned_title || '').toLowerCase());
+      }
+    });
     grid.innerHTML = data.entries.map((e, i) => renderCard(e, i)).join('');
     renderPagination(data.total);
   } catch(e) {
@@ -752,7 +713,6 @@ async function toggleSeriesExpand(cardEl, title) {
     <div class="season-list" id="season-list"><div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">Loading seasons…</div></div>
   `;
 
-  // Insert immediately after cardEl — cardEl is the live DOM node just clicked
   if (cardEl.nextSibling) {
     cardEl.parentNode.insertBefore(panel, cardEl.nextSibling);
   } else {
@@ -764,7 +724,7 @@ async function toggleSeriesExpand(cardEl, title) {
     renderSeasons(data, title);
   } catch(err) {
     const sl = document.getElementById('season-list');
-    if (sl) sl.innerHTML = `<div style="padding:16px;color:var(--color-danger);">Failed to load seasons: ${esc(String(err))}</div>`;
+    if (sl) sl.innerHTML = `<div style="padding:16px;color:var(--color-danger);">Failed to load seasons.</div>`;
   }
 }
 
@@ -775,34 +735,28 @@ function renderSeasons(data, title) {
     return;
   }
 
-  // Build map: season_num -> follow ids
-  const allFollowIds = (data.all_season_follows || []).map(f => f.id);
-
-  // Store season data for event delegation
   list._seriesTitle = title;
-  list._seasonsData = {};
 
   list.innerHTML = data.seasons.map(s => {
     const seasonNum = s.season;
-    list._seasonsData[seasonNum] = s;
-    const sFollows = s.season_follows || [];
-    const isFollowed = allFollowIds.length > 0 || sFollows.length > 0;
-    const followLabel = isFollowed ? 'Following' : 'Follow';
-    const followActive = isFollowed ? ' active' : '';
+    const ownedInfo = s.owned_count > 0
+      ? `<span style="font-size:0.72rem;color:#198754;font-weight:600;">${s.owned_count} owned</span>`
+      : '';
 
     return `
       <div class="season-row" id="season-${seasonNum}" data-season="${seasonNum}">
-        <div class="season-header" data-action="toggle-episodes" data-season="${seasonNum}">
-          <span class="season-chevron" id="chev-${seasonNum}">&#9654;</span>
-          <span class="season-label">Season ${seasonNum}</span>
-          <span class="season-meta">${s.episode_count} episode${s.episode_count !== 1 ? 's' : ''}</span>
+        <div class="season-header">
+          <div class="season-expand-area" data-action="toggle-episodes" data-season="${seasonNum}">
+            <span class="season-chevron" id="chev-${seasonNum}">&#9654;</span>
+            <span class="season-label">Season ${seasonNum}</span>
+            <span class="season-meta">${s.episode_count} episode${s.episode_count !== 1 ? 's' : ''}</span>
+          </div>
+          ${ownedInfo}
           <div class="season-actions">
             <button class="btn-action btn-add" style="padding:3px 8px;font-size:0.72rem;"
               data-action="add-season" data-season="${seasonNum}" ${!s.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
               data-action="remove-season" data-season="${seasonNum}" ${!s.is_owned ? 'disabled' : ''}>Remove</button>
-            <button class="btn-action btn-follow${followActive}" style="padding:3px 8px;font-size:0.68rem;"
-              data-action="follow-season" data-season="${seasonNum}">${followLabel}</button>
           </div>
         </div>
         <div class="episode-list" id="eps-${seasonNum}"></div>
@@ -847,7 +801,7 @@ async function toggleEpisodes(season, seriesTitle) {
   }
 }
 
-// ── Event delegation — single listener handles all card/season/episode actions ─
+// ── Event delegation — card grid ──────────────────────────────────────────────
 
 document.getElementById('card-grid').addEventListener('click', async function(e) {
   const btn = e.target.closest('[data-action]');
@@ -856,9 +810,6 @@ document.getElementById('card-grid').addEventListener('click', async function(e)
 
   const action = btn.dataset.action;
   const card = btn.closest('[data-card-idx]');
-  const seasonList = document.getElementById('season-list');
-  const seriesTitle = seasonList ? seasonList._seriesTitle : null;
-  const seasonNum = btn.dataset.season !== undefined ? parseInt(btn.dataset.season) : null;
   const entryId = btn.dataset.entryId;
 
   if (action === 'add-entry' && entryId) {
@@ -884,13 +835,28 @@ document.getElementById('card-grid').addEventListener('click', async function(e)
   } else if (action === 'open-follow' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
     if (!d) return;
-    openFollowModal(d.cleaned_title, null);
+    openFollowModal(d.cleaned_title);
+  } else if (action === 'unfollow-series' && card) {
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
+    btn.disabled = true;
+    await api(`/library/series/${encodeURIComponent(d.cleaned_title)}/unfollow`, 'POST');
+    refreshAfterAction();
   }
 });
 
-// Season list delegation — toggle-episodes and season actions live in expand-panel
+// Card expand — click on card background expands series
+document.getElementById('card-grid').addEventListener('click', function(e) {
+  const card = e.target.closest('[data-card-idx][data-type="series"]');
+  if (!card) return;
+  if (e.target.closest('[data-action]')) return;
+  const d = cardData[parseInt(card.dataset.cardIdx)];
+  if (d) toggleSeriesExpand(card, d.cleaned_title);
+});
+
+// ── Event delegation — season list ───────────────────────────────────────────
+
 document.addEventListener('click', function(e) {
-  // Only handle clicks inside #season-list
   const seasonList = document.getElementById('season-list');
   if (!seasonList || !seasonList.contains(e.target)) return;
 
@@ -911,8 +877,6 @@ document.addEventListener('click', function(e) {
   } else if (action === 'remove-season' && seriesTitle && seasonNum !== null) {
     btn.disabled = true;
     api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/remove`, 'POST').then(refreshAfterAction);
-  } else if (action === 'follow-season' && seriesTitle && seasonNum !== null) {
-    openFollowModal(seriesTitle, seasonNum);
   } else if (action === 'add-entry' && entryId) {
     btn.disabled = true;
     api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST').then(refreshAfterAction);
@@ -922,22 +886,10 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// Card expand — click on card background (not buttons) expands series
-document.getElementById('card-grid').addEventListener('click', function(e) {
-  const card = e.target.closest('[data-card-idx][data-type="series"]');
-  if (!card) return;
-  // Ignore if click was on a button/action
-  if (e.target.closest('[data-action]')) return;
-  const d = cardData[parseInt(card.dataset.cardIdx)];
-  if (d) toggleSeriesExpand(card, d.cleaned_title);
-});
-
 function refreshAfterAction() {
   const savedTitle = expandedTitle;
   fetchEntries().then(() => {
     if (savedTitle) {
-      const card = document.querySelector(`[data-card-idx][data-type="series"]`);
-      // Find the card whose data matches savedTitle
       const allCards = document.querySelectorAll('[data-card-idx][data-type="series"]');
       for (const c of allCards) {
         const d = cardData[parseInt(c.dataset.cardIdx)];
@@ -952,67 +904,33 @@ function refreshAfterAction() {
 
 // ── Follow modal ──────────────────────────────────────────────────────────────
 
-let modalContext = { title: null, season: null };
+let followPendingTitle = null;
 
-async function openFollowModal(title, season) {
-  modalContext = { title, season };
-  document.getElementById('modal-title').textContent =
-    season !== null ? `Follow: ${title} — Season ${season}` : `Follow: ${title}`;
-  document.getElementById('m-season').value = season !== null ? season : '';
-
-  // Load existing follows for this title
-  try {
-    const follows = await fetch('/library/follows').then(r => r.json());
-    const relevant = follows.filter(f =>
-      f.entry_type === 'series' &&
-      f.entry_title.toLowerCase() === title.toLowerCase() &&
-      (season === null ? true : (f.season === season || f.season === null))
-    );
-    const chips = document.getElementById('existing-follows');
-    chips.innerHTML = relevant.length
-      ? relevant.map(f => `
-          <div class="follow-chip" id="fc-${f.id}">
-            <div class="follow-chip-info">
-              <strong>${esc(f.provider_name)}</strong> &mdash;
-              ${f.season !== null ? `Season ${f.season}` : 'All seasons'}
-            </div>
-            <button class="follow-chip-del" onclick="deleteFollow(${f.id})">&#215;</button>
-          </div>`).join('')
-      : '<div style="font-size:0.82rem;color:var(--color-text-muted);">No rules yet.</div>';
-  } catch(e) {
-    document.getElementById('existing-follows').innerHTML = '';
-  }
-
+function openFollowModal(title) {
+  followPendingTitle = title;
+  document.getElementById('modal-title').textContent = `Follow: ${title}`;
+  document.getElementById('modal-body').textContent =
+    `Following "${title}" will automatically add all current and future episodes to your library whenever new content is ingested.`;
   document.getElementById('follow-modal').classList.add('open');
 }
 
 function closeFollowModal() {
   document.getElementById('follow-modal').classList.remove('open');
+  followPendingTitle = null;
 }
 
-async function submitFollow() {
-  const providerId = document.getElementById('m-provider')?.value;
-  const season = document.getElementById('m-season').value.trim();
-  if (!providerId) return;
-
+document.getElementById('modal-confirm-btn').addEventListener('click', async function() {
+  if (!followPendingTitle) return;
+  this.disabled = true;
   await api('/library/follows', 'POST', {
-    provider_id: providerId,
     entry_type: 'series',
-    entry_title: modalContext.title,
-    season: season,
+    entry_title: followPendingTitle,
   });
-
   closeFollowModal();
   refreshAfterAction();
-}
+  this.disabled = false;
+});
 
-async function deleteFollow(id) {
-  await api(`/library/follows/${id}/delete`, 'POST');
-  // Reload modal contents
-  openFollowModal(modalContext.title, modalContext.season);
-}
-
-// Close modal on backdrop click
 document.getElementById('follow-modal').addEventListener('click', function(e) {
   if (e.target === this) closeFollowModal();
 });

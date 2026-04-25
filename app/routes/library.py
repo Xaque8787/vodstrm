@@ -20,14 +20,6 @@ templates = Jinja2Templates(
 )
 
 
-def _import_selected_providers() -> list[dict]:
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT id, name, slug FROM providers WHERE strm_mode = 'import_selected' AND is_active = 1 ORDER BY priority, name"
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
@@ -42,7 +34,6 @@ async def library_page(
         {
             "request": request,
             "current_user": current_user,
-            "import_selected_providers": _import_selected_providers(),
         },
     )
 
@@ -50,6 +41,28 @@ async def library_page(
 # ---------------------------------------------------------------------------
 # Content browse endpoints (JSON)
 # ---------------------------------------------------------------------------
+
+# Subquery: entry has at least one stream from an active import_selected provider
+_HAS_IMPORT_SELECTED = """
+    EXISTS (
+        SELECT 1 FROM streams _s
+        JOIN providers _p ON _p.slug = _s.provider
+        WHERE _s.entry_id = e.entry_id
+          AND _p.strm_mode = 'import_selected'
+          AND _p.is_active = 1
+    )
+"""
+
+# Subquery: can_add — entry has an unimported, non-excluded stream from an
+# active import_selected provider
+_CAN_ADD_SUBQUERY = """
+    (SELECT COUNT(*) FROM streams _s2
+     JOIN providers _p2 ON _p2.slug = _s2.provider
+     WHERE _s2.entry_id = e.entry_id
+       AND _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
+       AND _s2.exclude = 0 AND _s2.imported = 0)
+"""
+
 
 @router.get("/entries", response_class=JSONResponse)
 async def list_entries(
@@ -61,18 +74,14 @@ async def list_entries(
     current_user: TokenData = Depends(get_current_user),
 ):
     """
-    Return movies and series title-groups (not individual episodes).
+    Return content from import_selected providers only.
 
-    Series are grouped by cleaned_title so one card represents the entire
-    series. Live / tv_vod / unsorted entries are returned individually.
+    Series are grouped by cleaned_title so one card represents the entire show.
     """
     offset = (page - 1) * per_page
     conditions = []
     params: list = []
 
-    # For browse purposes exclude series episodes from top level — they are
-    # surfaced through the /series/<title>/seasons/<n>/episodes endpoint.
-    # When type filter is 'series' we return grouped rows; otherwise individual.
     type_filter = type.strip()
 
     if type_filter == "series":
@@ -81,7 +90,6 @@ async def list_entries(
         base_condition = "e.type = ?"
         params.append(type_filter)
     else:
-        # All types — but series entries are grouped, others are individual
         base_condition = "1=1"
 
     if search:
@@ -97,11 +105,13 @@ async def list_entries(
             "NOT EXISTS (SELECT 1 FROM streams s2 WHERE s2.entry_id = e.entry_id AND s2.strm_path IS NOT NULL)"
         )
 
+    # Always restrict to import_selected provider content
+    conditions.append(_HAS_IMPORT_SELECTED)
+
     extra_where = (" AND " + " AND ".join(conditions)) if conditions else ""
 
     with get_db() as conn:
         if type_filter in ("series", ""):
-            # For series: group by cleaned_title to get one card per show
             series_query = f"""
                 SELECT
                     e.cleaned_title,
@@ -111,13 +121,12 @@ async def list_entries(
                     COUNT(e.entry_id) AS episode_count,
                     MAX(e.cover_art) AS cover_art,
                     SUM(CASE WHEN s2.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
-                    COUNT(DISTINCT CASE
-                        WHEN p2.strm_mode = 'import_selected' AND p2.is_active = 1
-                             AND s2.exclude = 0 AND s2.imported = 0
-                        THEN s2.stream_id END) AS can_add_count
+                    SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
+                                  AND s2.exclude = 0 AND s2.imported = 0
+                             THEN 1 ELSE 0 END) AS can_add_count
                 FROM entries e
                 LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
-                LEFT JOIN providers p2 ON p2.slug = s2.provider
+                LEFT JOIN providers _p2 ON _p2.slug = s2.provider
                 WHERE e.type = 'series' {extra_where}
                 GROUP BY e.cleaned_title
                 ORDER BY e.cleaned_title
@@ -131,34 +140,25 @@ async def list_entries(
                 ).fetchall()
                 entries = [_format_series_group(r) for r in rows]
             else:
-                # Mixed: series groups + individual non-series
                 individual_query = f"""
                     SELECT
                         e.entry_id, e.type, e.cleaned_title, e.year,
                         e.season, e.episode, e.cover_art,
                         (SELECT s3.provider FROM streams s3 WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
                         (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
-                        (SELECT COUNT(*) FROM streams s3
-                         JOIN providers p3 ON p3.slug = s3.provider
-                         WHERE s3.entry_id = e.entry_id
-                           AND p3.strm_mode = 'import_selected' AND p3.is_active = 1
-                           AND s3.exclude = 0 AND s3.imported = 0
-                        ) AS can_add_count
+                        {_CAN_ADD_SUBQUERY} AS can_add_count
                     FROM entries e
                     WHERE e.type NOT IN ('series') {extra_where}
                     ORDER BY e.cleaned_title
                 """
-                # Count: series groups + individual non-series
                 series_count = conn.execute(
                     f"SELECT COUNT(*) FROM ({series_query})", params
                 ).fetchone()[0]
                 individual_count = conn.execute(
-                    f"SELECT COUNT(*) FROM ({individual_query})",
-                    params,
+                    f"SELECT COUNT(*) FROM ({individual_query})", params
                 ).fetchone()[0]
                 total = series_count + individual_count
 
-                # Fetch both with pagination applied naively (series first)
                 series_rows = conn.execute(
                     series_query + " LIMIT ? OFFSET ?",
                     params + [per_page, offset],
@@ -175,19 +175,13 @@ async def list_entries(
                 entries = [_format_series_group(r) for r in series_rows] + \
                           [_format_individual(r) for r in indiv_rows]
         else:
-            # Specific non-series type
             q = f"""
                 SELECT
                     e.entry_id, e.type, e.cleaned_title, e.year,
                     e.season, e.episode, e.cover_art,
                     (SELECT s3.provider FROM streams s3 WHERE s3.entry_id = e.entry_id AND s3.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
                     (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
-                    (SELECT COUNT(*) FROM streams s3
-                     JOIN providers p3 ON p3.slug = s3.provider
-                     WHERE s3.entry_id = e.entry_id
-                       AND p3.strm_mode = 'import_selected' AND p3.is_active = 1
-                       AND s3.exclude = 0 AND s3.imported = 0
-                    ) AS can_add_count
+                    {_CAN_ADD_SUBQUERY} AS can_add_count
                 FROM entries e
                 WHERE {base_condition} {extra_where}
                 ORDER BY e.cleaned_title
@@ -242,7 +236,7 @@ async def list_seasons(
     title: str,
     current_user: TokenData = Depends(get_current_user),
 ):
-    """Return seasons for a series title with per-season ownership + follow info."""
+    """Return seasons for a series title with per-season ownership info."""
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -251,10 +245,9 @@ async def list_seasons(
                 COUNT(e.entry_id) AS episode_count,
                 MAX(e.cover_art) AS cover_art,
                 SUM(CASE WHEN s.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
-                COUNT(DISTINCT CASE
-                    WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
-                         AND s.exclude = 0 AND s.imported = 0
-                    THEN s.stream_id END) AS can_add_count
+                SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
+                              AND s.exclude = 0 AND s.imported = 0
+                         THEN 1 ELSE 0 END) AS can_add_count
             FROM entries e
             LEFT JOIN streams s ON s.entry_id = e.entry_id
             LEFT JOIN providers p ON p.slug = s.provider
@@ -265,41 +258,32 @@ async def list_seasons(
             (title,),
         ).fetchall()
 
-        # Existing follow rules for this title across all import_selected providers
-        follows = conn.execute(
+        # Existing all-series follow rule for this title
+        follow = conn.execute(
             """
-            SELECT f.id, f.season, f.provider_id, p.name AS provider_name
-            FROM follows f
-            JOIN providers p ON p.id = f.provider_id
+            SELECT f.id FROM follows f
             WHERE lower(f.entry_title) = lower(?) AND f.entry_type = 'series'
+              AND f.season IS NULL
+            LIMIT 1
             """,
             (title,),
-        ).fetchall()
-
-    # Build a map: season_num -> [follow_ids] (NULL season = all-seasons follow)
-    all_season_follows = [dict(f) for f in follows if f["season"] is None]
-    season_follows: dict[int, list] = {}
-    for f in follows:
-        if f["season"] is not None:
-            season_follows.setdefault(f["season"], []).append(dict(f))
+        ).fetchone()
 
     seasons = []
     for r in rows:
-        s = r["season"]
         seasons.append({
-            "season": s,
+            "season": r["season"],
             "episode_count": r["episode_count"],
             "cover_art": r["cover_art"],
             "owned_count": r["owned_count"] or 0,
             "is_owned": (r["owned_count"] or 0) > 0,
             "can_add": (r["can_add_count"] or 0) > 0,
-            "season_follows": season_follows.get(s, []),
         })
 
     return JSONResponse({
         "title": title,
         "seasons": seasons,
-        "all_season_follows": all_season_follows,
+        "follow_id": follow["id"] if follow else None,
     })
 
 
@@ -352,35 +336,22 @@ async def list_episodes(
 @router.post("/entries/{entry_id}/add")
 async def add_entry(
     entry_id: str,
-    provider_id: int = Form(default=0),
     current_user: TokenData = Depends(get_current_user),
 ):
     from app.tasks.strm import generate_strm
     with get_db() as conn:
-        if provider_id:
-            stream = conn.execute(
-                """
-                SELECT s.stream_id FROM streams s
-                JOIN providers p ON p.slug = s.provider
-                WHERE s.entry_id = ? AND p.id = ?
-                  AND p.strm_mode = 'import_selected' AND p.is_active = 1
-                LIMIT 1
-                """,
-                (entry_id, provider_id),
-            ).fetchone()
-        else:
-            stream = conn.execute(
-                """
-                SELECT s.stream_id FROM streams s
-                JOIN providers p ON p.slug = s.provider
-                WHERE s.entry_id = ?
-                  AND p.strm_mode = 'import_selected' AND p.is_active = 1
-                  AND s.exclude = 0 AND s.imported = 0
-                ORDER BY p.priority, p.slug
-                LIMIT 1
-                """,
-                (entry_id,),
-            ).fetchone()
+        stream = conn.execute(
+            """
+            SELECT s.stream_id FROM streams s
+            JOIN providers p ON p.slug = s.provider
+            WHERE s.entry_id = ?
+              AND p.strm_mode = 'import_selected' AND p.is_active = 1
+              AND s.exclude = 0 AND s.imported = 0
+            ORDER BY p.priority, p.slug
+            LIMIT 1
+            """,
+            (entry_id,),
+        ).fetchone()
         if stream:
             conn.execute("UPDATE streams SET imported = 1 WHERE stream_id = ?", (stream["stream_id"],))
             logger.info("[LIBRARY] Add entry=%s stream=%s by=%s", entry_id[:12], stream["stream_id"], current_user.username)
@@ -604,39 +575,42 @@ async def list_follows(current_user: TokenData = Depends(get_current_user)):
 
 @router.post("/follows", response_class=JSONResponse)
 async def add_follow(
-    provider_id: int = Form(...),
     entry_type: str = Form(...),
     entry_title: str = Form(...),
-    season: str = Form(default=""),
     current_user: TokenData = Depends(get_current_user),
 ):
+    """Create a follow rule for an entire series across all import_selected providers."""
     if entry_type not in ("movie", "series"):
         return JSONResponse({"ok": False, "error": "Invalid entry_type"}, status_code=400)
 
-    season_int: Optional[int] = None
-    if season.strip():
-        try:
-            season_int = int(season.strip())
-        except ValueError:
-            pass
-
     with get_db() as conn:
-        provider = conn.execute(
-            "SELECT id FROM providers WHERE id = ? AND strm_mode = 'import_selected' AND is_active = 1",
-            (provider_id,),
-        ).fetchone()
-        if not provider:
-            return JSONResponse({"ok": False, "error": "Provider not found"}, status_code=404)
+        # Follow applies to all active import_selected providers
+        providers = conn.execute(
+            "SELECT id FROM providers WHERE strm_mode = 'import_selected' AND is_active = 1"
+        ).fetchall()
 
-        conn.execute(
-            "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, ?, ?, ?)",
-            (provider_id, entry_type, entry_title.strip(), season_int),
-        )
+        if not providers:
+            return JSONResponse({"ok": False, "error": "No active import_selected providers"}, status_code=400)
+
+        inserted = 0
+        for p in providers:
+            # Avoid duplicates
+            exists = conn.execute(
+                "SELECT 1 FROM follows WHERE provider_id = ? AND entry_type = ? AND lower(entry_title) = lower(?) AND season IS NULL",
+                (p["id"], entry_type, entry_title.strip()),
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, ?, ?, NULL)",
+                    (p["id"], entry_type, entry_title.strip()),
+                )
+                inserted += 1
+
     logger.info(
-        "[LIBRARY] Follow added provider_id=%d type=%s title=%r season=%s by=%s",
-        provider_id, entry_type, entry_title.strip(), season_int, current_user.username,
+        "[LIBRARY] Follow added type=%s title=%r providers=%d by=%s",
+        entry_type, entry_title.strip(), inserted, current_user.username,
     )
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "inserted": inserted})
 
 
 @router.post("/follows/{follow_id}/delete", response_class=JSONResponse)
@@ -648,3 +622,19 @@ async def delete_follow(
         conn.execute("DELETE FROM follows WHERE id = ?", (follow_id,))
     logger.info("[LIBRARY] Follow deleted id=%d by=%s", follow_id, current_user.username)
     return JSONResponse({"ok": True})
+
+
+@router.post("/series/{title}/unfollow", response_class=JSONResponse)
+async def unfollow_series(
+    title: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Remove all follow rules for a series title."""
+    with get_db() as conn:
+        result = conn.execute(
+            "DELETE FROM follows WHERE lower(entry_title) = lower(?) AND entry_type = 'series'",
+            (title,),
+        )
+        deleted = result.rowcount
+    logger.info("[LIBRARY] Unfollow series title=%r deleted=%d by=%s", title, deleted, current_user.username)
+    return JSONResponse({"ok": True, "deleted": deleted})
