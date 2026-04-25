@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS entries (
     episode     INTEGER,
     air_date    TEXT,
     series_type TEXT CHECK(series_type IN ('season_episode', 'air_date') OR series_type IS NULL),
+    cover_art   TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );

@@ -3,66 +3,49 @@
 
 {% block head %}
 <style>
-  .library-layout {
-    display: grid;
-    grid-template-columns: 1fr 340px;
-    gap: calc(var(--spacing) * 3);
-    align-items: start;
+  /* ── Layout ── */
+  .library-wrap {
+    padding: calc(var(--spacing) * 3);
+    max-width: 1400px;
   }
 
-  /* ── Browser panel ── */
-  .browser-panel {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    overflow: hidden;
+  .library-heading {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: calc(var(--spacing) * 3);
   }
 
-  .browser-header {
-    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
-    border-bottom: 1px solid var(--color-border);
-    display: flex;
-    flex-direction: column;
-    gap: calc(var(--spacing) * 1.5);
-  }
-
-  .browser-title {
-    font-size: 1rem;
-    font-weight: 600;
-  }
-
-  .browser-controls {
+  /* ── Toolbar ── */
+  .library-toolbar {
     display: flex;
     gap: var(--spacing);
     align-items: center;
     flex-wrap: wrap;
+    margin-bottom: calc(var(--spacing) * 2);
   }
 
   .search-input {
     flex: 1;
-    min-width: 180px;
-    padding: 6px 10px;
+    min-width: 200px;
+    max-width: 360px;
+    padding: 7px 12px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     font-size: 0.875rem;
     font-family: var(--font);
-    background: var(--color-bg);
+    background: var(--color-surface);
     color: var(--color-text);
     transition: border-color 0.15s;
   }
-  .search-input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-  }
+  .search-input:focus { outline: none; border-color: var(--color-primary); }
 
   .filter-select {
-    padding: 6px 10px;
+    padding: 7px 10px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     font-size: 0.875rem;
     font-family: var(--font);
-    background: var(--color-bg);
+    background: var(--color-surface);
     color: var(--color-text);
     cursor: pointer;
   }
@@ -71,15 +54,14 @@
   .type-tabs {
     display: flex;
     gap: 4px;
-    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
-    border-bottom: 1px solid var(--color-border);
-    overflow-x: auto;
+    margin-bottom: calc(var(--spacing) * 2.5);
+    flex-wrap: wrap;
   }
 
   .type-tab {
-    padding: 4px 12px;
+    padding: 5px 14px;
     border-radius: 20px;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     font-weight: 500;
     border: 1px solid var(--color-border);
     background: transparent;
@@ -88,217 +70,297 @@
     white-space: nowrap;
     transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
-  .type-tab:hover {
-    background: var(--color-bg);
-    color: var(--color-text);
-  }
-  .type-tab.active {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-    color: #fff;
+  .type-tab:hover { background: var(--color-bg); color: var(--color-text); }
+  .type-tab.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+
+  /* ── Card grid ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: calc(var(--spacing) * 2);
   }
 
-  /* ── Entry list ── */
-  .entry-list {
-    min-height: 200px;
-  }
-
-  .entry-row {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing);
-    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2.5);
-    border-bottom: 1px solid var(--color-border);
-    transition: background 0.1s;
-  }
-  .entry-row:last-child {
-    border-bottom: none;
-  }
-  .entry-row:hover {
-    background: var(--color-bg);
-  }
-
-  .entry-meta {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .entry-title {
-    font-size: 0.9rem;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .entry-sub {
-    font-size: 0.78rem;
-    color: var(--color-text-muted);
-    margin-top: 1px;
-  }
-
-  .entry-badges {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  .badge {
-    display: inline-block;
-    padding: 2px 7px;
-    border-radius: 10px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-  }
-  .badge-movie   { background: #cfe2ff; color: #084298; }
-  .badge-series  { background: #d1e7dd; color: #0a3622; }
-  .badge-live    { background: #fff3cd; color: #664d03; }
-  .badge-tv_vod  { background: #f0e0ff; color: #3e1a6c; }
-  .badge-unsorted{ background: #e9ecef; color: #495057; }
-  .badge-owned   { background: #d1e7dd; color: #0a3622; }
-
-  .entry-actions {
-    display: flex;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
-  .btn-sm {
-    padding: 4px 10px;
-    font-size: 0.78rem;
-    border-radius: var(--radius);
-    border: 1px solid transparent;
-    cursor: pointer;
-    font-family: var(--font);
-    font-weight: 500;
-    transition: background 0.12s, border-color 0.12s, opacity 0.12s;
-    white-space: nowrap;
-  }
-  .btn-sm:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .btn-add {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-    color: #fff;
-  }
-  .btn-add:hover:not(:disabled) {
-    background: var(--color-primary-hover);
-    border-color: var(--color-primary-hover);
-  }
-  .btn-remove {
-    background: transparent;
-    border-color: var(--color-danger);
-    color: var(--color-danger);
-  }
-  .btn-remove:hover:not(:disabled) {
-    background: var(--color-danger);
-    color: #fff;
-  }
-
-  /* ── Pagination ── */
-  .pagination {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
-    border-top: 1px solid var(--color-border);
-    font-size: 0.82rem;
-    color: var(--color-text-muted);
-  }
-
-  .pagination-btns {
-    display: flex;
-    gap: 4px;
-  }
-
-  .btn-page {
-    padding: 4px 10px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-size: 0.82rem;
-    cursor: pointer;
-    font-family: var(--font);
-    transition: background 0.12s;
-  }
-  .btn-page:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .btn-page:hover:not(:disabled) {
-    background: var(--color-bg);
-  }
-
-  .empty-state {
-    padding: calc(var(--spacing) * 5) calc(var(--spacing) * 3);
-    text-align: center;
-    color: var(--color-text-muted);
-    font-size: 0.9rem;
-  }
-
-  /* ── Follow rules panel ── */
-  .follows-panel {
+  .content-card {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     overflow: hidden;
-  }
-
-  .follows-header {
-    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
-    border-bottom: 1px solid var(--color-border);
-    font-size: 1rem;
-    font-weight: 600;
-  }
-
-  .follows-list {
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .follow-row {
     display: flex;
-    align-items: flex-start;
-    gap: var(--spacing);
-    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2.5);
-    border-bottom: 1px solid var(--color-border);
-    font-size: 0.85rem;
+    flex-direction: column;
+    cursor: pointer;
+    transition: box-shadow 0.15s, transform 0.15s;
   }
-  .follow-row:last-child {
-    border-bottom: none;
+  .content-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+  .content-card.is-owned { border-color: #198754; }
+
+  .card-art {
+    width: 100%;
+    aspect-ratio: 2/3;
+    object-fit: cover;
+    background: #e9ecef;
+    display: block;
+    flex-shrink: 0;
+  }
+  .card-art-placeholder {
+    width: 100%;
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .card-art-placeholder-icon {
+    font-size: 2.5rem;
+    opacity: 0.3;
   }
 
-  .follow-info {
+  .card-body {
+    padding: calc(var(--spacing) * 1.25);
     flex: 1;
-    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
-  .follow-title {
-    font-weight: 500;
-    word-break: break-word;
+  .card-title {
+    font-size: 0.83rem;
+    font-weight: 600;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
-  .follow-detail {
-    font-size: 0.76rem;
+  .card-meta {
+    font-size: 0.72rem;
     color: var(--color-text-muted);
+  }
+
+  .card-badges {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
     margin-top: 2px;
   }
 
-  .follows-empty {
-    padding: calc(var(--spacing) * 3);
-    text-align: center;
-    color: var(--color-text-muted);
-    font-size: 0.85rem;
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .badge-movie   { background: #cfe2ff; color: #084298; }
+  .badge-series  { background: #d1e7dd; color: #0a3622; }
+  .badge-live    { background: #fff3cd; color: #664d03; }
+  .badge-tv_vod  { background: #e8d5fb; color: #4a0e8f; }
+  .badge-unsorted{ background: #e9ecef; color: #495057; }
+  .badge-owned   { background: #198754; color: #fff; }
+
+  .card-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
   }
 
-  /* ── Add follow form ── */
-  .follow-form {
+  .btn-action {
+    flex: 1;
+    padding: 4px 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: var(--font);
+    text-align: center;
+    transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+    white-space: nowrap;
+  }
+  .btn-action:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn-add { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .btn-add:hover:not(:disabled) { background: var(--color-primary-hover); }
+  .btn-remove { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
+  .btn-remove:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
+  .btn-follow { background: transparent; border-color: var(--color-secondary); color: var(--color-secondary); font-size: 0.68rem; }
+  .btn-follow:hover:not(:disabled) { background: var(--color-secondary); color: #fff; }
+  .btn-follow.active { background: var(--color-secondary); color: #fff; }
+
+  /* ── Expand panel (series drill-down) ── */
+  .expand-panel {
+    grid-column: 1 / -1;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .expand-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+
+  .expand-close {
+    background: none;
+    border: none;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    line-height: 1;
+    padding: 2px 6px;
+  }
+  .expand-close:hover { color: var(--color-text); }
+
+  .season-list {
+    padding: calc(var(--spacing) * 1.5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing);
+  }
+
+  .season-row {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .season-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+  }
+  .season-header:hover { background: var(--color-bg); }
+
+  .season-chevron {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    transition: transform 0.15s;
+  }
+  .season-chevron.open { transform: rotate(90deg); }
+
+  .season-label {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.88rem;
+  }
+
+  .season-meta {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+  }
+
+  .season-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .episode-list {
+    border-top: 1px solid var(--color-border);
+    display: none;
+  }
+  .episode-list.open { display: block; }
+
+  .episode-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing);
+    padding: calc(var(--spacing)) calc(var(--spacing) * 2) calc(var(--spacing)) calc(var(--spacing) * 4);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.82rem;
+  }
+  .episode-row:last-child { border-bottom: none; }
+
+  .episode-num {
+    font-weight: 600;
+    color: var(--color-text-muted);
+    min-width: 40px;
+    flex-shrink: 0;
+  }
+
+  .episode-label {
+    flex: 1;
+    color: var(--color-text);
+  }
+
+  .episode-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .ep-btn {
+    padding: 3px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: background 0.12s, opacity 0.12s;
+  }
+  .ep-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .ep-btn-add { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .ep-btn-add:hover:not(:disabled) { background: var(--color-primary-hover); }
+  .ep-btn-remove { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
+  .ep-btn-remove:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
+  .ep-owned-badge { font-size: 0.65rem; color: #198754; font-weight: 700; }
+
+  /* ── Follow modal ── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+
+  .modal {
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    width: 420px;
+    max-width: 95vw;
+    overflow: hidden;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-border);
+    font-weight: 600;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    line-height: 1;
+  }
+
+  .modal-body {
     padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
     display: flex;
     flex-direction: column;
@@ -306,18 +368,18 @@
   }
 
   .form-label {
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    color: var(--color-text-muted);
     display: block;
     margin-bottom: 3px;
   }
 
   .form-control {
     width: 100%;
-    padding: 6px 10px;
+    padding: 7px 10px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     font-size: 0.875rem;
@@ -326,13 +388,18 @@
     color: var(--color-text);
     transition: border-color 0.15s;
   }
-  .form-control:focus {
-    outline: none;
-    border-color: var(--color-primary);
+  .form-control:focus { outline: none; border-color: var(--color-primary); }
+
+  .modal-footer {
+    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing);
   }
 
   .btn-primary {
-    padding: 7px 16px;
+    padding: 7px 18px;
     background: var(--color-primary);
     border: 1px solid var(--color-primary);
     border-radius: var(--radius);
@@ -343,284 +410,590 @@
     cursor: pointer;
     transition: background 0.12s;
   }
-  .btn-primary:hover {
-    background: var(--color-primary-hover);
-    border-color: var(--color-primary-hover);
+  .btn-primary:hover { background: var(--color-primary-hover); }
+
+  .btn-secondary {
+    padding: 7px 14px;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    color: var(--color-text);
+    font-size: 0.875rem;
+    font-family: var(--font);
+    cursor: pointer;
+    transition: background 0.12s;
   }
-  .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .btn-secondary:hover { background: var(--color-bg); }
+
+  /* ── Follow list in modal ── */
+  .follow-chips {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
-  .loading-row {
-    padding: calc(var(--spacing) * 3);
+  .follow-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 0.8rem;
+  }
+
+  .follow-chip-info { flex: 1; }
+  .follow-chip-del {
+    background: none;
+    border: none;
+    color: var(--color-danger);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 2px;
+  }
+
+  /* ── Pagination ── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: calc(var(--spacing) * 2.5);
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+  }
+
+  .pagination-btns { display: flex; gap: 4px; }
+
+  .btn-page {
+    padding: 5px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 0.82rem;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: background 0.12s;
+  }
+  .btn-page:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-page:hover:not(:disabled) { background: var(--color-bg); }
+
+  .empty-state {
+    grid-column: 1 / -1;
+    padding: calc(var(--spacing) * 6) 0;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+  }
+
+  .loading-state {
+    grid-column: 1 / -1;
+    padding: calc(var(--spacing) * 4) 0;
     text-align: center;
     color: var(--color-text-muted);
     font-size: 0.85rem;
   }
 
-  @media (max-width: 900px) {
-    .library-layout {
-      grid-template-columns: 1fr;
-    }
+  @media (max-width: 600px) {
+    .card-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    .library-wrap { padding: var(--spacing); }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div style="padding: calc(var(--spacing) * 3);">
-  <h1 style="font-size: 1.4rem; font-weight: 700; margin-bottom: calc(var(--spacing) * 3);">Library</h1>
+<div class="library-wrap">
+  <h1 class="library-heading">Library</h1>
 
-  <div class="library-layout">
+  <!-- Toolbar -->
+  <div class="library-toolbar">
+    <input id="search-input" class="search-input" type="search" placeholder="Search titles…" autocomplete="off" />
+    <select id="owned-filter" class="filter-select">
+      <option value="">All</option>
+      <option value="true">Owned</option>
+      <option value="false">Not owned</option>
+    </select>
+  </div>
 
-    <!-- ── Content Browser ── -->
-    <div class="browser-panel">
-      <div class="browser-header">
-        <div class="browser-title">Content Browser</div>
-        <div class="browser-controls">
-          <input
-            id="search-input"
-            class="search-input"
-            type="search"
-            placeholder="Search titles…"
-            autocomplete="off"
-          />
-          <select id="owned-filter" class="filter-select">
-            <option value="">All</option>
-            <option value="true">Owned</option>
-            <option value="false">Not owned</option>
-          </select>
-        </div>
-      </div>
+  <!-- Type tabs -->
+  <div class="type-tabs">
+    <button class="type-tab active" data-type="">All</button>
+    <button class="type-tab" data-type="movie">Movies</button>
+    <button class="type-tab" data-type="series">Series</button>
+    <button class="type-tab" data-type="live">Live</button>
+    <button class="type-tab" data-type="tv_vod">TV VOD</button>
+    <button class="type-tab" data-type="unsorted">Unsorted</button>
+  </div>
 
-      <div class="type-tabs">
-        <button class="type-tab active" data-type="">All</button>
-        <button class="type-tab" data-type="movie">Movies</button>
-        <button class="type-tab" data-type="series">Series</button>
-        <button class="type-tab" data-type="live">Live</button>
-        <button class="type-tab" data-type="tv_vod">TV VOD</button>
-        <button class="type-tab" data-type="unsorted">Unsorted</button>
-      </div>
+  <!-- Card grid -->
+  <div class="card-grid" id="card-grid">
+    <div class="loading-state">Loading…</div>
+  </div>
 
-      <div class="entry-list" id="entry-list">
-        <div class="loading-row">Loading…</div>
-      </div>
-
-      <div class="pagination" id="pagination" style="display:none;">
-        <span id="pagination-info"></span>
-        <div class="pagination-btns">
-          <button class="btn-page" id="btn-prev" disabled>&#8592; Prev</button>
-          <button class="btn-page" id="btn-next" disabled>Next &#8594;</button>
-        </div>
-      </div>
+  <!-- Pagination -->
+  <div class="pagination" id="pagination" style="display:none;">
+    <span id="pagination-info"></span>
+    <div class="pagination-btns">
+      <button class="btn-page" id="btn-prev" disabled>&#8592; Prev</button>
+      <button class="btn-page" id="btn-next" disabled>Next &#8594;</button>
     </div>
+  </div>
+</div>
 
-    <!-- ── Follow Rules Panel ── -->
-    <div class="follows-panel">
-      <div class="follows-header">Follow Rules</div>
-
-      {% if follows %}
-      <div class="follows-list">
-        {% for rule in follows %}
-        <div class="follow-row">
-          <div class="follow-info">
-            <div class="follow-title">{{ rule.entry_title }}</div>
-            <div class="follow-detail">
-              {{ rule.provider_name }} &middot;
-              {{ rule.entry_type }}
-              {% if rule.season is not none %} &middot; Season {{ rule.season }}{% endif %}
-            </div>
-          </div>
-          <form method="post" action="/library/follows/{{ rule.id }}/delete" style="flex-shrink:0;">
-            <button type="submit" class="btn-sm btn-remove" title="Remove rule">&#215;</button>
-          </form>
-        </div>
-        {% endfor %}
+<!-- Follow modal -->
+<div class="modal-backdrop" id="follow-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="modal-title">Follow</span>
+      <button class="modal-close" onclick="closeFollowModal()">&#215;</button>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <!-- Existing follows for this title -->
+      <div>
+        <label class="form-label">Existing rules</label>
+        <div class="follow-chips" id="existing-follows"></div>
       </div>
-      {% else %}
-      <div class="follows-empty">No follow rules yet.</div>
-      {% endif %}
-
       {% if import_selected_providers %}
-      <form class="follow-form" method="post" action="/library/follows">
-        <div>
-          <label class="form-label" for="f-provider">Provider</label>
-          <select id="f-provider" name="provider_id" class="form-control" required>
-            {% for p in import_selected_providers %}
-            <option value="{{ p.id }}">{{ p.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="form-label" for="f-type">Content Type</label>
-          <select id="f-type" name="entry_type" class="form-control" required onchange="toggleSeasonField(this)">
-            <option value="movie">Movie</option>
-            <option value="series">Series</option>
-          </select>
-        </div>
-        <div>
-          <label class="form-label" for="f-title">Title (partial match)</label>
-          <input id="f-title" name="entry_title" class="form-control" type="text" required placeholder="e.g. Breaking Bad" />
-        </div>
-        <div id="season-field" style="display:none;">
-          <label class="form-label" for="f-season">Season (leave blank for all)</label>
-          <input id="f-season" name="season" class="form-control" type="number" min="1" placeholder="e.g. 2" />
-        </div>
-        <button type="submit" class="btn-primary">Add Rule</button>
-      </form>
-      {% else %}
-      <div class="follows-empty" style="padding: calc(var(--spacing)*2) calc(var(--spacing)*2.5);">
-        No active <em>import_selected</em> providers configured.
+      <!-- Add new follow -->
+      <div>
+        <label class="form-label" for="m-provider">Provider</label>
+        <select id="m-provider" class="form-control">
+          {% for p in import_selected_providers %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
       </div>
+      <div>
+        <label class="form-label" for="m-season">Season (blank = all seasons)</label>
+        <input id="m-season" class="form-control" type="number" min="1" placeholder="e.g. 2" />
+      </div>
+      {% else %}
+      <p style="font-size:0.85rem;color:var(--color-text-muted);">No active import_selected providers configured.</p>
       {% endif %}
     </div>
-
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeFollowModal()">Cancel</button>
+      {% if import_selected_providers %}
+      <button class="btn-primary" id="modal-add-btn" onclick="submitFollow()">Add Rule</button>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  const PER_PAGE = 50;
-  let state = { page: 1, type: '', search: '', owned: '', total: 0 };
-  let debounceTimer = null;
+const PER_PAGE = 48;
+let state = { page: 1, type: '', search: '', owned: '', total: 0 };
+let debounceTimer = null;
+let expandedTitle = null;  // currently expanded series title
 
-  function typeBadge(type) {
-    const labels = { movie: 'Movie', series: 'Series', live: 'Live', tv_vod: 'TV VOD', unsorted: 'Unsorted' };
-    return `<span class="badge badge-${type}">${labels[type] || type}</span>`;
+// ── Utility ──────────────────────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function typeIcon(type) {
+  return {movie:'🎬', series:'📺', live:'📡', tv_vod:'📅', unsorted:'📁'}[type] || '📄';
+}
+
+function typeBadgeClass(type) {
+  return `badge badge-${type}`;
+}
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+
+async function api(url, method='GET', body=null) {
+  const opts = { method, headers: {} };
+  if (body) {
+    opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    opts.body = new URLSearchParams(body).toString();
   }
+  const res = await fetch(url, opts);
+  return res.json();
+}
 
-  function entrySubtext(e) {
-    const parts = [];
-    if (e.year) parts.push(e.year);
-    if (e.season != null) parts.push(`S${String(e.season).padStart(2,'0')}`);
-    if (e.episode != null) parts.push(`E${String(e.episode).padStart(2,'0')}`);
-    parts.push(`${e.stream_count} source${e.stream_count !== 1 ? 's' : ''}`);
-    if (e.owner_slug) parts.push(`via ${e.owner_slug}`);
-    return parts.join(' · ');
+// ── Render helpers ────────────────────────────────────────────────────────────
+
+function artEl(coverArt, title, type) {
+  if (coverArt) {
+    return `<img class="card-art" src="${esc(coverArt)}" alt="${esc(title)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+            <div class="card-art-placeholder" style="display:none;"><span class="card-art-placeholder-icon">${typeIcon(type)}</span></div>`;
   }
+  return `<div class="card-art-placeholder"><span class="card-art-placeholder-icon">${typeIcon(type)}</span></div>`;
+}
 
-  function renderEntries(data) {
+function renderCard(e) {
+  const titleEnc = encodeURIComponent(e.cleaned_title);
+  if (e.is_series_group) {
+    const ownedClass = e.is_owned ? ' is-owned' : '';
+    const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
+    const meta = [
+      e.year || null,
+      `${e.season_count} season${e.season_count !== 1 ? 's' : ''}`,
+      `${e.episode_count} ep`,
+    ].filter(Boolean).join(' · ');
+    return `
+      <div class="content-card${ownedClass}" data-series-title="${esc(e.cleaned_title)}" onclick="toggleSeriesExpand(this, ${JSON.stringify(e.cleaned_title)})">
+        ${artEl(e.cover_art, e.cleaned_title, 'series')}
+        <div class="card-body">
+          <div class="card-title">${esc(e.cleaned_title)}</div>
+          <div class="card-meta">${esc(meta)}</div>
+          <div class="card-badges">
+            <span class="${typeBadgeClass('series')}">Series</span>
+            ${ownedBadge}
+          </div>
+          <div class="card-actions" onclick="event.stopPropagation()">
+            <button class="btn-action btn-add" ${!e.can_add || e.episode_count === 0 ? 'disabled' : ''}
+              onclick="addSeries(${JSON.stringify(e.cleaned_title)}, this)">Add All</button>
+            <button class="btn-action btn-remove" ${!e.is_owned ? 'disabled' : ''}
+              onclick="removeSeries(${JSON.stringify(e.cleaned_title)}, this)">Remove</button>
+            <button class="btn-action btn-follow"
+              onclick="openFollowModal(${JSON.stringify(e.cleaned_title)}, null)">Follow</button>
+          </div>
+        </div>
+      </div>`;
+  } else {
+    const ownedClass = e.is_owned ? ' is-owned' : '';
+    const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
+    const isTvVod = e.type === 'tv_vod';
+    const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
+    return `
+      <div class="content-card${ownedClass}">
+        ${artEl(e.cover_art, e.cleaned_title, e.type)}
+        <div class="card-body">
+          <div class="card-title">${esc(e.cleaned_title)}</div>
+          <div class="card-meta">${esc(meta)}</div>
+          <div class="card-badges">
+            <span class="${typeBadgeClass(e.type)}">${esc(e.type)}</span>
+            ${ownedBadge}
+          </div>
+          <div class="card-actions">
+            <button class="btn-action btn-add" ${(!e.can_add || e.is_owned || isTvVod) ? 'disabled' : ''}
+              title="${isTvVod ? 'tv_vod not supported' : ''}"
+              onclick="addEntry(${JSON.stringify(e.entry_id)}, this)">Add</button>
+            <button class="btn-action btn-remove" ${!e.is_owned ? 'disabled' : ''}
+              onclick="removeEntry(${JSON.stringify(e.entry_id)}, this)">Remove</button>
+          </div>
+        </div>
+      </div>`;
+  }
+}
+
+// ── Fetch & render grid ───────────────────────────────────────────────────────
+
+async function fetchEntries() {
+  const grid = document.getElementById('card-grid');
+  grid.innerHTML = '<div class="loading-state">Loading…</div>';
+  closeExpand();
+
+  const params = new URLSearchParams({ page: state.page, per_page: PER_PAGE });
+  if (state.type)   params.set('type', state.type);
+  if (state.search) params.set('search', state.search);
+  if (state.owned)  params.set('owned', state.owned);
+
+  try {
+    const data = await fetch('/library/entries?' + params).then(r => r.json());
     state.total = data.total;
-    const list = document.getElementById('entry-list');
-    const pagination = document.getElementById('pagination');
 
     if (!data.entries.length) {
-      list.innerHTML = '<div class="empty-state">No content found.</div>';
-      pagination.style.display = 'none';
+      grid.innerHTML = '<div class="empty-state">No content found.</div>';
+      document.getElementById('pagination').style.display = 'none';
       return;
     }
 
-    list.innerHTML = data.entries.map(e => {
-      const isTvVod = e.type === 'tv_vod';
-      const addDisabled = !e.can_add || isTvVod || e.is_owned;
-      const removeDisabled = !e.is_owned;
-      const addTitle = isTvVod ? 'tv_vod STRM generation not yet supported' : (e.is_owned ? 'Already owned' : 'Add to library');
-      const removeTitle = e.is_owned ? 'Remove from library' : 'Not owned';
+    grid.innerHTML = data.entries.map(renderCard).join('');
+    renderPagination(data.total);
+  } catch(e) {
+    grid.innerHTML = '<div class="empty-state">Failed to load content.</div>';
+  }
+}
 
-      return `
-        <div class="entry-row">
-          <div class="entry-meta">
-            <div class="entry-title">${escHtml(e.cleaned_title || '')}</div>
-            <div class="entry-sub">${escHtml(entrySubtext(e))}</div>
-          </div>
-          <div class="entry-badges">
-            ${typeBadge(e.type)}
-            ${e.is_owned ? '<span class="badge badge-owned">Owned</span>' : ''}
-          </div>
-          <div class="entry-actions">
-            <form method="post" action="/library/entries/${encodeURIComponent(e.entry_id)}/add" style="display:inline;">
-              <button type="submit" class="btn-sm btn-add" ${addDisabled ? 'disabled' : ''} title="${escHtml(addTitle)}">Add</button>
-            </form>
-            <form method="post" action="/library/entries/${encodeURIComponent(e.entry_id)}/remove" style="display:inline;">
-              <button type="submit" class="btn-sm btn-remove" ${removeDisabled ? 'disabled' : ''} title="${escHtml(removeTitle)}">Remove</button>
-            </form>
+function renderPagination(total) {
+  const totalPages = Math.ceil(total / PER_PAGE);
+  const start = (state.page - 1) * PER_PAGE + 1;
+  const end = Math.min(state.page * PER_PAGE, total);
+  document.getElementById('pagination-info').textContent = `${start}–${end} of ${total}`;
+  document.getElementById('btn-prev').disabled = state.page <= 1;
+  document.getElementById('btn-next').disabled = state.page >= totalPages;
+  document.getElementById('pagination').style.display = 'flex';
+}
+
+// ── Series expand / drill-down ────────────────────────────────────────────────
+
+function closeExpand() {
+  const existing = document.getElementById('expand-panel');
+  if (existing) existing.remove();
+  expandedTitle = null;
+}
+
+async function toggleSeriesExpand(cardEl, title) {
+  if (expandedTitle === title) { closeExpand(); return; }
+  closeExpand();
+  expandedTitle = title;
+
+  // Insert expand panel after the card's row in the grid
+  const panel = document.createElement('div');
+  panel.id = 'expand-panel';
+  panel.className = 'expand-panel';
+  panel.innerHTML = `
+    <div class="expand-panel-header">
+      <span>${esc(title)}</span>
+      <button class="expand-close" onclick="closeExpand()">&#215;</button>
+    </div>
+    <div class="season-list" id="season-list"><div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">Loading seasons…</div></div>
+  `;
+
+  // Insert after cardEl in the grid
+  const grid = document.getElementById('card-grid');
+  const cards = Array.from(grid.children);
+  const cardIndex = cards.indexOf(cardEl);
+  const nextCard = cards[cardIndex + 1];
+  if (nextCard) {
+    grid.insertBefore(panel, nextCard);
+  } else {
+    grid.appendChild(panel);
+  }
+
+  try {
+    const data = await fetch(`/library/series/${encodeURIComponent(title)}/seasons`).then(r => r.json());
+    renderSeasons(data, title);
+  } catch(e) {
+    document.getElementById('season-list').innerHTML = '<div style="padding:16px;color:var(--color-danger);">Failed to load seasons.</div>';
+  }
+}
+
+function renderSeasons(data, title) {
+  const list = document.getElementById('season-list');
+  if (!data.seasons || !data.seasons.length) {
+    list.innerHTML = '<div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">No seasons found.</div>';
+    return;
+  }
+
+  // Build map: season_num -> follow ids
+  const allFollowIds = (data.all_season_follows || []).map(f => f.id);
+
+  list.innerHTML = data.seasons.map(s => {
+    const seasonNum = s.season;
+    const sFollows = s.season_follows || [];
+    const isFollowed = allFollowIds.length > 0 || sFollows.length > 0;
+    const followLabel = isFollowed ? 'Following' : 'Follow';
+    const followActive = isFollowed ? ' active' : '';
+
+    return `
+      <div class="season-row" id="season-${seasonNum}">
+        <div class="season-header" onclick="toggleEpisodes(this, ${JSON.stringify(title)}, ${seasonNum})">
+          <span class="season-chevron" id="chev-${seasonNum}">&#9654;</span>
+          <span class="season-label">Season ${seasonNum}</span>
+          <span class="season-meta">${s.episode_count} episode${s.episode_count !== 1 ? 's' : ''}</span>
+          <div class="season-actions" onclick="event.stopPropagation()">
+            <button class="btn-action btn-add" style="padding:3px 8px;font-size:0.72rem;"
+              ${!s.can_add ? 'disabled' : ''}
+              onclick="addSeason(${JSON.stringify(title)}, ${seasonNum}, this)">Add</button>
+            <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
+              ${!s.is_owned ? 'disabled' : ''}
+              onclick="removeSeason(${JSON.stringify(title)}, ${seasonNum}, this)">Remove</button>
+            <button class="btn-action btn-follow${followActive}" style="padding:3px 8px;font-size:0.68rem;"
+              onclick="openFollowModal(${JSON.stringify(title)}, ${seasonNum})">
+              ${followLabel}</button>
           </div>
         </div>
-      `;
-    }).join('');
+        <div class="episode-list" id="eps-${seasonNum}"></div>
+      </div>`;
+  }).join('');
+}
 
-    // Pagination
-    const totalPages = Math.ceil(data.total / PER_PAGE);
-    const start = (state.page - 1) * PER_PAGE + 1;
-    const end = Math.min(state.page * PER_PAGE, data.total);
-    document.getElementById('pagination-info').textContent = `${start}–${end} of ${data.total}`;
-    document.getElementById('btn-prev').disabled = state.page <= 1;
-    document.getElementById('btn-next').disabled = state.page >= totalPages;
-    pagination.style.display = 'flex';
+async function toggleEpisodes(headerEl, title, season) {
+  const epList = document.getElementById(`eps-${season}`);
+  const chev = document.getElementById(`chev-${season}`);
+  const isOpen = epList.classList.contains('open');
+
+  if (isOpen) {
+    epList.classList.remove('open');
+    chev.classList.remove('open');
+    return;
   }
 
-  function escHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  epList.classList.add('open');
+  chev.classList.add('open');
+
+  if (epList.dataset.loaded) return;
+  epList.innerHTML = '<div style="padding:12px 32px;font-size:0.82rem;color:var(--color-text-muted);">Loading…</div>';
+
+  try {
+    const data = await fetch(`/library/series/${encodeURIComponent(title)}/seasons/${season}/episodes`).then(r => r.json());
+    epList.dataset.loaded = '1';
+    epList.innerHTML = data.episodes.map(ep => `
+      <div class="episode-row" id="ep-${ep.entry_id}">
+        <span class="episode-num">E${String(ep.episode || '?').padStart(2,'0')}</span>
+        <span class="episode-label">${ep.is_owned ? `<span class="ep-owned-badge">&#10003;</span> ` : ''}Episode ${ep.episode || '?'}</span>
+        <div class="episode-actions">
+          <button class="ep-btn ep-btn-add" ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}
+            onclick="addEntry(${JSON.stringify(ep.entry_id)}, this)">Add</button>
+          <button class="ep-btn ep-btn-remove" ${!ep.is_owned ? 'disabled' : ''}
+            onclick="removeEntry(${JSON.stringify(ep.entry_id)}, this)">Remove</button>
+        </div>
+      </div>`).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
+  } catch(e) {
+    epList.innerHTML = '<div style="padding:12px 32px;color:var(--color-danger);font-size:0.82rem;">Failed to load episodes.</div>';
   }
+}
 
-  async function fetchEntries() {
-    document.getElementById('entry-list').innerHTML = '<div class="loading-row">Loading…</div>';
-    const params = new URLSearchParams({
-      page: state.page,
-      per_page: PER_PAGE,
-    });
-    if (state.type)   params.set('type', state.type);
-    if (state.search) params.set('search', state.search);
-    if (state.owned)  params.set('owned', state.owned);
+// ── Actions ───────────────────────────────────────────────────────────────────
 
-    try {
-      const res = await fetch('/library/entries?' + params.toString());
-      const data = await res.json();
-      renderEntries(data);
-    } catch (err) {
-      document.getElementById('entry-list').innerHTML = '<div class="empty-state">Failed to load entries.</div>';
+async function addEntry(entryId, btn) {
+  btn.disabled = true;
+  await api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST');
+  refreshAfterAction();
+}
+
+async function removeEntry(entryId, btn) {
+  btn.disabled = true;
+  await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
+  refreshAfterAction();
+}
+
+async function addSeries(title, btn) {
+  btn.disabled = true;
+  await api(`/library/series/${encodeURIComponent(title)}/add`, 'POST');
+  refreshAfterAction();
+}
+
+async function removeSeries(title, btn) {
+  btn.disabled = true;
+  await api(`/library/series/${encodeURIComponent(title)}/remove`, 'POST');
+  refreshAfterAction();
+}
+
+async function addSeason(title, season, btn) {
+  btn.disabled = true;
+  await api(`/library/series/${encodeURIComponent(title)}/seasons/${season}/add`, 'POST');
+  refreshAfterAction();
+}
+
+async function removeSeason(title, season, btn) {
+  btn.disabled = true;
+  await api(`/library/series/${encodeURIComponent(title)}/seasons/${season}/remove`, 'POST');
+  refreshAfterAction();
+}
+
+function refreshAfterAction() {
+  const savedTitle = expandedTitle;
+  fetchEntries().then(() => {
+    if (savedTitle) {
+      const card = document.querySelector(`[data-series-title="${CSS.escape(savedTitle)}"]`);
+      if (card) toggleSeriesExpand(card, savedTitle);
     }
+  });
+}
+
+// ── Follow modal ──────────────────────────────────────────────────────────────
+
+let modalContext = { title: null, season: null };
+
+async function openFollowModal(title, season) {
+  modalContext = { title, season };
+  document.getElementById('modal-title').textContent =
+    season !== null ? `Follow: ${title} — Season ${season}` : `Follow: ${title}`;
+  document.getElementById('m-season').value = season !== null ? season : '';
+
+  // Load existing follows for this title
+  try {
+    const follows = await fetch('/library/follows').then(r => r.json());
+    const relevant = follows.filter(f =>
+      f.entry_type === 'series' &&
+      f.entry_title.toLowerCase() === title.toLowerCase() &&
+      (season === null ? true : (f.season === season || f.season === null))
+    );
+    const chips = document.getElementById('existing-follows');
+    chips.innerHTML = relevant.length
+      ? relevant.map(f => `
+          <div class="follow-chip" id="fc-${f.id}">
+            <div class="follow-chip-info">
+              <strong>${esc(f.provider_name)}</strong> &mdash;
+              ${f.season !== null ? `Season ${f.season}` : 'All seasons'}
+            </div>
+            <button class="follow-chip-del" onclick="deleteFollow(${f.id})">&#215;</button>
+          </div>`).join('')
+      : '<div style="font-size:0.82rem;color:var(--color-text-muted);">No rules yet.</div>';
+  } catch(e) {
+    document.getElementById('existing-follows').innerHTML = '';
   }
 
-  // Type tabs
-  document.querySelectorAll('.type-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.type-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      state.type = tab.dataset.type;
-      state.page = 1;
-      fetchEntries();
-    });
+  document.getElementById('follow-modal').classList.add('open');
+}
+
+function closeFollowModal() {
+  document.getElementById('follow-modal').classList.remove('open');
+}
+
+async function submitFollow() {
+  const providerId = document.getElementById('m-provider')?.value;
+  const season = document.getElementById('m-season').value.trim();
+  if (!providerId) return;
+
+  await api('/library/follows', 'POST', {
+    provider_id: providerId,
+    entry_type: 'series',
+    entry_title: modalContext.title,
+    season: season,
   });
 
-  // Search
-  document.getElementById('search-input').addEventListener('input', e => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      state.search = e.target.value.trim();
-      state.page = 1;
-      fetchEntries();
-    }, 300);
-  });
+  closeFollowModal();
+  refreshAfterAction();
+}
 
-  // Owned filter
-  document.getElementById('owned-filter').addEventListener('change', e => {
-    state.owned = e.target.value;
+async function deleteFollow(id) {
+  await api(`/library/follows/${id}/delete`, 'POST');
+  // Reload modal contents
+  openFollowModal(modalContext.title, modalContext.season);
+}
+
+// Close modal on backdrop click
+document.getElementById('follow-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeFollowModal();
+});
+
+// ── Event wiring ──────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.type-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.type-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    state.type = tab.dataset.type;
     state.page = 1;
     fetchEntries();
   });
+});
 
-  // Pagination
-  document.getElementById('btn-prev').addEventListener('click', () => {
-    if (state.page > 1) { state.page--; fetchEntries(); }
-  });
-  document.getElementById('btn-next').addEventListener('click', () => {
-    const totalPages = Math.ceil(state.total / PER_PAGE);
-    if (state.page < totalPages) { state.page++; fetchEntries(); }
-  });
+document.getElementById('search-input').addEventListener('input', e => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    state.search = e.target.value.trim();
+    state.page = 1;
+    fetchEntries();
+  }, 300);
+});
 
-  // Season field visibility
-  function toggleSeasonField(sel) {
-    document.getElementById('season-field').style.display =
-      sel.value === 'series' ? 'block' : 'none';
-  }
-
-  // Initial load
+document.getElementById('owned-filter').addEventListener('change', e => {
+  state.owned = e.target.value;
+  state.page = 1;
   fetchEntries();
+});
+
+document.getElementById('btn-prev').addEventListener('click', () => {
+  if (state.page > 1) { state.page--; fetchEntries(); }
+});
+document.getElementById('btn-next').addEventListener('click', () => {
+  const totalPages = Math.ceil(state.total / PER_PAGE);
+  if (state.page < totalPages) { state.page++; fetchEntries(); }
+});
+
+// Initial load
+fetchEntries();
 </script>
 {% endblock %}
