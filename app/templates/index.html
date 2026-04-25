@@ -11,26 +11,38 @@
 <div class="card-grid">
   <div class="card">
     <h2 class="card-title">Providers</h2>
-    <p class="card-body">Manage your M3U and Xtream Code sources.</p>
+    <p class="card-body">Manage your M3U, Xtream Codes, and local file sources.</p>
     <a href="/providers" class="btn btn-secondary">Manage Providers</a>
   </div>
 
   <div class="card">
     <h2 class="card-title">Tasks &amp; Schedules</h2>
-    <p class="card-body">Configure the global download schedule and per-provider controls.</p>
+    <p class="card-body">Configure automated ingestion, STRM generation, and per-provider sync schedules.</p>
     <a href="/schedules" class="btn btn-secondary">Manage Schedules</a>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Library</h2>
+    <p class="card-body">Browse ingested content, manage your selections, and follow series or shows.</p>
+    <a href="/library" class="btn btn-secondary">Open Library</a>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Filters</h2>
+    <p class="card-body">Define per-provider rules to rename, strip, exclude, or include content by title.</p>
+    <a href="/filters" class="btn btn-secondary">Manage Filters</a>
   </div>
 
   {% if current_user.is_admin %}
   <div class="card">
-    <h2 class="card-title">Library</h2>
-    <p class="card-body">Inspect ingested entries and streams, or reset the library for testing.</p>
-    <a href="/admin/library" class="btn btn-secondary">Open Library</a>
+    <h2 class="card-title">Database</h2>
+    <p class="card-body">Inspect raw ingested entries and streams, or reset the library for testing.</p>
+    <a href="/admin/library" class="btn btn-secondary">Open Database</a>
   </div>
 
   <div class="card">
-    <h2 class="card-title">Administration</h2>
-    <p class="card-body">Manage users and application settings.</p>
+    <h2 class="card-title">Users</h2>
+    <p class="card-body">Manage user accounts and application access.</p>
     <a href="/admin/users" class="btn btn-secondary">Manage Users</a>
   </div>
   {% endif %}

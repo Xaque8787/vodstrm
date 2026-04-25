@@ -194,12 +194,18 @@
         </td>
         <td class="text-muted">
           {% if p.type == "m3u" %}
-            {{ p.url }}
+            <button type="button" class="details-toggle" data-details="{{ p.slug }}">Show URL</button>
+            <div class="details-expanded" id="details-{{ p.slug }}" style="display:none">
+              <code class="details-value">{{ p.url }}</code>
+            </div>
           {% elif p.type == "xtream" %}
             {{ p.username }}{% if p.port %}:{{ p.port }}{% endif %}
             <span class="badge badge--gray" style="margin-left:6px;">{{ ".ts" if (p.stream_format or "ts") == "ts" else "HLS" }}</span>
           {% else %}
-            <code>{{ p.local_file_path or "—" }}</code>
+            <button type="button" class="details-toggle" data-details="{{ p.slug }}">Show Path</button>
+            <div class="details-expanded" id="details-{{ p.slug }}" style="display:none">
+              <code class="details-value">{{ p.local_file_path or "—" }}</code>
+            </div>
           {% endif %}
         </td>
         <td class="text-muted">{{ p.priority }}</td>
@@ -514,5 +520,16 @@
     const browser = document.getElementById("file-browser-add");
     if (browser) loadBrowser(browser);
   }
+
+  // ── Details expand/collapse ───────────────────────────────────────────────
+  document.querySelectorAll(".details-toggle").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const el = document.getElementById("details-" + btn.dataset.details);
+      if (!el) return;
+      const open = el.style.display !== "none";
+      el.style.display = open ? "none" : "block";
+      btn.textContent = open ? btn.textContent.replace("Hide", "Show") : btn.textContent.replace("Show", "Hide");
+    });
+  });
 </script>
 {% endblock %}

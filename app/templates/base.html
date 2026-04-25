@@ -14,12 +14,12 @@
     <div class="nav-links">
       <a href="/">Dashboard</a>
       <a href="/providers">Providers</a>
-      <a href="/filters">Filters</a>
-      <a href="/library">Library</a>
       <a href="/schedules">Tasks &amp; Schedules</a>
+      <a href="/library">Library</a>
+      <a href="/filters">Filters</a>
       {% if current_user.is_admin %}
+      <a href="/admin/library">Database</a>
       <a href="/admin/users">Users</a>
-      <a href="/admin/library">Library</a>
       {% endif %}
       <a href="/logout" class="nav-logout">Logout</a>
     </div>
