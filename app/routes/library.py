@@ -258,32 +258,35 @@ async def list_seasons(
             (title,),
         ).fetchall()
 
-        # Existing all-series follow rule for this title
-        follow = conn.execute(
+        # Follow state: all-seasons rule and per-season rules
+        follows = conn.execute(
             """
-            SELECT f.id FROM follows f
+            SELECT f.season FROM follows f
             WHERE lower(f.entry_title) = lower(?) AND f.entry_type = 'series'
-              AND f.season IS NULL
-            LIMIT 1
             """,
             (title,),
-        ).fetchone()
+        ).fetchall()
+
+    followed_all = any(f["season"] is None for f in follows)
+    followed_seasons = {f["season"] for f in follows if f["season"] is not None}
 
     seasons = []
     for r in rows:
+        snum = r["season"]
         seasons.append({
-            "season": r["season"],
+            "season": snum,
             "episode_count": r["episode_count"],
             "cover_art": r["cover_art"],
             "owned_count": r["owned_count"] or 0,
             "is_owned": (r["owned_count"] or 0) > 0,
             "can_add": (r["can_add_count"] or 0) > 0,
+            "is_following": followed_all or (snum in followed_seasons),
         })
 
     return JSONResponse({
         "title": title,
         "seasons": seasons,
-        "follow_id": follow["id"] if follow else None,
+        "is_following_all": followed_all,
     })
 
 
@@ -555,6 +558,49 @@ async def remove_series(
 
 
 # ---------------------------------------------------------------------------
+# Internal helper: mark existing episodes as imported
+# ---------------------------------------------------------------------------
+
+def _import_entries_for_title(conn, entry_type: str, title: str, season) -> int:
+    """Mark all existing unimported streams for a title (optionally a specific season) as imported=1.
+    Returns count of streams marked."""
+    if entry_type == "series":
+        if season is not None:
+            rows = conn.execute(
+                "SELECT entry_id FROM entries WHERE type='series' AND lower(cleaned_title)=lower(?) AND season=?",
+                (title, season),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT entry_id FROM entries WHERE type='series' AND lower(cleaned_title)=lower(?)",
+                (title,),
+            ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT entry_id FROM entries WHERE type=? AND lower(cleaned_title)=lower(?)",
+            (entry_type, title),
+        ).fetchall()
+
+    marked = 0
+    for r in rows:
+        stream = conn.execute(
+            """
+            SELECT s.stream_id FROM streams s
+            JOIN providers p ON p.slug = s.provider
+            WHERE s.entry_id = ?
+              AND p.strm_mode = 'import_selected' AND p.is_active = 1
+              AND s.exclude = 0 AND s.imported = 0
+            ORDER BY p.priority, p.slug LIMIT 1
+            """,
+            (r["entry_id"],),
+        ).fetchone()
+        if stream:
+            conn.execute("UPDATE streams SET imported = 1 WHERE stream_id = ?", (stream["stream_id"],))
+            marked += 1
+    return marked
+
+
+# ---------------------------------------------------------------------------
 # Follow rules — CRUD
 # ---------------------------------------------------------------------------
 
@@ -579,12 +625,13 @@ async def add_follow(
     entry_title: str = Form(...),
     current_user: TokenData = Depends(get_current_user),
 ):
-    """Create a follow rule for an entire series across all import_selected providers."""
+    """Create a follow rule for an entire series and immediately import all existing episodes."""
+    from app.tasks.strm import generate_strm
     if entry_type not in ("movie", "series"):
         return JSONResponse({"ok": False, "error": "Invalid entry_type"}, status_code=400)
 
+    title = entry_title.strip()
     with get_db() as conn:
-        # Follow applies to all active import_selected providers
         providers = conn.execute(
             "SELECT id FROM providers WHERE strm_mode = 'import_selected' AND is_active = 1"
         ).fetchall()
@@ -594,23 +641,29 @@ async def add_follow(
 
         inserted = 0
         for p in providers:
-            # Avoid duplicates
             exists = conn.execute(
                 "SELECT 1 FROM follows WHERE provider_id = ? AND entry_type = ? AND lower(entry_title) = lower(?) AND season IS NULL",
-                (p["id"], entry_type, entry_title.strip()),
+                (p["id"], entry_type, title),
             ).fetchone()
             if not exists:
                 conn.execute(
                     "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, ?, ?, NULL)",
-                    (p["id"], entry_type, entry_title.strip()),
+                    (p["id"], entry_type, title),
                 )
                 inserted += 1
 
+        # Immediately import all existing matching episodes
+        marked = _import_entries_for_title(conn, entry_type, title, season=None)
+
     logger.info(
-        "[LIBRARY] Follow added type=%s title=%r providers=%d by=%s",
-        entry_type, entry_title.strip(), inserted, current_user.username,
+        "[LIBRARY] Follow added type=%s title=%r providers=%d marked=%d by=%s",
+        entry_type, title, inserted, marked, current_user.username,
     )
-    return JSONResponse({"ok": True, "inserted": inserted})
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after follow failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True, "inserted": inserted, "marked": marked})
 
 
 @router.post("/follows/{follow_id}/delete", response_class=JSONResponse)
@@ -622,6 +675,62 @@ async def delete_follow(
         conn.execute("DELETE FROM follows WHERE id = ?", (follow_id,))
     logger.info("[LIBRARY] Follow deleted id=%d by=%s", follow_id, current_user.username)
     return JSONResponse({"ok": True})
+
+
+@router.post("/series/{title}/seasons/{season}/follow", response_class=JSONResponse)
+async def follow_season(
+    title: str,
+    season: int,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Create a season-specific follow rule and immediately import all existing episodes."""
+    from app.tasks.strm import generate_strm
+    with get_db() as conn:
+        providers = conn.execute(
+            "SELECT id FROM providers WHERE strm_mode = 'import_selected' AND is_active = 1"
+        ).fetchall()
+
+        if not providers:
+            return JSONResponse({"ok": False, "error": "No active import_selected providers"}, status_code=400)
+
+        inserted = 0
+        for p in providers:
+            exists = conn.execute(
+                "SELECT 1 FROM follows WHERE provider_id = ? AND entry_type = 'series' AND lower(entry_title) = lower(?) AND season = ?",
+                (p["id"], title, season),
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, 'series', ?, ?)",
+                    (p["id"], title, season),
+                )
+                inserted += 1
+
+        marked = _import_entries_for_title(conn, "series", title, season=season)
+
+    logger.info("[LIBRARY] Follow season title=%r S%02d inserted=%d marked=%d by=%s", title, season, inserted, marked, current_user.username)
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after season follow failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True, "inserted": inserted, "marked": marked})
+
+
+@router.post("/series/{title}/seasons/{season}/unfollow", response_class=JSONResponse)
+async def unfollow_season(
+    title: str,
+    season: int,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Remove season-specific follow rules for a series title + season."""
+    with get_db() as conn:
+        result = conn.execute(
+            "DELETE FROM follows WHERE lower(entry_title) = lower(?) AND entry_type = 'series' AND season = ?",
+            (title, season),
+        )
+        deleted = result.rowcount
+    logger.info("[LIBRARY] Unfollow season title=%r S%02d deleted=%d by=%s", title, season, deleted, current_user.username)
+    return JSONResponse({"ok": True, "deleted": deleted})
 
 
 @router.post("/series/{title}/unfollow", response_class=JSONResponse)

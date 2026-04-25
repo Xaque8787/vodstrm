@@ -581,20 +581,17 @@ function renderCard(e, idx) {
       `${e.episode_count} ep`,
     ].filter(Boolean).join(' · ');
 
-    let followBtn;
-    if (e.is_following) {
-      followBtn = `<button class="btn-action btn-unfollow" data-action="unfollow-series">Unfollow</button>`;
-    } else {
-      followBtn = `<button class="btn-action btn-follow" data-action="open-follow">Follow</button>`;
-    }
+    const followBtn = e.is_following
+      ? `<button class="btn-action btn-unfollow" data-action="unfollow-series">Unfollow</button>`
+      : `<button class="btn-action btn-follow" data-action="open-follow">Follow</button>`;
 
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="series">
         ${artEl(e.cover_art, e.cleaned_title, 'series')}
         <div class="card-body">
-          <div class="card-title card-expand-trigger">${esc(e.cleaned_title)}</div>
-          <div class="card-meta card-expand-trigger">${esc(meta)}</div>
-          <div class="card-badges card-expand-trigger">
+          <div class="card-title">${esc(e.cleaned_title)}</div>
+          <div class="card-meta">${esc(meta)}</div>
+          <div class="card-badges">
             <span class="${typeBadgeClass('series')}">Series</span>
             ${ownedBadge}
             ${followBadge}
@@ -611,13 +608,14 @@ function renderCard(e, idx) {
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
     const isTvVod = e.type === 'tv_vod';
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
+    // data-entry-id on the card itself so actions can read it regardless of which element is clicked
     const actionsHtml = !isTvVod ? `
       <div class="card-actions">
         <button class="btn-action btn-add" data-action="add-entry" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}>Add</button>
         <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
       </div>` : '';
     return `
-      <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}">
+      <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}">
         ${artEl(e.cover_art, e.cleaned_title, e.type)}
         <div class="card-body">
           <div class="card-title">${esc(e.cleaned_title)}</div>
@@ -742,6 +740,11 @@ function renderSeasons(data, title) {
     const ownedInfo = s.owned_count > 0
       ? `<span style="font-size:0.72rem;color:#198754;font-weight:600;">${s.owned_count} owned</span>`
       : '';
+    const followBtn = s.is_following
+      ? `<button class="btn-action btn-unfollow" style="padding:3px 8px;font-size:0.68rem;"
+           data-action="unfollow-season" data-season="${seasonNum}">Unfollow</button>`
+      : `<button class="btn-action btn-follow" style="padding:3px 8px;font-size:0.68rem;"
+           data-action="follow-season" data-season="${seasonNum}">Follow</button>`;
 
     return `
       <div class="season-row" id="season-${seasonNum}" data-season="${seasonNum}">
@@ -757,6 +760,7 @@ function renderSeasons(data, title) {
               data-action="add-season" data-season="${seasonNum}" ${!s.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
               data-action="remove-season" data-season="${seasonNum}" ${!s.is_owned ? 'disabled' : ''}>Remove</button>
+            ${followBtn}
           </div>
         </div>
         <div class="episode-list" id="eps-${seasonNum}"></div>
@@ -801,22 +805,76 @@ async function toggleEpisodes(season, seriesTitle) {
   }
 }
 
-// ── Event delegation — card grid ──────────────────────────────────────────────
+// ── Single event delegation handler for all library actions ──────────────────
+// Using document-level listener to avoid stopPropagation conflicts between
+// the card grid and the expand panel (which lives inside the grid).
 
-document.getElementById('card-grid').addEventListener('click', async function(e) {
+document.addEventListener('click', async function(e) {
+  // ── Series card expand: click on card body (not a button) ──
+  const seriesCard = e.target.closest('[data-card-idx][data-type="series"]');
+  if (seriesCard && !e.target.closest('[data-action]')) {
+    const d = cardData[parseInt(seriesCard.dataset.cardIdx)];
+    if (d) toggleSeriesExpand(seriesCard, d.cleaned_title);
+    return;
+  }
+
   const btn = e.target.closest('[data-action]');
   if (!btn || btn.disabled) return;
-  e.stopPropagation();
 
   const action = btn.dataset.action;
-  const card = btn.closest('[data-card-idx]');
-  const entryId = btn.dataset.entryId;
 
-  if (action === 'add-entry' && entryId) {
+  // ── Season list actions (inside expand panel) ──
+  const seasonList = document.getElementById('season-list');
+  if (seasonList && seasonList.contains(btn)) {
+    const seriesTitle = seasonList._seriesTitle;
+    const seasonNum = btn.dataset.season !== undefined ? parseInt(btn.dataset.season) : null;
+    const entryId = btn.dataset.entryId;
+
+    if (action === 'toggle-episodes' && seriesTitle && seasonNum !== null) {
+      toggleEpisodes(seasonNum, seriesTitle);
+    } else if (action === 'add-season' && seriesTitle && seasonNum !== null) {
+      btn.disabled = true;
+      await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/add`, 'POST');
+      refreshAfterAction();
+    } else if (action === 'remove-season' && seriesTitle && seasonNum !== null) {
+      btn.disabled = true;
+      await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/remove`, 'POST');
+      refreshAfterAction();
+    } else if (action === 'follow-season' && seriesTitle && seasonNum !== null) {
+      btn.disabled = true;
+      await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/follow`, 'POST');
+      refreshAfterAction();
+    } else if (action === 'unfollow-season' && seriesTitle && seasonNum !== null) {
+      btn.disabled = true;
+      await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/unfollow`, 'POST');
+      refreshAfterAction();
+    } else if (action === 'add-entry' && entryId) {
+      btn.disabled = true;
+      await api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST');
+      refreshAfterAction();
+    } else if (action === 'remove-entry' && entryId) {
+      btn.disabled = true;
+      await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
+      refreshAfterAction();
+    }
+    return;
+  }
+
+  // ── Card grid actions ──
+  const card = btn.closest('[data-card-idx]');
+
+  if (action === 'add-entry') {
+    // entry_id is on the card element (for non-series individual items)
+    const cardEl = btn.closest('[data-entry-id]');
+    const entryId = cardEl ? cardEl.dataset.entryId : null;
+    if (!entryId) return;
     btn.disabled = true;
     await api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST');
     refreshAfterAction();
-  } else if (action === 'remove-entry' && entryId) {
+  } else if (action === 'remove-entry') {
+    const cardEl = btn.closest('[data-entry-id]');
+    const entryId = cardEl ? cardEl.dataset.entryId : null;
+    if (!entryId) return;
     btn.disabled = true;
     await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
     refreshAfterAction();
@@ -842,47 +900,6 @@ document.getElementById('card-grid').addEventListener('click', async function(e)
     btn.disabled = true;
     await api(`/library/series/${encodeURIComponent(d.cleaned_title)}/unfollow`, 'POST');
     refreshAfterAction();
-  }
-});
-
-// Card expand — click on card background expands series
-document.getElementById('card-grid').addEventListener('click', function(e) {
-  const card = e.target.closest('[data-card-idx][data-type="series"]');
-  if (!card) return;
-  if (e.target.closest('[data-action]')) return;
-  const d = cardData[parseInt(card.dataset.cardIdx)];
-  if (d) toggleSeriesExpand(card, d.cleaned_title);
-});
-
-// ── Event delegation — season list ───────────────────────────────────────────
-
-document.addEventListener('click', function(e) {
-  const seasonList = document.getElementById('season-list');
-  if (!seasonList || !seasonList.contains(e.target)) return;
-
-  const btn = e.target.closest('[data-action]');
-  if (!btn || btn.disabled) return;
-  e.stopPropagation();
-
-  const action = btn.dataset.action;
-  const seriesTitle = seasonList._seriesTitle;
-  const seasonNum = btn.dataset.season !== undefined ? parseInt(btn.dataset.season) : null;
-  const entryId = btn.dataset.entryId;
-
-  if (action === 'toggle-episodes' && seriesTitle && seasonNum !== null) {
-    toggleEpisodes(seasonNum, seriesTitle);
-  } else if (action === 'add-season' && seriesTitle && seasonNum !== null) {
-    btn.disabled = true;
-    api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/add`, 'POST').then(refreshAfterAction);
-  } else if (action === 'remove-season' && seriesTitle && seasonNum !== null) {
-    btn.disabled = true;
-    api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/remove`, 'POST').then(refreshAfterAction);
-  } else if (action === 'add-entry' && entryId) {
-    btn.disabled = true;
-    api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST').then(refreshAfterAction);
-  } else if (action === 'remove-entry' && entryId) {
-    btn.disabled = true;
-    api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST').then(refreshAfterAction);
   }
 });
 
