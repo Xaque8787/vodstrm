@@ -49,9 +49,9 @@ def get_scheduler() -> BackgroundScheduler:
 def start_scheduler() -> None:
     scheduler = get_scheduler()
     if not scheduler.running:
+        scheduler.start()
         from app.tasks import registry
         registry.register_all(scheduler)
-        scheduler.start()
         logger.info("Scheduler started (tz=%s)", os.getenv("TZ", "America/Los_Angeles"))
 
 
