@@ -31,8 +31,20 @@ def register_all(scheduler: BackgroundScheduler) -> None:
         logger.error("[REGISTRY] Failed to load schedules from DB: %s", exc)
         return
 
+    known_task_ids = {dict(row)["task_id"] for row in rows}
+
+    # Purge any job in the persistent store that has no DB row at all (ghosts
+    # left over from renamed or deleted schedules).
+    for job in scheduler.get_jobs():
+        if job.id not in known_task_ids:
+            try:
+                scheduler.remove_job(job.id)
+                logger.info("[REGISTRY] Purged orphaned job (no DB row): '%s'", job.id)
+            except Exception as exc:
+                logger.warning("[REGISTRY] Could not remove orphaned job '%s': %s", job.id, exc)
+
     if not rows:
-        logger.info("[REGISTRY] No schedules found in DB — nothing to register")
+        logger.info("[REGISTRY] No schedules found in DB - nothing to register")
         return
 
     registered = 0
@@ -52,10 +64,10 @@ def register_all(scheduler: BackgroundScheduler) -> None:
                 logger.info("[REGISTRY] Purged disabled job from job store: '%s'", task_id)
                 removed += 1
             except Exception:
-                # Job wasn't in the store — nothing to remove
+                # Job wasn't in the store - nothing to remove
                 pass
 
-    logger.info("[REGISTRY] Startup sync complete — registered=%d purged=%d", registered, removed)
+    logger.info("[REGISTRY] Startup sync complete - registered=%d purged=%d", registered, removed)
 
 
 def _apply(scheduler: BackgroundScheduler, schedule: dict) -> None:
