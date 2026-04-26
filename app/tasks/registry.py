@@ -1,8 +1,10 @@
 """
 Central task registry.
 
-On startup, replays every enabled schedule from the task_schedules DB table
-so that user-configured jobs survive restarts.  No jobs are hardcoded here.
+On startup, syncs every schedule from the task_schedules DB table with the
+APScheduler job store. Enabled schedules are registered; disabled schedules
+are explicitly removed from the persistent store so they cannot fire after a
+restart even if a stale record exists in scheduler.db.
 
 The actual job functions are resolved by the same _resolve_task_fn() helper
 used by the schedules route, keeping both code paths in sync.
@@ -16,36 +18,44 @@ logger = logging.getLogger("app.tasks.registry")
 
 def register_all(scheduler: BackgroundScheduler) -> None:
     """
-    Load all enabled schedules from the database and register them with the
-    scheduler.  Called once at startup from app.scheduler.start_scheduler().
+    Load all schedules from the database and sync them with the scheduler.
+    Enabled schedules are registered; disabled schedules are explicitly removed
+    from the persistent job store so they don't fire after a restart.
+    Called once at startup from app.scheduler.start_scheduler().
     """
     try:
         from app.database import get_db
         with get_db() as conn:
-            rows = conn.execute(
-                "SELECT * FROM task_schedules WHERE enabled = 1"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM task_schedules").fetchall()
     except Exception as exc:
         logger.error("[REGISTRY] Failed to load schedules from DB: %s", exc)
         return
 
     if not rows:
-        logger.info("[REGISTRY] No enabled schedules found in DB — nothing registered")
+        logger.info("[REGISTRY] No schedules found in DB — nothing to register")
         return
 
     registered = 0
+    removed = 0
     for row in rows:
         schedule = dict(row)
-        try:
-            _apply(scheduler, schedule)
-            registered += 1
-        except Exception as exc:
-            logger.error(
-                "[REGISTRY] Failed to register schedule '%s': %s",
-                schedule.get("task_id"), exc,
-            )
+        task_id = schedule.get("task_id")
+        if schedule.get("enabled"):
+            try:
+                _apply(scheduler, schedule)
+                registered += 1
+            except Exception as exc:
+                logger.error("[REGISTRY] Failed to register schedule '%s': %s", task_id, exc)
+        else:
+            try:
+                scheduler.remove_job(task_id)
+                logger.info("[REGISTRY] Purged disabled job from job store: '%s'", task_id)
+                removed += 1
+            except Exception:
+                # Job wasn't in the store — nothing to remove
+                pass
 
-    logger.info("[REGISTRY] Registered %d schedule(s) from DB", registered)
+    logger.info("[REGISTRY] Startup sync complete — registered=%d purged=%d", registered, removed)
 
 
 def _apply(scheduler: BackgroundScheduler, schedule: dict) -> None:

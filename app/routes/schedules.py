@@ -92,23 +92,29 @@ def _apply_schedule_to_scheduler(schedule: dict) -> None:
     if not schedule["enabled"]:
         try:
             scheduler.remove_job(task_id)
-            logger.info("Removed scheduler job: %s", task_id)
+            logger.info("[SCHEDULER] Job removed from job store: '%s'", task_id)
         except Exception:
-            pass
+            logger.info("[SCHEDULER] Job '%s' was not in job store (nothing to remove)", task_id)
         return
 
     fn = _resolve_task_fn(schedule["task_type"], schedule.get("provider_slug"))
     if fn is None:
-        logger.warning("No task function found for task_type=%s", schedule["task_type"])
+        logger.warning("[SCHEDULER] No task function found for task_type='%s' — job not registered", schedule["task_type"])
         return
 
     if schedule["trigger_type"] == "cron":
         trigger = CronTrigger.from_crontab(schedule["cron_expression"])
+        trigger_desc = f"cron '{schedule['cron_expression']}'"
     else:
         trigger = IntervalTrigger(seconds=schedule["interval_seconds"])
+        trigger_desc = f"interval {schedule['interval_seconds']}s"
 
-    scheduler.add_job(fn, trigger=trigger, id=task_id, replace_existing=True)
-    logger.info("Scheduled job applied: %s", task_id)
+    job = scheduler.add_job(fn, trigger=trigger, id=task_id, replace_existing=True)
+    next_run = job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if job.next_run_time else "unknown"
+    logger.info(
+        "[SCHEDULER] Job registered: '%s' trigger=%s next_run=%s",
+        task_id, trigger_desc, next_run,
+    )
 
 
 def _resolve_task_fn(task_type: str, provider_slug: str | None):
@@ -205,6 +211,12 @@ async def save_global_schedule(
     cron_val = cron_expression.strip() or None
     interval_val = int(interval_seconds.strip()) if interval_seconds.strip().isdigit() else None
 
+    trigger_desc = cron_val if trigger_type == "cron" else f"{interval_val}s"
+    logger.info(
+        "[SCHEDULES] Saving global schedule: task_type='%s' enabled=%s trigger=%s %s (user=%s)",
+        task_type, is_enabled, trigger_type, trigger_desc, current_user.username,
+    )
+
     _upsert_schedule(
         task_id=task_id,
         provider_slug=None,
@@ -220,7 +232,7 @@ async def save_global_schedule(
     if schedule:
         _apply_schedule_to_scheduler(schedule)
 
-    logger.info("Global schedule saved: %s by %s", task_type, current_user.username)
+    logger.info("[SCHEDULES] Global schedule saved: '%s' enabled=%s (user=%s)", task_type, is_enabled, current_user.username)
     return RedirectResponse("/schedules", status_code=302)
 
 
