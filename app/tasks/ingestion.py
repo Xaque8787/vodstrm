@@ -12,8 +12,8 @@ Flow per remote provider (m3u / xtream):
 
 Flow per local_file provider:
   Steps 1-3 are the same, but step 4 is skipped — the file is owned by the
-  user and must not be removed. Stale-stream cleanup is also skipped because
-  the file is always present and its full content is re-read on every run.
+  user and must not be removed. Stale-stream cleanup runs normally; items
+  absent from the file on the current run are removed from the DB.
 """
 import logging
 import os
@@ -59,8 +59,7 @@ def ingest_provider_file(provider_slug: str) -> None:
     Parse and sync a single provider's M3U file.
 
     For remote providers (m3u / xtream) the downloaded file is deleted after
-    ingestion.  For local_file providers the file is never deleted and stale
-    stream cleanup is skipped — the user controls the file on disk.
+    ingestion.  For local_file providers the file is never deleted.
     """
     provider = _get_provider_row(provider_slug)
     is_local = provider is not None and provider["type"] == "local_file"
@@ -104,7 +103,7 @@ def ingest_provider_file(provider_slug: str) -> None:
     )
 
     with get_db() as conn:
-        sync_summary = run_sync(conn, parsed, skip_stale_cleanup=is_local)
+        sync_summary = run_sync(conn, parsed)
 
     logger.info(
         "[INGESTION] Sync complete — provider=%s  "
