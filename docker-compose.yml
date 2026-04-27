@@ -15,6 +15,8 @@ services:
     volumes:
       - ${DATA_PATH:-./data}:/app/data
       - ${VOD_PATH:-./data/vod}:/app/data/vod
+      # Uncomment and point to a host path containing local .m3u files. Or place m3u files directly in /app/data/m3u.
+      # - /path/on/host/to/m3u:/app/data/m3u
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-2112}/login"]
       interval: 30s
