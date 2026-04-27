@@ -23,5 +23,5 @@ gosu "$PUID:$PGID" python run_migrations.py
 echo "Starting application as uid=${PUID} gid=${PGID}..."
 exec gosu "$PUID:$PGID" uvicorn app.main:app \
     --host 0.0.0.0 \
-    --port "${APP_PORT:-8000}" \
+    --port "${APP_PORT:-2112}" \
     --workers 1

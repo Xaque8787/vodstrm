@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 if __name__ == "__main__":
-    port = int(os.getenv("APP_PORT", "8000"))
+    port = int(os.getenv("APP_PORT", "2112"))
     debug = os.getenv("DEBUG", "false").lower() == "true"
 
     in_docker = os.path.exists("/app") and os.path.isfile("/app/run.py")

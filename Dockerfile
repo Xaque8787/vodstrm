@@ -27,6 +27,6 @@ RUN chmod +x docker-entrypoint.sh && \
     mkdir -p /app/data/vod/unsorted && \
     mkdir -p /app/data/vod/livetv
 
-EXPOSE 8000
+EXPOSE 2112
 
 ENTRYPOINT ["./docker-entrypoint.sh"]

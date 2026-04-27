@@ -6,7 +6,7 @@ services:
     container_name: vodstrm
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8000}:${APP_PORT:-8000}"
+      - "${APP_PORT:-2112}:${APP_PORT:-2112}"
     # env_file:
     #   - app.env
     environment:
@@ -18,7 +18,7 @@ services:
       - ${DATA_PATH:-./data}:/app/data
       - ${VOD_PATH:-./data/vod}:/app/data/vod
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-8000}/login"]
+      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-2112}/login"]
       interval: 30s
       timeout: 10s
       retries: 3
