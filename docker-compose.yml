@@ -1,18 +1,20 @@
-version: "3.9"
-
 services:
   app:
     image: ghcr.io/your-org/your-app:latest
+    container_name: vodstrm
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8000}:${APP_PORT:-8000}"
     env_file:
-      - .env
+      - app.env
     environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - TZ=${TZ:-America/Los_Angeles}
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
     volumes:
-      - ./data:/app/data
+      - ${DATA_PATH:-./data}:/app/data
+      - ${VOD_PATH:-./data/vod}:/app/data/vod
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-8000}/login"]
       interval: 30s
