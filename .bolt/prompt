@@ -1,0 +1,174 @@
+## Running the app
+
+```bash
+# Development (auto-reload)
+python run.py
+
+# Apply pending migrations only
+python run_migrations.py
+
+# Docker (production)
+docker-compose up
+
+# Docker (local dev with volume mounts)
+docker-compose -f docker-compose.local.yml up
+```
+
+Copy `example.env` to `.env` before first run. The minimum required value is `SECRET_KEY`.
+
+There are no tests or linting tools configured in this project.
+
+## Startup sequence
+
+On every startup `app/main.py` lifespan runs in order:
+1. `init_db()` — applies `_SCHEMA` from `app/database.py` (idempotent `CREATE TABLE IF NOT EXISTS`)
+2. `run_all_migrations()` — applies any pending files from `migrations/`
+3. `start_scheduler()` — loads enabled rows from `task_schedules`, registers them with APScheduler
+
+## Database rules — critical
+
+**Every schema change requires updates in TWO places:**
+
+1. **`app/database.py` `_SCHEMA`** — the canonical full schema. A fresh install only runs this; it must produce the complete, correct schema with no migrations needed. Always use `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`.
+
+2. **`migrations/YYYY_MM_DD_<description>.py`** — alters existing installations. Each file exports `up(conn: sqlite3.Connection)`. For `ALTER TABLE ... ADD COLUMN`, SQLite has no `IF NOT EXISTS`, so check first:
+   ```python
+   existing = {row[1] for row in conn.execute("PRAGMA table_info(table_name)").fetchall()}
+   if "column_name" not in existing:
+       conn.execute("ALTER TABLE table_name ADD COLUMN column_name TYPE DEFAULT value")
+   conn.commit()
+   ```
+
+The migration runner tracks applied files in the `migrations` table and skips already-applied ones. Never rely on migrations to create tables from scratch — that is `_SCHEMA`'s job.
+
+## Architecture
+
+### Data model
+
+Two core tables form the library:
+
+- **`entries`** — one row per unique piece of content, identified by a deterministic SHA256 `entry_id` hashed from `(type, cleaned_title, season, episode, year, air_date)`. Provider-agnostic; never stores provider-specific data.
+- **`streams`** — one row per provider per entry (unique on `(entry_id, provider)`). Stores the stream URL, ingest metadata, and all filter outputs (`filtered_title`, `filter_hits`, `exclude`, `include_only`).
+
+The same content from two providers → same `entry_id`, two `streams` rows.
+
+### Ingestion pipeline
+
+```
+M3U file
+  → app/ingestion/parser.py   parse_m3u()       — classify entries by regex
+  → app/ingestion/sync.py     run_sync()         — upsert entries + streams
+                                                 — clean stale streams (batch_id diff)
+                                                 — clean orphaned entries
+  → app/filters/engine.py     run_filters_for_provider()  — write filter outputs to streams
+  → (delete M3U file, except local_file providers)
+```
+
+Content classification in the parser: `live` (duration=-1), `series` (S##E## pattern), `tv_vod` (air-date pattern), `movie` (year pattern), `unsorted` (fallback).
+
+### Filter system
+
+Filters are scoped per `(provider, entry_type)` — both support `'*'` wildcards. Four types execute in order: `replace` (literal find/replace on `cleaned_title`), `remove` (regex strip from title), `exclude` (regex match on `raw_title` → sets `exclude` flag), `include_only` (regex match → sets `include_only` flag). All outputs land on `streams`, never `entries`. Filters run automatically at the end of every ingest and can be manually reapplied via `POST /filters/reapply`.
+
+### Task system
+
+Tasks are plain decorated functions:
+```python
+@task("task_name")
+def my_task(arg=None):
+    ...
+```
+
+The `@task` decorator handles logging, timing, and error isolation. Schedules are rows in `task_schedules` (cron or interval triggers). `app/tasks/registry.py` reads that table at startup and registers jobs with APScheduler. Tasks can always be called directly as regular functions — the scheduler just calls them on a schedule.
+
+### Adding a new task
+
+1. Write the function in `app/tasks/` with `@task("name")`
+2. Import and call it from `app/tasks/registry.py` so the scheduler can register it
+3. Insert a row into `task_schedules` (or let the UI do it via `/schedules`)
+
+### Routes and templates
+
+All routes are auth-protected via `get_current_user` (JWT cookie). Each router lives in `app/routes/` and must be registered in `app/main.py` via `app.include_router()`. Templates use Jinja2 and extend `base.html`. Static assets are in `app/static/`.
+
+### Path resolution
+
+Use `app/utils/env.resolve_path()` for all file paths — it handles both Docker (`/app/`) and local dev environments transparently. Use `local_now_iso()` from the same module for all DB timestamps.
+
+### Two SQLite databases
+
+- `data/app.db` — application data (schema in `app/database.py`)
+- `data/scheduler.db` — APScheduler job store (managed by APScheduler, not `_SCHEMA`)
+
+VODSTRM — Integration Architecture Guide
+What an "Integration" Means in This Project
+An integration is any connection between VODSTRM and an external service that requires credentials, background processing, rate limiting, and user-facing status visibility. Examples: Jellyfin/Plex/Emby for library refresh, TMDB/TVDB for metadata enrichment, Trakt for watch history, AniDB for anime data. Each integration is self-contained — adding or removing one must never affect another.
+
+The Golden Rule
+The core VODSTRM pipeline (download → ingest → filter → STRM sync) must never be slowed down by external API calls. Integrations are always asynchronous and best-effort. The pipeline logs events; integrations consume those events on their own schedule.
+
+Anatomy of Every Integration
+Every integration, regardless of what it does, consists of exactly these five components:
+
+1. A queue/log table
+An integration-specific SQLite table that captures work to be done. Never share this table across integrations. The schema is tailored to the integration's needs — a change log for reactive integrations (something changed, notify the external service), an enrichment queue for additive integrations (something is missing, go fetch it). Rows move through a defined set of states with timestamps at each transition.
+
+2. A write point in the core pipeline
+One place in the existing pipeline where a row is written to the integration's queue table. This write point must be fire-and-forget — no API calls, no blocking, just an insert or upsert. The STRM sync task, ingestion task, or any other core task only ever writes to the queue; it never calls the external service directly.
+
+3. A processor job
+An APScheduler job that wakes on a configurable interval and decides whether conditions are right to begin dispatching. Common logic here: debounce (has there been recent activity? if so, wait), deduplication (collapse redundant queue entries so each item appears at most once), threshold checks (is the queue volume small enough for item-by-item calls, or large enough to warrant a bulk operation instead).
+
+4. A rate-limited dispatcher
+The component that actually calls the external API. Uses a token bucket pattern — never bursts. Respects the external service's response codes (back off on 429/503, stop and alert on 401/403). Pauses when any core VODSTRM task is actively running. The dispatcher is always lower priority than ingestion and sync.
+
+5. Integrations page UI
+A settings block (enable toggle, credentials, configurable thresholds) and a status widget (queue depth, last run, items completed, items failed) on the Integrations page. This is the only place the user interacts with the integration. All integrations look identical from the user's perspective regardless of what they do internally.
+
+Shared Primitives
+These are reusable components that all integrations use — implement once, configure per integration:
+
+Rate limiter (token bucket)
+One implementation, instantiated per external service. If multiple features ever call the same upstream service, they share one rate limiter instance keyed by service name — never two independent buckets against the same API. Configure: requests per second, and if applicable, daily quota cap.
+
+APScheduler registration pattern
+All processor and dispatcher jobs register with APScheduler the same way as any other VODSTRM task, using the existing @task decorator and task_schedules table. No special scheduling infrastructure per integration.
+
+Queue row state machine
+Every integration queue uses a consistent set of states: pending → queued → completed or failed or cancelled. Cancelled rows carry a reason. Failed rows are retained longer than completed rows. This pattern is the same for every integration even if the column names differ.
+
+Retention and cleanup
+Completed rows: deleted after a configurable window (default 30 days). Failed rows: retained longer (default 90 days) or until user-acknowledged — they represent genuine gaps that need attention. A periodic integrity sweep job (daily) catches orphaned queue rows whose referenced entries no longer exist and marks them cancelled.
+
+State Machine for Queue Rows
+
+pending → queued → completed
+                 → failed (retry eligible)
+                 → cancelled (terminal, with reason)
+Reasons for cancellation: referenced content was deleted, provider was removed, user manually cleared. Reasons matter — surface them in the UI so the user understands why work was skipped, not just that it was.
+
+Cleanup Responsibilities
+Three things trigger cleanup of an integration's queue:
+
+Content deleted — rows referencing deleted entries are caught by the daily integrity sweep and marked cancelled. Use ON DELETE SET NULL on foreign keys to entries rather than ON DELETE CASCADE, so the row is preserved for audit and the sweep can categorise it properly.
+Provider removed — synchronously cancel pending rows for that provider's content as part of the provider deletion flow, before streams are cleaned up.
+Scheduled sweep — daily job catches anything the first two missed (manual table clears, edge cases).
+Adding a New Integration — Checklist
+When implementing any new integration, the work is always:
+
+New queue table in app/database.py _SCHEMA and a corresponding migration file
+Write point added to the relevant core pipeline task (fire-and-forget insert/upsert only)
+Processor job in app/tasks/ using @task decorator
+Dispatcher logic with rate limiter instance for the target service
+Integrity sweep extended to cover the new queue table
+Settings block on the Integrations page (credentials, enable toggle, thresholds)
+Status widget on the Integrations page (queue depth, last run, failure count)
+Retention cleanup job extended or a new one added for the new table
+Nothing in the existing pipeline changes except the addition of the write point. No existing integration is touched.
+
+What Never Happens
+Core pipeline tasks never call external APIs directly
+Integration queues are never shared across integrations
+The rate limiter is never bypassed, even for manual triggers
+Failed rows are never silently discarded — they stay visible until resolved
+A new integration never requires changes to another integration's code
