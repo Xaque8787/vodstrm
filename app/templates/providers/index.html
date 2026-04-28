@@ -80,6 +80,17 @@
       <input type="text" id="xt-name" name="name" placeholder="My Xtream Provider"
         value="{{ form_name or '' }}" required />
     </div>
+    <div class="form-group">
+      <label for="xt-server-url">Server URL</label>
+      <div class="input-with-prefix">
+        <select name="server_scheme" class="input-prefix-select">
+          <option value="https://" {% if (form_server_scheme or 'https://') == 'https://' %}selected{% endif %}>https://</option>
+          <option value="http://" {% if form_server_scheme == 'http://' %}selected{% endif %}>http://</option>
+        </select>
+        <input type="text" id="xt-server-url" name="server_url"
+          placeholder="myxtream.tv" value="{{ form_server_url or '' }}" required />
+      </div>
+    </div>
     <div class="form-row">
       <div class="form-group">
         <label for="xt-username">Username</label>
@@ -247,11 +258,32 @@
             </div>
           </form>
           {% elif p.type == "xtream" %}
+          {% set _url = p.url or '' %}
+          {% if _url.startswith('https://') %}
+            {% set _scheme = 'https://' %}
+            {% set _host = _url[8:] %}
+          {% elif _url.startswith('http://') %}
+            {% set _scheme = 'http://' %}
+            {% set _host = _url[7:] %}
+          {% else %}
+            {% set _scheme = 'https://' %}
+            {% set _host = _url %}
+          {% endif %}
           <form method="post" action="/providers/{{ p.slug }}/edit/xtream" class="inline-edit-form">
             <div class="inline-edit-fields">
               <div class="form-group">
                 <label>Name</label>
                 <input type="text" name="name" value="{{ p.name }}" required />
+              </div>
+              <div class="form-group" style="flex:2">
+                <label>Server URL</label>
+                <div class="input-with-prefix">
+                  <select name="server_scheme" class="input-prefix-select">
+                    <option value="https://" {% if _scheme == 'https://' %}selected{% endif %}>https://</option>
+                    <option value="http://" {% if _scheme == 'http://' %}selected{% endif %}>http://</option>
+                  </select>
+                  <input type="text" name="server_url" value="{{ _host }}" placeholder="myxtream.tv" required />
+                </div>
               </div>
               <div class="form-group">
                 <label>Username</label>
