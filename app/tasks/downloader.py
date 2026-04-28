@@ -169,6 +169,12 @@ def download_all_providers() -> None:
     except Exception as exc:
         logger.error("[DOWNLOADER] generate_strm failed after all downloads: %s", exc, exc_info=True)
 
+    from app.tasks.live_m3u import generate_live_m3u
+    try:
+        generate_live_m3u()
+    except Exception as exc:
+        logger.error("[DOWNLOADER] generate_live_m3u failed after all downloads: %s", exc, exc_info=True)
+
 
 @task("download_provider")
 def download_provider(provider_slug: str) -> None:
@@ -193,3 +199,9 @@ def download_provider(provider_slug: str) -> None:
         generate_strm()
     except Exception as exc:
         logger.error("[DOWNLOADER] generate_strm failed after download of '%s': %s", provider_slug, exc, exc_info=True)
+
+    from app.tasks.live_m3u import generate_live_m3u
+    try:
+        generate_live_m3u()
+    except Exception as exc:
+        logger.error("[DOWNLOADER] generate_live_m3u failed after download of '%s': %s", provider_slug, exc, exc_info=True)
