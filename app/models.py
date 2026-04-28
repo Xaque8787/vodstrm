@@ -54,18 +54,29 @@ class ProviderM3UCreate(BaseModel):
 
 class ProviderXtreamCreate(BaseModel):
     name: str
+    server_scheme: Literal["https://", "http://"] = "https://"
+    server_url: str
     username: str
     password: str
     port: Optional[str] = None
     stream_format: Literal["ts", "hls"] = "ts"
 
-    @field_validator("name", "username", "password")
+    @field_validator("name", "server_url", "username", "password")
     @classmethod
     def fields_not_empty(cls, v: str) -> str:
         v = v.strip()
         if not v:
             raise ValueError("This field is required")
         return v
+
+    @field_validator("server_url")
+    @classmethod
+    def strip_scheme_from_server_url(cls, v: str) -> str:
+        v = v.strip().lstrip("/")
+        for scheme in ("https://", "http://"):
+            if v.lower().startswith(scheme):
+                v = v[len(scheme):]
+        return v.rstrip("/")
 
     @field_validator("port")
     @classmethod
@@ -74,6 +85,9 @@ class ProviderXtreamCreate(BaseModel):
             v = v.strip()
             return v if v else None
         return None
+
+    def full_server_url(self) -> str:
+        return f"{self.server_scheme}{self.server_url}"
 
 
 class ProviderRecord(BaseModel):
@@ -160,18 +174,29 @@ class ProviderM3UUpdate(BaseModel):
 
 class ProviderXtreamUpdate(BaseModel):
     name: str
+    server_scheme: Literal["https://", "http://"] = "https://"
+    server_url: str
     username: str
     password: str
     port: Optional[str] = None
     stream_format: Literal["ts", "hls"] = "ts"
 
-    @field_validator("name", "username", "password")
+    @field_validator("name", "server_url", "username", "password")
     @classmethod
     def fields_not_empty(cls, v: str) -> str:
         v = v.strip()
         if not v:
             raise ValueError("This field is required")
         return v
+
+    @field_validator("server_url")
+    @classmethod
+    def strip_scheme_from_server_url(cls, v: str) -> str:
+        v = v.strip().lstrip("/")
+        for scheme in ("https://", "http://"):
+            if v.lower().startswith(scheme):
+                v = v[len(scheme):]
+        return v.rstrip("/")
 
     @field_validator("port")
     @classmethod
@@ -180,3 +205,6 @@ class ProviderXtreamUpdate(BaseModel):
             v = v.strip()
             return v if v else None
         return None
+
+    def full_server_url(self) -> str:
+        return f"{self.server_scheme}{self.server_url}"

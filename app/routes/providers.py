@@ -167,6 +167,8 @@ async def add_m3u_provider(
 async def add_xtream_provider(
     request: Request,
     name: str = Form(...),
+    server_scheme: str = Form("https://"),
+    server_url: str = Form(...),
     username: str = Form(...),
     password: str = Form(...),
     port: str = Form(""),
@@ -176,7 +178,8 @@ async def add_xtream_provider(
 ):
     try:
         data = ProviderXtreamCreate(
-            name=name, username=username, password=password,
+            name=name, server_scheme=server_scheme, server_url=server_url,
+            username=username, password=password,
             port=port or None, stream_format=stream_format,
         )
     except ValidationError as exc:
@@ -187,10 +190,11 @@ async def add_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-
                 "error": error,
                 "open_type": "xtream",
                 "form_name": name,
+                "form_server_scheme": server_scheme,
+                "form_server_url": server_url,
                 "form_username": username,
                 "form_port": port,
                 "form_stream_format": stream_format,
@@ -205,10 +209,11 @@ async def add_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-
                 "error": f'A provider named "{data.name}" already exists.',
                 "open_type": "xtream",
                 "form_name": name,
+                "form_server_scheme": server_scheme,
+                "form_server_url": server_url,
                 "form_username": username,
                 "form_port": port,
                 "form_stream_format": stream_format,
@@ -219,8 +224,8 @@ async def add_xtream_provider(
     slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO providers (name, slug, type, username, password, port, stream_format, priority) VALUES (?, ?, 'xtream', ?, ?, ?, ?, ?)",
-            (data.name, slug, data.username, data.password, data.port, data.stream_format, max(1, priority)),
+            "INSERT INTO providers (name, slug, type, url, username, password, port, stream_format, priority) VALUES (?, ?, 'xtream', ?, ?, ?, ?, ?, ?)",
+            (data.name, slug, data.full_server_url(), data.username, data.password, data.port, data.stream_format, max(1, priority)),
         )
     logger.info("Provider added (xtream): %s", data.name)
     return RedirectResponse("/providers", status_code=302)
@@ -285,6 +290,8 @@ async def edit_xtream_provider(
     provider_slug: str,
     request: Request,
     name: str = Form(...),
+    server_scheme: str = Form("https://"),
+    server_url: str = Form(...),
     username: str = Form(...),
     password: str = Form(...),
     port: str = Form(""),
@@ -298,7 +305,8 @@ async def edit_xtream_provider(
 
     try:
         data = ProviderXtreamUpdate(
-            name=name, username=username, password=password,
+            name=name, server_scheme=server_scheme, server_url=server_url,
+            username=username, password=password,
             port=port or None, stream_format=stream_format,
         )
     except ValidationError as exc:
@@ -309,7 +317,6 @@ async def edit_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-
                 "error": error,
                 "edit_provider_slug": provider_slug,
             },
@@ -323,7 +330,6 @@ async def edit_xtream_provider(
                 "request": request,
                 "current_user": current_user,
                 "providers": _list_providers(),
-
                 "error": f'A provider named "{data.name}" already exists.',
                 "edit_provider_slug": provider_slug,
             },
@@ -333,8 +339,8 @@ async def edit_xtream_provider(
     new_slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "UPDATE providers SET name = ?, slug = ?, username = ?, password = ?, port = ?, stream_format = ?, priority = ? WHERE slug = ?",
-            (data.name, new_slug, data.username, data.password, data.port, data.stream_format, max(1, priority), provider_slug),
+            "UPDATE providers SET name = ?, slug = ?, url = ?, username = ?, password = ?, port = ?, stream_format = ?, priority = ? WHERE slug = ?",
+            (data.name, new_slug, data.full_server_url(), data.username, data.password, data.port, data.stream_format, max(1, priority), provider_slug),
         )
     logger.info("Provider updated (xtream): %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)

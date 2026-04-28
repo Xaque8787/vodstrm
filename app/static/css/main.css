@@ -164,6 +164,41 @@ code {
   box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
 }
 
+/* PREFIXED INPUT (scheme dropdown + text field) */
+.input-with-prefix {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+.input-prefix-select {
+  flex: 0 0 auto;
+  padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.25);
+  border: 1px solid var(--color-border);
+  border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+  font-size: 0.875rem;
+  font-family: var(--font);
+  color: var(--color-text);
+  background: #f1f3f5;
+  cursor: pointer;
+  outline: none;
+  appearance: auto;
+}
+
+.input-prefix-select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+  z-index: 1;
+  position: relative;
+}
+
+.input-with-prefix input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 0 var(--radius) var(--radius) 0 !important;
+}
+
 .form-hint {
   font-size: 0.8rem;
   color: var(--color-text-muted);
