@@ -22,7 +22,7 @@ templates = Jinja2Templates(
 def _list_providers() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, slug, type, is_active, strm_mode FROM providers ORDER BY name"
+            "SELECT id, name, slug, type, is_active, schedule_omitted, strm_mode FROM providers ORDER BY name"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -265,33 +265,18 @@ async def run_provider_now(
     return RedirectResponse("/schedules", status_code=302)
 
 
-@router.post("/provider/{provider_slug}/toggle")
-async def toggle_provider(
+@router.post("/provider/{provider_slug}/omit")
+async def omit_provider(
     provider_slug: str,
     current_user: TokenData = Depends(get_current_user),
 ):
+    """Toggle schedule_omitted on a provider. Data is preserved; ingest is skipped."""
     with get_db() as conn:
-        before = conn.execute(
-            "SELECT is_active FROM providers WHERE slug = ?", (provider_slug,)
-        ).fetchone()
         conn.execute(
-            "UPDATE providers SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE slug = ?",
+            "UPDATE providers SET schedule_omitted = CASE WHEN schedule_omitted = 1 THEN 0 ELSE 1 END WHERE slug = ?",
             (provider_slug,),
         )
-
-    now_inactive = before and bool(before["is_active"])
-    if now_inactive:
-        from app.tasks.strm import deactivate_provider_strm_async
-        import threading
-        threading.Thread(
-            target=deactivate_provider_strm_async, args=(provider_slug,), daemon=True
-        ).start()
-        logger.info(
-            "STRM handover triggered for provider '%s' (deactivated) by %s",
-            provider_slug, current_user.username,
-        )
-
-    logger.info("Provider toggled: %s by %s", provider_slug, current_user.username)
+    logger.info("Provider omit toggled: %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/schedules", status_code=302)
 
 

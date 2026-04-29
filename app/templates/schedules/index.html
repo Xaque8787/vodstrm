@@ -118,7 +118,7 @@
      ===================================================================== -->
 <section class="sched-section">
   <h2 class="sched-section__title">Providers</h2>
-  <p class="sched-section__desc">Toggle active state, trigger a manual download, or configure .strm file generation per provider.</p>
+  <p class="sched-section__desc">Trigger a manual download, omit providers from scheduled runs, or configure .strm file generation per provider.</p>
 
   {% if not providers %}
   <div class="empty-state">
@@ -131,7 +131,7 @@
         <tr>
           <th>Provider</th>
           <th>Type</th>
-          <th>Active</th>
+          <th title="Omitted providers are skipped by scheduled and global ingests. Their data is preserved but will not be updated.">Omit from Schedule</th>
           <th>Download</th>
           <th>STRM Files</th>
         </tr>
@@ -139,20 +139,30 @@
       <tbody>
         {% for p in providers %}
         <tr class="{% if not p.is_active %}row--inactive{% endif %}">
-          <td class="provider-task-table__name">{{ p.name }}</td>
+          <td class="provider-task-table__name">
+            {{ p.name }}
+            {% if p.schedule_omitted %}
+            <span class="badge badge--warning" title="Omitted from scheduled ingests — streams may be stale" style="margin-left:6px;">Omitted</span>
+            {% endif %}
+          </td>
           <td>
             <span class="badge {% if p.type == 'm3u' %}badge--blue{% elif p.type == 'xtream' %}badge--green{% else %}badge--gray{% endif %}">
               {% if p.type == "m3u" %}M3U{% elif p.type == "xtream" %}Xtream{% else %}Local{% endif %}
             </span>
           </td>
           <td>
-            <form method="post" action="/schedules/provider/{{ p.slug }}/toggle">
+            {% if p.is_active %}
+            <form method="post" action="/schedules/provider/{{ p.slug }}/omit">
               <button type="submit"
-                class="toggle-btn {% if p.is_active %}toggle-btn--active{% else %}toggle-btn--inactive{% endif %}">
+                class="toggle-btn {% if p.schedule_omitted %}toggle-btn--inactive{% else %}toggle-btn--active{% endif %}"
+                title="{% if p.schedule_omitted %}Click to include in scheduled ingests{% else %}Click to omit from scheduled ingests (data preserved){% endif %}">
                 <span class="toggle-btn__dot"></span>
-                {{ "Active" if p.is_active else "Inactive" }}
+                {{ "Omitted" if p.schedule_omitted else "Included" }}
               </button>
             </form>
+            {% else %}
+            <span class="text-muted" style="font-size:0.85rem;">Disabled — <a href="/providers">re-enable</a></span>
+            {% endif %}
           </td>
           <td>
             <form method="post" action="/schedules/provider/{{ p.slug }}/run-now">

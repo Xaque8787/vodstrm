@@ -351,30 +351,57 @@ async def toggle_provider(
     provider_slug: str,
     current_user: TokenData = Depends(get_current_user),
 ):
+    """Re-enable a previously disabled provider (is_active 0 → 1 only)."""
     with get_db() as conn:
         before = conn.execute(
             "SELECT is_active FROM providers WHERE slug = ?", (provider_slug,)
         ).fetchone()
+        if before and not before["is_active"]:
+            conn.execute(
+                "UPDATE providers SET is_active = 1 WHERE slug = ?", (provider_slug,)
+            )
+    logger.info("Provider re-enabled: %s by %s", provider_slug, current_user.username)
+    return RedirectResponse("/providers", status_code=302)
+
+
+@router.post("/{provider_slug}/disable")
+async def disable_provider(
+    provider_slug: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """
+    Disable a provider and immediately remove all its streams and orphaned
+    entries from the database. .strm files owned by this provider are
+    handed over to the next eligible provider or deleted.
+    """
+    from app.tasks.strm import deactivate_provider_strm
+    from app.tasks.live_m3u import deactivate_provider_live_m3u
+    from app.ingestion.sync import purge_provider_data
+
+    # Mark inactive first so the STRM handover excludes this provider from
+    # replacement candidates, then purge the DB rows.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT is_active FROM providers WHERE slug = ?", (provider_slug,)
+        ).fetchone()
+        if not row:
+            return RedirectResponse("/providers", status_code=302)
         conn.execute(
-            "UPDATE providers SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE slug = ?",
-            (provider_slug,),
+            "UPDATE providers SET is_active = 0 WHERE slug = ?", (provider_slug,)
         )
 
-    now_inactive = before and bool(before["is_active"])
-    if now_inactive:
-        from app.tasks.strm import deactivate_provider_strm_async
-        from app.tasks.live_m3u import deactivate_provider_live_m3u_async
-        import threading
-        threading.Thread(
-            target=deactivate_provider_strm_async, args=(provider_slug,), daemon=True
-        ).start()
-        deactivate_provider_live_m3u_async(provider_slug)
-        logger.info(
-            "STRM handover triggered for provider '%s' (deactivated) by %s",
-            provider_slug, current_user.username,
-        )
+    # STRM handover: hand files to next eligible provider or delete them.
+    deactivate_provider_strm(provider_slug)
+    deactivate_provider_live_m3u(provider_slug)
 
-    logger.info("Provider toggled: %s by %s", provider_slug, current_user.username)
+    # Purge DB streams + orphaned entries for this provider.
+    with get_db() as conn:
+        streams_deleted, entries_deleted = purge_provider_data(conn, provider_slug)
+
+    logger.info(
+        "Provider disabled+purged: %s  streams=%d  entries=%d  by %s",
+        provider_slug, streams_deleted, entries_deleted, current_user.username,
+    )
     return RedirectResponse("/providers", status_code=302)
 
 

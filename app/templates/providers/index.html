@@ -184,14 +184,25 @@
       {% for p in providers %}
       <tr class="{% if not p.is_active %}row--inactive{% endif %}">
         <td>
+          {% if p.is_active %}
+          <button type="button"
+            class="toggle-btn toggle-btn--active"
+            data-disable-slug="{{ p.slug }}"
+            data-disable-name="{{ p.name }}"
+            title="Click to disable and remove data">
+            <span class="toggle-btn__dot"></span>
+            <span class="toggle-btn__label">Active</span>
+          </button>
+          {% else %}
           <form method="post" action="/providers/{{ p.slug }}/toggle" style="display:inline">
             <button type="submit"
-              class="toggle-btn {% if p.is_active %}toggle-btn--active{% else %}toggle-btn--inactive{% endif %}"
-              title="{% if p.is_active %}Click to deactivate{% else %}Click to activate{% endif %}">
+              class="toggle-btn toggle-btn--inactive"
+              title="Click to re-enable">
               <span class="toggle-btn__dot"></span>
-              <span class="toggle-btn__label">{{ "Active" if p.is_active else "Inactive" }}</span>
+              <span class="toggle-btn__label">Inactive</span>
             </button>
           </form>
+          {% endif %}
         </td>
         <td><strong>{{ p.name }}</strong></td>
         <td>
@@ -368,6 +379,30 @@
   <p>No providers added yet. Click <strong>+ Add Provider</strong> to get started.</p>
 </div>
 {% endif %}
+
+<!-- DISABLE CONFIRMATION MODAL -->
+<div class="modal-overlay" id="disable-modal" style="display:none" aria-modal="true" role="dialog">
+  <div class="modal">
+    <div class="modal__header">
+      <h3 class="modal__title">Disable Provider</h3>
+    </div>
+    <div class="modal__body">
+      <p>Disabling <strong id="disable-modal-name"></strong> will immediately:</p>
+      <ul class="modal__list">
+        <li>Remove all streams from this provider from the database</li>
+        <li>Delete any entries that have no other provider</li>
+        <li>Remove or hand over any .strm files this provider owned</li>
+      </ul>
+      <p class="modal__warning">This cannot be undone. To restore data, re-enable and re-ingest the provider.</p>
+    </div>
+    <div class="modal__footer">
+      <button type="button" class="btn btn-secondary" id="disable-modal-cancel">Cancel</button>
+      <form method="post" id="disable-modal-form" style="display:inline">
+        <button type="submit" class="btn btn-danger">Disable &amp; Remove Data</button>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -552,6 +587,28 @@
     const browser = document.getElementById("file-browser-add");
     if (browser) loadBrowser(browser);
   }
+
+  // ── Disable provider modal ────────────────────────────────────────────────
+  const disableModal   = document.getElementById("disable-modal");
+  const disableForm    = document.getElementById("disable-modal-form");
+  const disableName    = document.getElementById("disable-modal-name");
+  const disableCancel  = document.getElementById("disable-modal-cancel");
+
+  document.querySelectorAll("[data-disable-slug]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      disableName.textContent = btn.dataset.disableName;
+      disableForm.action = "/providers/" + btn.dataset.disableSlug + "/disable";
+      disableModal.style.display = "flex";
+    });
+  });
+
+  disableCancel.addEventListener("click", () => {
+    disableModal.style.display = "none";
+  });
+
+  disableModal.addEventListener("click", e => {
+    if (e.target === disableModal) disableModal.style.display = "none";
+  });
 
   // ── Details expand/collapse ───────────────────────────────────────────────
   document.querySelectorAll(".details-toggle").forEach(btn => {

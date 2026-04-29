@@ -142,11 +142,18 @@ def ingest_all_providers() -> None:
 
     with get_db() as conn:
         all_provider_rows = conn.execute(
-            "SELECT slug, type, local_file_path, is_active FROM providers"
+            "SELECT slug, type, local_file_path, is_active, schedule_omitted FROM providers"
         ).fetchall()
 
-    active_slugs = {r["slug"] for r in all_provider_rows if r["is_active"]}
+    active_slugs = {
+        r["slug"] for r in all_provider_rows
+        if r["is_active"] and not r["schedule_omitted"]
+    }
     all_slugs    = {r["slug"] for r in all_provider_rows}
+
+    omitted_count = sum(1 for r in all_provider_rows if r["is_active"] and r["schedule_omitted"])
+    if omitted_count:
+        logger.info("[INGESTION] Skipping %d omitted provider(s)", omitted_count)
 
     if not active_slugs:
         logger.info("[INGESTION] No active providers found, nothing to ingest")
