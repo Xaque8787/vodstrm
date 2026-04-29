@@ -243,6 +243,37 @@ def cleanup_orphan_entries(conn: sqlite3.Connection) -> int:
     return deleted
 
 
+def purge_provider_data(conn: sqlite3.Connection, provider_slug: str) -> tuple[int, int]:
+    """
+    Delete all streams for a specific provider and then remove any orphaned
+    entries that have no remaining streams.
+
+    Also deletes any .strm files owned by this provider's streams.
+
+    Returns (streams_deleted, entries_deleted).
+    """
+    owned_rows = conn.execute(
+        "SELECT strm_path FROM streams WHERE provider = ? AND strm_path IS NOT NULL",
+        (provider_slug,),
+    ).fetchall()
+    for row in owned_rows:
+        _delete_strm_file(row["strm_path"])
+
+    deleted_streams = conn.execute(
+        "DELETE FROM streams WHERE provider = ?", (provider_slug,)
+    ).rowcount
+    deleted_entries = conn.execute(
+        "DELETE FROM entries WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)"
+    ).rowcount
+
+    if deleted_streams or deleted_entries:
+        logger.info(
+            "[SYNC] Purged provider '%s' — streams=%d  orphan_entries=%d",
+            provider_slug, deleted_streams, deleted_entries,
+        )
+    return deleted_streams, deleted_entries
+
+
 def purge_inactive_and_deleted_providers(conn: sqlite3.Connection) -> tuple[int, int]:
     """
     Delete streams (and then orphaned entries) for any provider that is either

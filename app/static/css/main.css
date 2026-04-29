@@ -502,6 +502,11 @@ code {
   color: #475569;
 }
 
+.badge--warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 /* SEGMENTED CONTROL */
 .seg-control {
   display: inline-flex;
@@ -1676,5 +1681,62 @@ code {
 .filter-edit-panel {
   margin-top: calc(var(--spacing) * 2);
   padding-top: calc(var(--spacing) * 2);
+  border-top: 1px solid var(--color-border);
+}
+
+/* ── Confirmation modal ──────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 440px;
+  margin: var(--spacing);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+
+.modal__header {
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2) 0;
+}
+
+.modal__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.modal__body {
+  padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2);
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.modal__list {
+  margin: calc(var(--spacing) * 0.75) 0 calc(var(--spacing) * 0.75) calc(var(--spacing) * 1.5);
+  padding: 0;
+  line-height: 1.7;
+}
+
+.modal__warning {
+  margin-top: calc(var(--spacing) * 1);
+  color: var(--color-error, #c0392b);
+  font-size: 0.82rem;
+}
+
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: calc(var(--spacing) * 0.75);
+  padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2);
   border-top: 1px solid var(--color-border);
 }

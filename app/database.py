@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS providers (
     port TEXT,
     stream_format TEXT NOT NULL DEFAULT 'ts',
     is_active INTEGER NOT NULL DEFAULT 1,
+    schedule_omitted INTEGER NOT NULL DEFAULT 0,
     strm_mode TEXT NOT NULL DEFAULT 'generate_all' CHECK(strm_mode IN ('generate_all', 'import_selected')),
     priority INTEGER NOT NULL DEFAULT 10,
     local_file_path TEXT,

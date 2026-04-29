@@ -140,17 +140,26 @@ def download_all_providers() -> None:
             "SELECT * FROM providers WHERE is_active = 1"
         ).fetchall()
 
-    if not rows:
-        logger.info("[DOWNLOADER] No active providers found, nothing to download")
+    eligible = [r for r in rows if not r["schedule_omitted"]]
+    omitted  = [r for r in rows if r["schedule_omitted"]]
+
+    if omitted:
+        logger.info(
+            "[DOWNLOADER] Skipping %d omitted provider(s): %s",
+            len(omitted), [r["slug"] for r in omitted],
+        )
+
+    if not eligible:
+        logger.info("[DOWNLOADER] No active non-omitted providers found, nothing to download")
         _purge()
         return
 
-    logger.info("[DOWNLOADER] Starting download for %d active provider(s)", len(rows))
+    logger.info("[DOWNLOADER] Starting download for %d active provider(s)", len(eligible))
 
     success = 0
     failed = 0
 
-    for provider in rows:
+    for provider in eligible:
         ok = _download_provider(provider, m3u_dir)
         if ok:
             success += 1
