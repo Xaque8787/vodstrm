@@ -183,7 +183,8 @@ Select a `.m3u` file already present on the host (mounted into the container). U
 Each provider has the following options available after creation:
 
 - **Priority** — When multiple providers supply the same content, the provider with the lowest priority number wins. If two providers tie, they are broken alphabetically by their internal slug. This determines which URL ends up inside the `.strm` file.
-- **Active toggle** — Disable a provider without deleting it. Disabling a provider will hand its owned `.strm` files over to the next eligible provider, or remove the files if no alternative exists.
+- **Active toggle** — Shows the current state. Active providers show a green toggle; inactive providers show a grey toggle that you can click to re-enable them.
+- **Disable** — Clicking the active toggle on a live provider opens a confirmation modal before proceeding. Confirming will mark the provider inactive, immediately remove all of its streams and entries from the database, and hand its owned `.strm` files over to the next eligible provider (or delete them if no alternative exists). This is a destructive operation — data can only be restored by re-enabling the provider and running a fresh ingest.
 - **Edit** — Update connection details (URL, credentials, format, file path) at any time.
 - **Delete** — Permanently removes the provider and all associated stream records. Owned `.strm` files are either handed to another provider or deleted.
 
@@ -302,10 +303,9 @@ Each global task can be:
 
 The provider table below the global tasks shows each configured provider with the following controls:
 
-- **Active toggle** — Enable or disable the provider. Matches the toggle on the Providers page.
-- **Download Now** — Manually trigger a download and ingest for a single provider without affecting others.
+- **Omit from Schedule** — Temporarily exclude a provider from all scheduled and global ingest runs without touching its data. When omitted, the provider's existing streams and entries remain in the database exactly as they are — they just will not be updated. An amber **Omitted** badge appears next to the provider name as a reminder that its data may be stale. Click the toggle again to include the provider in future runs. To manually run an omitted provider regardless, use the **Download Now** button. To disable a provider and remove its data, use the Disable action on the Providers page.
+- **Download Now** — Manually trigger a download and ingest for a single provider without affecting others. Works even if the provider is omitted from the schedule.
 - **STRM Mode** — Toggle between Generate All and Import Selected mode for the provider.
-- **Next Run** — Shows when the provider's download is next scheduled to run (if a schedule is active).
 
 ---
 
