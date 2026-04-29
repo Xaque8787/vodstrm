@@ -50,7 +50,7 @@ VODSTRM is a self-hosted media library manager that ingests M3U and Xtream Codes
 
 ```yaml
 services:
-  app:
+  vodstrm:
     image: ghcr.io/xaque8787/vodstrm:latest
     container_name: vodstrm
     restart: unless-stopped
