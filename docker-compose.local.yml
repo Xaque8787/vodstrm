@@ -1,5 +1,5 @@
 services:
-  app:
+  vodstrm:
     build:
       context: .
       dockerfile: Dockerfile

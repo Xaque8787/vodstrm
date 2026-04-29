@@ -1,5 +1,5 @@
 services:
-  app:
+  vodstrm:
     image: ghcr.io/xaque8787/vodstrm:latest
     container_name: vodstrm
     restart: unless-stopped
