@@ -11,6 +11,7 @@ next scheduled ingest will call trigger_tmdb_enrichment() again and pick up
 any entries that were missed.
 """
 import logging
+import re
 import threading
 import time
 import urllib.error
@@ -201,7 +202,32 @@ def resolve_cover_art(conn, entry_id: str, entry_tmdb_id, entry_tmdb_type: str) 
 # ── Enrichment ────────────────────────────────────────────────────────────
 
 
+_TRAILING_YEAR_RE = re.compile(r"\s+((?:19|20)\d{2})$")
+
+
 def _search_show(title: str, year: int | None) -> dict | None:
+    # Attempt (a): if cleaned_title has a trailing year suffix, strip it and
+    # pass as first_air_date_year so TMDB receives "Castle" + year=2009 rather
+    # than the literal query "Castle 2009" which matches nothing.
+    m = _TRAILING_YEAR_RE.search(title)
+    if m:
+        stripped = title[: m.start()]
+        extracted_year = int(m.group(1))
+        data = _tmdb_get("/search/tv", {"query": stripped, "first_air_date_year": extracted_year})
+        results = data.get("results") or []
+        if results:
+            return results[0]
+        # Attempt (b): same stripped title, no year filter
+        data = _tmdb_get("/search/tv", {"query": stripped})
+        results = data.get("results") or []
+        if results:
+            return results[0]
+        # Attempt (c): original full title, no year filter
+        data = _tmdb_get("/search/tv", {"query": title})
+        results = data.get("results") or []
+        return results[0] if results else None
+
+    # No trailing year — single call as before
     params: dict = {"query": title}
     if year:
         params["first_air_date_year"] = year
