@@ -14,7 +14,6 @@
     margin-bottom: calc(var(--spacing) * 3);
   }
 
-  /* ── Flash / error banners ── */
   .flash-banner {
     background: var(--color-success-bg);
     border: 1px solid #a3cfbb;
@@ -80,7 +79,6 @@
     gap: calc(var(--spacing) * 3);
   }
 
-  /* ── Section labels ── */
   .section-label {
     font-size: 0.75rem;
     font-weight: 700;
@@ -132,13 +130,6 @@
   }
   .form-input:focus { outline: none; border-color: var(--color-primary); }
 
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    gap: calc(var(--spacing) * 1.5);
-  }
-
-  /* Toggle switch */
   .toggle-wrap {
     position: relative;
     display: inline-flex;
@@ -180,10 +171,13 @@
   .toggle-wrap input:checked ~ .toggle-track { background: var(--color-primary); }
   .toggle-wrap input:checked ~ .toggle-track .toggle-thumb { transform: translateX(18px); }
 
-  .toggle-label-text {
-    font-size: 0.875rem;
-    font-weight: 500;
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
   }
+
+  .toggle-label-text { font-size: 0.875rem; font-weight: 500; }
 
   /* ── Status section ── */
   .status-section {
@@ -195,8 +189,9 @@
 
   .status-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: calc(var(--spacing) * 1.5);
+    margin-bottom: calc(var(--spacing) * 2);
   }
 
   .stat-box { display: flex; flex-direction: column; gap: 2px; }
@@ -225,26 +220,58 @@
 
   .progress-bar-track {
     width: 100%;
-    height: 6px;
+    height: 8px;
     background: var(--color-border);
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
+    display: flex;
   }
 
-  .progress-bar-fill {
+  .progress-bar-enriched {
     height: 100%;
     background: var(--color-primary);
-    border-radius: 3px;
     transition: width 0.4s ease;
   }
 
-  .progress-label {
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
-    margin-top: 4px;
+  .progress-bar-skipped {
+    height: 100%;
+    background: #dee2e6;
+    transition: width 0.4s ease;
   }
 
-  /* Warning banner */
+  .progress-legend {
+    display: flex;
+    gap: calc(var(--spacing) * 2);
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot-enriched { background: var(--color-primary); }
+  .dot-skipped  { background: #adb5bd; }
+  .dot-pending  { background: var(--color-border); border: 1px solid #adb5bd; }
+
+  .no-run-note {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+    margin-top: calc(var(--spacing) * 1.5);
+  }
+
   .warn-banner {
     background: #fff3cd;
     border: 1px solid #ffc107;
@@ -255,13 +282,117 @@
     display: flex;
     gap: var(--spacing);
     align-items: flex-start;
+    margin-top: calc(var(--spacing) * 1.5);
   }
 
-  .no-run-note {
+  /* ── Not-found section ── */
+  .not-found-section {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .not-found-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2);
+    cursor: pointer;
+    user-select: none;
+    gap: var(--spacing);
+  }
+
+  .not-found-header:hover { background: rgba(0,0,0,0.02); }
+
+  .not-found-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing);
+  }
+
+  .not-found-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e9ecef;
+    color: #495057;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 10px;
+  }
+
+  .not-found-chevron {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    transition: transform 0.2s;
+  }
+  .not-found-chevron.open { transform: rotate(180deg); }
+
+  .not-found-body {
+    display: none;
+    border-top: 1px solid var(--color-border);
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .not-found-body.open { display: block; }
+
+  .not-found-loading {
+    padding: calc(var(--spacing) * 2);
     font-size: 0.82rem;
     color: var(--color-text-muted);
     font-style: italic;
-    margin-top: calc(var(--spacing) * 1.5);
+  }
+
+  .not-found-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  .not-found-table th {
+    text-align: left;
+    padding: 6px 16px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    background: var(--color-bg);
+    position: sticky;
+    top: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .not-found-table td {
+    padding: 7px 16px;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+
+  .not-found-table tr:last-child td { border-bottom: none; }
+
+  .type-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 8px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .type-series { background: #cfe2ff; color: #084298; }
+  .type-movie  { background: #d1e7dd; color: #0a3622; }
+
+  .not-found-empty {
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2);
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    font-style: italic;
   }
 
   /* ── Buttons ── */
@@ -427,7 +558,10 @@
       <div>
         <div class="section-label">Status</div>
 
-        {% set pct = ((enriched / total * 100) | int) if total > 0 else 0 %}
+        {% set enrichable = total - skipped %}
+        {% set pct_enriched = ((enriched / total * 100) | int) if total > 0 else 0 %}
+        {% set pct_skipped  = ((skipped  / total * 100) | int) if total > 0 else 0 %}
+
         <div class="status-section">
           <div class="status-grid">
             <div class="stat-box">
@@ -435,8 +569,12 @@
               <span class="stat-value" id="stat-enriched">{{ enriched }} / {{ total }}</span>
             </div>
             <div class="stat-box">
-              <span class="stat-label">Unenriched</span>
-              <span class="stat-value" id="stat-unenriched">{{ total - enriched }}</span>
+              <span class="stat-label">Not Found on TMDB</span>
+              <span class="stat-value" id="stat-skipped">{{ skipped }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Pending</span>
+              <span class="stat-value" id="stat-pending">{{ total - enriched - skipped }}</span>
             </div>
             {% if last_run %}
             <div class="stat-box">
@@ -468,9 +606,18 @@
 
           <div class="progress-wrap">
             <div class="progress-bar-track">
-              <div class="progress-bar-fill" id="progress-fill" style="width: {{ pct }}%"></div>
+              <div class="progress-bar-enriched" id="progress-enriched" style="width: {{ pct_enriched }}%"></div>
+              <div class="progress-bar-skipped"  id="progress-skipped"  style="width: {{ pct_skipped }}%"></div>
             </div>
-            <div class="progress-label" id="progress-label">{{ pct }}% enriched</div>
+            <div class="progress-legend">
+              <span class="legend-item"><span class="legend-dot dot-enriched"></span><span id="legend-enriched-text">{{ pct_enriched }}% enriched</span></span>
+              {% if skipped > 0 %}
+              <span class="legend-item"><span class="legend-dot dot-skipped"></span><span id="legend-skipped-text">{{ pct_skipped }}% not found</span></span>
+              {% endif %}
+              {% if (total - enriched - skipped) > 0 %}
+              <span class="legend-item"><span class="legend-dot dot-pending"></span><span id="legend-pending-text">{{ total - enriched - skipped }} pending</span></span>
+              {% endif %}
+            </div>
           </div>
 
           {% if not last_run %}
@@ -479,9 +626,36 @@
         </div>
 
         {% if last_run and last_run.error_detail %}
-        <div class="warn-banner" style="margin-top: calc(var(--spacing) * 1.5);">
+        <div class="warn-banner">
           <span>&#9888;</span>
           <span>Last run error: {{ last_run.error_detail }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Not-found collapsible -->
+        {% if skipped > 0 %}
+        <div class="not-found-section" style="margin-top: calc(var(--spacing) * 1.5);" id="not-found-section">
+          <div class="not-found-header" onclick="toggleNotFound()">
+            <span class="not-found-title">
+              Titles not found on TMDB
+              <span class="not-found-count" id="not-found-count">{{ skipped }}</span>
+            </span>
+            <span class="not-found-chevron" id="not-found-chevron">&#9660;</span>
+          </div>
+          <div class="not-found-body" id="not-found-body">
+            <div class="not-found-loading" id="not-found-loading">Loading…</div>
+            <table class="not-found-table" id="not-found-table" style="display:none">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>Year</th>
+                  <th>Skipped</th>
+                </tr>
+              </thead>
+              <tbody id="not-found-tbody"></tbody>
+            </table>
+          </div>
         </div>
         {% endif %}
       </div>
@@ -500,14 +674,21 @@
             <span id="run-label">{% if tmdb_running %}Running…{% else %}Run Now{% endif %}</span>
           </button>
 
+          {% if skipped > 0 %}
+          <button
+            id="btn-retry-skipped"
+            class="btn btn-secondary"
+            {% if not tmdb_enabled or not tmdb_api_key or tmdb_running %}disabled{% endif %}
+            onclick="retrySkipped()"
+          >Retry Not Found</button>
+          {% endif %}
+
           <button
             id="btn-clear"
             class="btn btn-danger-outline"
             {% if tmdb_running %}disabled{% endif %}
             onclick="openClearModal()"
-          >
-            Remove All TMDB Metadata
-          </button>
+          >Remove All TMDB Metadata</button>
         </div>
       </div>
 
@@ -536,6 +717,7 @@
 <script>
   const POLL_INTERVAL = 4000;
   let pollTimer = null;
+  let notFoundLoaded = false;
 
   // Toggle label text
   const toggleInput = document.getElementById("tmdb-enabled");
@@ -546,7 +728,7 @@
     });
   }
 
-  // API key: only submit value if user actually typed something
+  // Don't submit blank API key (preserve existing)
   document.querySelector(".settings-form").addEventListener("submit", function() {
     const keyInput = document.getElementById("tmdb-api-key");
     if (!keyInput.value.trim()) {
@@ -554,51 +736,80 @@
     }
   });
 
-  function setRunning(running) {
-    const btn     = document.getElementById("btn-run-now");
-    const spinner = document.getElementById("run-spinner");
-    const label   = document.getElementById("run-label");
-    const clearBtn = document.getElementById("btn-clear");
-    const enabled = {{ "true" if tmdb_enabled else "false" }};
-    const keySet  = {{ "true" if tmdb_api_key  else "false" }};
+  // ── Progress bar helpers ───────────────────────────────────────────────
 
-    if (running) {
-      btn.disabled = true;
-      spinner.classList.add("visible");
-      label.textContent = "Running\u2026";
-      if (clearBtn) clearBtn.disabled = true;
-    } else {
-      btn.disabled = !(enabled && keySet);
-      spinner.classList.remove("visible");
-      label.textContent = "Run Now";
-      if (clearBtn) clearBtn.disabled = false;
-    }
+  function updateProgress(total, enriched, skipped) {
+    const pctEnriched = total > 0 ? Math.round(enriched / total * 100) : 0;
+    const pctSkipped  = total > 0 ? Math.round(skipped  / total * 100) : 0;
+    const pending     = Math.max(0, total - enriched - skipped);
+
+    const fillE = document.getElementById("progress-enriched");
+    const fillS = document.getElementById("progress-skipped");
+    if (fillE) fillE.style.width = pctEnriched + "%";
+    if (fillS) fillS.style.width = pctSkipped  + "%";
+
+    const ltE = document.getElementById("legend-enriched-text");
+    const ltS = document.getElementById("legend-skipped-text");
+    const ltP = document.getElementById("legend-pending-text");
+    if (ltE) ltE.textContent = pctEnriched + "% enriched";
+    if (ltS) ltS.textContent = pctSkipped + "% not found";
+    if (ltP) ltP.textContent = pending + " pending";
+
+    const nc = document.getElementById("not-found-count");
+    if (nc) nc.textContent = skipped;
+  }
+
+  // ── Stat update ─────────────────────────────────────────────────────────
+
+  function set(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
   }
 
   function updateStats(data) {
-    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     const total    = data.total    ?? 0;
     const enriched = data.enriched ?? 0;
-    const pct = total > 0 ? Math.round(enriched / total * 100) : 0;
+    const skipped  = data.skipped  ?? 0;
 
     set("stat-enriched",  enriched + " / " + total);
-    set("stat-unenriched", total - enriched);
+    set("stat-skipped",   skipped);
+    set("stat-pending",   Math.max(0, total - enriched - skipped));
 
-    const fill = document.getElementById("progress-fill");
-    const plbl = document.getElementById("progress-label");
-    if (fill) fill.style.width = pct + "%";
-    if (plbl) plbl.textContent = pct + "% enriched";
+    updateProgress(total, enriched, skipped);
 
     const lr = data.last_run;
     if (lr) {
       set("stat-last-run",     (lr.run_at || "").slice(0, 19).replace("T", " "));
       set("stat-triggered-by", lr.triggered_by || "");
-      set("stat-duration",     (lr.duration_seconds != null ? lr.duration_seconds.toFixed(1) : "—") + "s");
-      set("stat-api-calls",    lr.api_calls_made ?? "—");
-      set("stat-cache-hits",   lr.cache_hits     ?? "—");
-      set("stat-errors",       lr.errors         ?? "—");
+      set("stat-duration",     (lr.duration_seconds != null ? lr.duration_seconds.toFixed(1) : "\u2014") + "s");
+      set("stat-api-calls",    lr.api_calls_made ?? "\u2014");
+      set("stat-cache-hits",   lr.cache_hits     ?? "\u2014");
+      set("stat-errors",       lr.errors         ?? "\u2014");
     }
   }
+
+  // ── Run state ────────────────────────────────────────────────────────────
+
+  function setRunning(running) {
+    const btn      = document.getElementById("btn-run-now");
+    const spinner  = document.getElementById("run-spinner");
+    const label    = document.getElementById("run-label");
+    const clearBtn = document.getElementById("btn-clear");
+    const retryBtn = document.getElementById("btn-retry-skipped");
+    const enabled  = {{ "true" if tmdb_enabled else "false" }};
+    const keySet   = {{ "true" if tmdb_api_key  else "false" }};
+    const canAct   = enabled && keySet && !running;
+
+    if (btn) {
+      btn.disabled = !canAct;
+      spinner.classList.toggle("visible", running);
+      label.textContent = running ? "Running\u2026" : "Run Now";
+    }
+    if (clearBtn) clearBtn.disabled = running;
+    if (retryBtn) retryBtn.disabled = !canAct;
+  }
+
+  // ── Poll ─────────────────────────────────────────────────────────────────
 
   async function pollStatus() {
     try {
@@ -613,6 +824,8 @@
     }
   }
 
+  // ── Actions ──────────────────────────────────────────────────────────────
+
   async function triggerTmdb() {
     document.getElementById("btn-run-now").disabled = true;
     try {
@@ -623,11 +836,31 @@
         pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
       } else {
         alert("Could not start enrichment: " + (data.reason || "unknown"));
-        document.getElementById("btn-run-now").disabled = false;
+        setRunning(false);
       }
     } catch {
-      alert("Request failed — please try again.");
-      document.getElementById("btn-run-now").disabled = false;
+      alert("Request failed \u2014 please try again.");
+      setRunning(false);
+    }
+  }
+
+  async function retrySkipped() {
+    const btn = document.getElementById("btn-retry-skipped");
+    if (btn) btn.disabled = true;
+    try {
+      const res  = await fetch("/integrations/tmdb/retry-skipped", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setRunning(true);
+        notFoundLoaded = false;
+        pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+      } else {
+        alert("Could not start retry: " + (data.reason || "unknown"));
+        if (btn) btn.disabled = false;
+      }
+    } catch {
+      alert("Request failed \u2014 please try again.");
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -642,13 +875,73 @@
       if (data.ok) { location.reload(); }
       else { alert("Could not clear: " + (data.reason || "unknown")); }
     } catch {
-      alert("Request failed — please try again.");
+      alert("Request failed \u2014 please try again.");
     }
   }
 
   document.getElementById("clear-modal").addEventListener("click", function(e) {
     if (e.target === this) closeClearModal();
   });
+
+  // ── Not-found collapsible ─────────────────────────────────────────────
+
+  async function toggleNotFound() {
+    const body    = document.getElementById("not-found-body");
+    const chevron = document.getElementById("not-found-chevron");
+    if (!body) return;
+    const isOpen = body.classList.toggle("open");
+    chevron.classList.toggle("open", isOpen);
+
+    if (isOpen && !notFoundLoaded) {
+      notFoundLoaded = true;
+      await loadNotFound();
+    }
+  }
+
+  async function loadNotFound() {
+    const loading = document.getElementById("not-found-loading");
+    const table   = document.getElementById("not-found-table");
+    const tbody   = document.getElementById("not-found-tbody");
+    try {
+      const res  = await fetch("/integrations/tmdb/unenriched");
+      const rows = await res.json();
+
+      if (!rows.length) {
+        loading.textContent = "No not-found titles.";
+        return;
+      }
+
+      tbody.innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        const skippedDate = r.tmdb_skipped_at
+          ? r.tmdb_skipped_at.slice(0, 10)
+          : "\u2014";
+        tr.innerHTML = `
+          <td>${escHtml(r.cleaned_title || r.entry_id)}</td>
+          <td><span class="type-pill type-${r.type}">${r.type}</span></td>
+          <td>${r.year || "\u2014"}</td>
+          <td>${skippedDate}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      loading.style.display = "none";
+      table.style.display   = "";
+    } catch {
+      loading.textContent = "Failed to load — please try again.";
+    }
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
 
   {% if tmdb_running %}
   pollTimer = setTimeout(pollStatus, POLL_INTERVAL);

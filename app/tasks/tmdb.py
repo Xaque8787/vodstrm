@@ -72,7 +72,7 @@ def _get_tmdb_settings() -> dict:
 
 
 def _tmdb_enabled() -> bool:
-    return _get_tmdb_settings().get("enabled", False) is True
+    return bool(_get_tmdb_settings().get("enabled", False))
 
 
 def _tmdb_api_key() -> str:
@@ -293,13 +293,14 @@ def _run_enrichment(triggered_by: str) -> None:
         with get_db() as conn:
             cleanup_tmdb_orphans(conn)
 
-        # Fetch all unenriched series + movie entries
+        # Fetch unenriched entries that haven't been marked as not-found
         with get_db() as conn:
             pending = conn.execute("""
                 SELECT entry_id, cleaned_title, season, type, year
                 FROM entries
                 WHERE type IN ('series', 'movie')
                   AND tmdb_id IS NULL
+                  AND tmdb_skipped_at IS NULL
             """).fetchall()
 
         entries_checked = len(pending)
@@ -338,6 +339,13 @@ def _run_enrichment(triggered_by: str) -> None:
                     api_calls_made += 1
                     if not result:
                         logger.debug("[TMDB] No show result for %r", title)
+                        entry_ids = [r["entry_id"] for r in group_rows]
+                        skipped_at = local_now_iso()
+                        with get_db() as conn:
+                            conn.executemany(
+                                "UPDATE entries SET tmdb_skipped_at = ? WHERE entry_id = ?",
+                                [(skipped_at, eid) for eid in entry_ids],
+                            )
                         continue
                     tmdb_id = result["id"]
                     season_data = _fetch_show_seasons(tmdb_id)
@@ -384,6 +392,11 @@ def _run_enrichment(triggered_by: str) -> None:
                     api_calls_made += 1
                     if not result:
                         logger.debug("[TMDB] No movie result for %r", title)
+                        with get_db() as conn:
+                            conn.execute(
+                                "UPDATE entries SET tmdb_skipped_at = ? WHERE entry_id = ?",
+                                (local_now_iso(), row["entry_id"]),
+                            )
                         continue
                     tmdb_id = result["id"]
                     with get_db() as conn:
@@ -451,7 +464,7 @@ def trigger_tmdb_enrichment(triggered_by: str = "manual") -> bool:
     if not _tmdb_enabled():
         return False
     if not _tmdb_api_key():
-        logger.warning("[TMDB] trigger ignored — TMDB_API_KEY not set")
+        logger.warning("[TMDB] trigger ignored — API key not configured in Integrations settings")
         return False
 
     with _tmdb_running_lock:

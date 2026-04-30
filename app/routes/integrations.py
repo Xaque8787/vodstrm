@@ -41,17 +41,26 @@ def _save_tmdb_settings(conn, settings: dict) -> None:
     """, (json.dumps(settings), local_now_iso()))
 
 
+def _tmdb_counts(conn) -> dict:
+    row = conn.execute("""
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN tmdb_id IS NOT NULL THEN 1 ELSE 0 END) AS enriched,
+            SUM(CASE WHEN tmdb_skipped_at IS NOT NULL AND tmdb_id IS NULL THEN 1 ELSE 0 END) AS skipped
+        FROM entries
+        WHERE type IN ('series', 'movie')
+    """).fetchone()
+    total    = (row["total"]    or 0) if row else 0
+    enriched = (row["enriched"] or 0) if row else 0
+    skipped  = (row["skipped"]  or 0) if row else 0
+    return {"total": total, "enriched": enriched, "skipped": skipped}
+
+
 def _page_ctx(conn, request, current_user):
     from app.tasks.tmdb import is_running
 
     cfg = _load_tmdb_settings(conn)
-    counts = conn.execute("""
-        SELECT
-            COUNT(*) AS total,
-            SUM(CASE WHEN tmdb_id IS NOT NULL THEN 1 ELSE 0 END) AS enriched
-        FROM entries
-        WHERE type IN ('series', 'movie')
-    """).fetchone()
+    counts = _tmdb_counts(conn)
     last_run = conn.execute(
         "SELECT * FROM tmdb_run_log ORDER BY id DESC LIMIT 1"
     ).fetchone()
@@ -63,8 +72,9 @@ def _page_ctx(conn, request, current_user):
         "tmdb_api_key": cfg.get("api_key", ""),
         "tmdb_language": cfg.get("language", "en-US"),
         "tmdb_running": is_running(),
-        "total": (counts["total"] or 0) if counts else 0,
-        "enriched": (counts["enriched"] or 0) if counts else 0,
+        "total": counts["total"],
+        "enriched": counts["enriched"],
+        "skipped": counts["skipped"],
         "last_run": dict(last_run) if last_run else None,
         "flash": None,
         "error": None,
@@ -112,23 +122,58 @@ async def tmdb_status(current_user: TokenData = Depends(get_current_user)):
     from app.tasks.tmdb import is_running
 
     with get_db() as conn:
-        counts = conn.execute("""
-            SELECT
-                COUNT(*) AS total,
-                SUM(CASE WHEN tmdb_id IS NOT NULL THEN 1 ELSE 0 END) AS enriched
-            FROM entries
-            WHERE type IN ('series', 'movie')
-        """).fetchone()
+        counts = _tmdb_counts(conn)
         last_run = conn.execute(
             "SELECT * FROM tmdb_run_log ORDER BY id DESC LIMIT 1"
         ).fetchone()
 
     return JSONResponse({
         "running": is_running(),
-        "total": (counts["total"] or 0) if counts else 0,
-        "enriched": (counts["enriched"] or 0) if counts else 0,
+        "total": counts["total"],
+        "enriched": counts["enriched"],
+        "skipped": counts["skipped"],
         "last_run": dict(last_run) if last_run else None,
     })
+
+
+@router.get("/tmdb/unenriched", response_class=JSONResponse)
+async def tmdb_unenriched(current_user: TokenData = Depends(get_current_user)):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT
+                e.entry_id,
+                e.type,
+                e.cleaned_title,
+                e.year,
+                e.tmdb_skipped_at,
+                COUNT(DISTINCT s.provider) AS provider_count
+            FROM entries e
+            LEFT JOIN streams s ON s.entry_id = e.entry_id
+            WHERE e.type IN ('series', 'movie')
+              AND e.tmdb_id IS NULL
+              AND e.tmdb_skipped_at IS NOT NULL
+            GROUP BY e.entry_id
+            ORDER BY e.type, e.cleaned_title
+        """).fetchall()
+
+    return JSONResponse([dict(r) for r in rows])
+
+
+@router.post("/tmdb/retry-skipped", response_class=JSONResponse)
+async def tmdb_retry_skipped(current_user: TokenData = Depends(get_current_user)):
+    from app.tasks.tmdb import trigger_tmdb_enrichment, is_running
+
+    if is_running():
+        return JSONResponse({"ok": False, "reason": "already_running"})
+
+    with get_db() as conn:
+        cleared = conn.execute(
+            "UPDATE entries SET tmdb_skipped_at = NULL WHERE tmdb_skipped_at IS NOT NULL AND tmdb_id IS NULL"
+        ).rowcount
+
+    logger.info("[INTEGRATIONS] TMDB skipped list cleared (%d entries) by %s", cleared, current_user.username)
+    started = trigger_tmdb_enrichment(triggered_by="retry-skipped")
+    return JSONResponse({"ok": started, "cleared": cleared, "reason": None if started else "disabled_or_no_key"})
 
 
 @router.post("/tmdb/trigger", response_class=JSONResponse)

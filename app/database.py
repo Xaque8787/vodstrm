@@ -74,8 +74,9 @@ CREATE TABLE IF NOT EXISTS entries (
     air_date    TEXT,
     series_type TEXT CHECK(series_type IN ('season_episode', 'air_date') OR series_type IS NULL),
     cover_art   TEXT,
-    tmdb_id     INTEGER DEFAULT NULL,
-    tmdb_type   TEXT DEFAULT NULL,
+    tmdb_id         INTEGER DEFAULT NULL,
+    tmdb_type       TEXT DEFAULT NULL,
+    tmdb_skipped_at TEXT DEFAULT NULL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );
