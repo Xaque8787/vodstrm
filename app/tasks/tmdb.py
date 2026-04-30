@@ -327,14 +327,31 @@ def _run_enrichment(triggered_by: str) -> None:
         with get_db() as conn:
             cleanup_tmdb_orphans(conn)
 
-        # Fetch unenriched entries that haven't been marked as not-found
+        # Fetch unenriched entries that haven't been marked as not-found.
+        # search_title prefers the filtered_title from the highest-priority
+        # non-excluded stream so that provider noise stripped by filters is
+        # not passed to the TMDB API.
         with get_db() as conn:
             pending = conn.execute("""
-                SELECT entry_id, cleaned_title, season, type, year
-                FROM entries
-                WHERE type IN ('series', 'movie')
-                  AND tmdb_id IS NULL
-                  AND tmdb_skipped_at IS NULL
+                SELECT e.entry_id, e.cleaned_title, e.season, e.type, e.year,
+                    COALESCE(
+                        (
+                            SELECT s.filtered_title
+                            FROM streams s
+                            JOIN providers p ON p.slug = s.provider
+                            WHERE s.entry_id = e.entry_id
+                              AND s.exclude = 0
+                              AND s.filtered_title IS NOT NULL
+                              AND s.filtered_title != ''
+                            ORDER BY p.priority ASC, p.slug ASC
+                            LIMIT 1
+                        ),
+                        e.cleaned_title
+                    ) AS search_title
+                FROM entries e
+                WHERE e.type IN ('series', 'movie')
+                  AND e.tmdb_id IS NULL
+                  AND e.tmdb_skipped_at IS NULL
             """).fetchall()
 
         entries_checked = len(pending)
@@ -344,12 +361,13 @@ def _run_enrichment(triggered_by: str) -> None:
 
         logger.info("[TMDB] Enriching %d entries (triggered_by=%s)", entries_checked, triggered_by)
 
-        # Group series by (cleaned_title, year) to minimise API calls
+        # Group series by (search_title, year) to minimise API calls.
+        # search_title is filtered_title when available, cleaned_title otherwise.
         series_groups: dict[tuple, list] = {}
         movie_rows: list = []
         for row in pending:
             if row["type"] == "series":
-                key = (row["cleaned_title"], row["year"])
+                key = (row["search_title"], row["year"])
                 series_groups.setdefault(key, []).append(row)
             else:
                 movie_rows.append(row)
@@ -357,13 +375,14 @@ def _run_enrichment(triggered_by: str) -> None:
         # ── Series ────────────────────────────────────────────────────────
         for (title, year), group_rows in series_groups.items():
             try:
-                # Check cache by tmdb_id already stored for same title
+                # Cache lookup uses cleaned_title — the canonical entry identity
+                # does not change when filters are applied.
                 with get_db() as conn:
                     cached = conn.execute("""
                         SELECT tmdb_id FROM entries
                         WHERE cleaned_title = ? AND tmdb_type = 'show' AND tmdb_id IS NOT NULL
                         LIMIT 1
-                    """, (title,)).fetchone()
+                    """, (group_rows[0]["cleaned_title"],)).fetchone()
 
                 if cached:
                     tmdb_id = cached["tmdb_id"]
@@ -408,7 +427,7 @@ def _run_enrichment(triggered_by: str) -> None:
 
         # ── Movies ────────────────────────────────────────────────────────
         for row in movie_rows:
-            title = row["cleaned_title"]
+            search_title = row["search_title"]
             year = row["year"]
             try:
                 with get_db() as conn:
@@ -416,16 +435,16 @@ def _run_enrichment(triggered_by: str) -> None:
                         SELECT tmdb_id FROM entries
                         WHERE cleaned_title = ? AND tmdb_type = 'movie' AND tmdb_id IS NOT NULL
                         LIMIT 1
-                    """, (title,)).fetchone()
+                    """, (row["cleaned_title"],)).fetchone()
 
                 if cached:
                     tmdb_id = cached["tmdb_id"]
                     cache_hits += 1
                 else:
-                    result = _search_movie(title, year)
+                    result = _search_movie(search_title, year)
                     api_calls_made += 1
                     if not result:
-                        logger.debug("[TMDB] No movie result for %r", title)
+                        logger.debug("[TMDB] No movie result for %r", search_title)
                         with get_db() as conn:
                             conn.execute(
                                 "UPDATE entries SET tmdb_skipped_at = ? WHERE entry_id = ?",
@@ -450,7 +469,7 @@ def _run_enrichment(triggered_by: str) -> None:
                 return
             except Exception as exc:
                 error_detail = str(exc)
-                logger.warning("[TMDB] Failed to enrich movie %r: %s", title, exc)
+                logger.warning("[TMDB] Failed to enrich movie %r: %s", search_title, exc)
                 errors += 1
 
         logger.info(
