@@ -491,11 +491,11 @@
     <div class="integration-card-header">
       <span class="integration-card-title">The Movie Database (TMDB)</span>
       {% if tmdb_running %}
-        <span class="integration-badge badge-running">Running</span>
+        <span id="status-badge" class="integration-badge badge-running">Running</span>
       {% elif tmdb_enabled and tmdb_api_key %}
-        <span class="integration-badge badge-enabled">Enabled</span>
+        <span id="status-badge" class="integration-badge badge-enabled">Enabled</span>
       {% else %}
-        <span class="integration-badge badge-disabled">Disabled</span>
+        <span id="status-badge" class="integration-badge badge-disabled">Disabled</span>
       {% endif %}
     </div>
 
@@ -594,7 +594,7 @@
               <span class="stat-value muted" id="stat-api-calls">{{ last_run.api_calls_made }}</span>
             </div>
             <div class="stat-box">
-              <span class="stat-label">Cache Hits</span>
+              <span class="stat-label" title="Titles already matched in a previous run — TMDB API was not called again">DB Reuse</span>
               <span class="stat-value muted" id="stat-cache-hits">{{ last_run.cache_hits }}</span>
             </div>
             <div class="stat-box">
@@ -605,18 +605,18 @@
           </div>
 
           <div class="progress-wrap">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px;">
+              <span style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-muted);">Library Coverage</span>
+              <span style="font-size:0.72rem; color:var(--color-text-muted);" id="coverage-pct-label">{{ pct_enriched }}% matched</span>
+            </div>
             <div class="progress-bar-track">
               <div class="progress-bar-enriched" id="progress-enriched" style="width: {{ pct_enriched }}%"></div>
               <div class="progress-bar-skipped"  id="progress-skipped"  style="width: {{ pct_skipped }}%"></div>
             </div>
             <div class="progress-legend">
-              <span class="legend-item"><span class="legend-dot dot-enriched"></span><span id="legend-enriched-text">{{ pct_enriched }}% enriched</span></span>
-              {% if skipped > 0 %}
-              <span class="legend-item"><span class="legend-dot dot-skipped"></span><span id="legend-skipped-text">{{ pct_skipped }}% not found</span></span>
-              {% endif %}
-              {% if (total - enriched - skipped) > 0 %}
+              <span class="legend-item"><span class="legend-dot dot-enriched"></span><span id="legend-enriched-text">{{ enriched }} matched</span></span>
+              <span class="legend-item"><span class="legend-dot dot-skipped"></span><span id="legend-skipped-text">{{ skipped }} not found</span></span>
               <span class="legend-item"><span class="legend-dot dot-pending"></span><span id="legend-pending-text">{{ total - enriched - skipped }} pending</span></span>
-              {% endif %}
             </div>
           </div>
 
@@ -748,12 +748,15 @@
     if (fillE) fillE.style.width = pctEnriched + "%";
     if (fillS) fillS.style.width = pctSkipped  + "%";
 
+    const covLabel = document.getElementById("coverage-pct-label");
+    if (covLabel) covLabel.textContent = pctEnriched + "% matched";
+
     const ltE = document.getElementById("legend-enriched-text");
     const ltS = document.getElementById("legend-skipped-text");
     const ltP = document.getElementById("legend-pending-text");
-    if (ltE) ltE.textContent = pctEnriched + "% enriched";
-    if (ltS) ltS.textContent = pctSkipped + "% not found";
-    if (ltP) ltP.textContent = pending + " pending";
+    if (ltE) ltE.textContent = enriched + " matched";
+    if (ltS) ltS.textContent = skipped  + " not found";
+    if (ltP) ltP.textContent = pending  + " pending";
 
     const nc = document.getElementById("not-found-count");
     if (nc) nc.textContent = skipped;
@@ -796,6 +799,7 @@
     const label    = document.getElementById("run-label");
     const clearBtn = document.getElementById("btn-clear");
     const retryBtn = document.getElementById("btn-retry-skipped");
+    const badge    = document.getElementById("status-badge");
     const enabled  = {{ "true" if tmdb_enabled else "false" }};
     const keySet   = {{ "true" if tmdb_api_key  else "false" }};
     const canAct   = enabled && keySet && !running;
@@ -807,6 +811,15 @@
     }
     if (clearBtn) clearBtn.disabled = running;
     if (retryBtn) retryBtn.disabled = !canAct;
+
+    if (badge) {
+      badge.className = "integration-badge " + (
+        running        ? "badge-running"  :
+        (enabled && keySet) ? "badge-enabled" :
+                              "badge-disabled"
+      );
+      badge.textContent = running ? "Running" : (enabled && keySet ? "Enabled" : "Disabled");
+    }
   }
 
   // ── Poll ─────────────────────────────────────────────────────────────────
@@ -816,9 +829,19 @@
       const res  = await fetch("/integrations/tmdb/status");
       if (!res.ok) return;
       const data = await res.json();
+      const wasRunning = pollTimer !== null;
       setRunning(data.running);
       updateStats(data);
-      pollTimer = data.running ? setTimeout(pollStatus, POLL_INTERVAL) : null;
+      if (data.running) {
+        pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+      } else {
+        // One final poll after task finishes to capture the run log entry
+        if (wasRunning) {
+          pollTimer = setTimeout(pollStatus, 1500);
+        } else {
+          pollTimer = null;
+        }
+      }
     } catch {
       pollTimer = null;
     }
@@ -946,5 +969,8 @@
   {% if tmdb_running %}
   pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
   {% endif %}
+
+  // When user manually triggers, pollTimer is set before pollStatus fires,
+  // so wasRunning will be true on the cycle that sees running=false.
 </script>
 {% endblock %}
