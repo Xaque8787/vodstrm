@@ -143,6 +143,7 @@ def apply_filters(stream: dict[str, Any], entry: dict[str, Any], filters: list[d
         "filter_hits": json.dumps(hits),
         "exclude": exclude,
         "include_only": include_only,
+        "include_only_active": 1 if include_only_rules else 0,
     }
 
 
@@ -172,8 +173,8 @@ def run_filters_for_provider(
             filters,
         )
         conn.execute(
-            """UPDATE streams SET filtered_title=?, filter_hits=?, exclude=?, include_only=? WHERE stream_id=?""",
-            (result["filtered_title"], result["filter_hits"], result["exclude"], result["include_only"], row["stream_id"]),
+            """UPDATE streams SET filtered_title=?, filter_hits=?, exclude=?, include_only=?, include_only_active=? WHERE stream_id=?""",
+            (result["filtered_title"], result["filter_hits"], result["exclude"], result["include_only"], result["include_only_active"], row["stream_id"]),
         )
         updated += 1
 

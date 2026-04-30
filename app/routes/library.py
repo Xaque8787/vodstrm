@@ -105,17 +105,19 @@ _HAS_IMPORT_SELECTED = """
         WHERE _s.entry_id = e.entry_id
           AND _p.strm_mode = 'import_selected'
           AND _p.is_active = 1
+          AND (_s.include_only_active = 0 OR _s.include_only = 1)
     )
 """
 
-# Subquery: can_add — entry has an unimported, non-excluded stream from an
-# active import_selected provider
+# Subquery: can_add — entry has an unimported, non-excluded, include_only-eligible
+# stream from an active import_selected provider
 _CAN_ADD_SUBQUERY = """
     (SELECT COUNT(*) FROM streams _s2
      JOIN providers _p2 ON _p2.slug = _s2.provider
      WHERE _s2.entry_id = e.entry_id
        AND _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
-       AND _s2.exclude = 0 AND _s2.imported = 0)
+       AND _s2.exclude = 0 AND _s2.imported = 0
+       AND (_s2.include_only_active = 0 OR _s2.include_only = 1))
 """
 
 # Subquery: filtered_title from the highest-priority eligible import_selected stream.
@@ -127,6 +129,7 @@ _FILTERED_TITLE_SUBQUERY = """
      WHERE _sf.entry_id = e.entry_id
        AND _pf.strm_mode = 'import_selected' AND _pf.is_active = 1
        AND _sf.exclude = 0
+       AND (_sf.include_only_active = 0 OR _sf.include_only = 1)
        AND _sf.filtered_title IS NOT NULL AND _sf.filtered_title != ''
      ORDER BY _pf.priority, _pf.slug
      LIMIT 1)
@@ -144,6 +147,7 @@ _OWNER_SLUG_SUBQUERY = """
         WHERE _sl.entry_id = e.entry_id
           AND _pl.is_active = 1
           AND _sl.exclude = 0
+          AND (_sl.include_only_active = 0 OR _sl.include_only = 1)
           AND (
               _pl.strm_mode = 'generate_all'
               OR (_pl.strm_mode = 'import_selected' AND _sl.imported = 1)
@@ -196,6 +200,7 @@ async def list_entries(
             JOIN providers _po ON _po.slug = _so.provider
             WHERE _so.entry_id = e.entry_id
               AND _po.is_active = 1
+              AND (_so.include_only_active = 0 OR _so.include_only = 1)
               AND (
                   CASE WHEN e.type = 'live' THEN (
                       _so.exclude = 0
@@ -312,6 +317,7 @@ def _series_group_query(extra_where: str) -> str:
             SUM(CASE WHEN s2.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
             SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
                           AND s2.exclude = 0 AND s2.imported = 0
+                          AND (s2.include_only_active = 0 OR s2.include_only = 1)
                      THEN 1 ELSE 0 END) AS can_add_count
         FROM entries e
         LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
@@ -334,6 +340,7 @@ def _tv_vod_group_query(extra_where: str) -> str:
             SUM(CASE WHEN s2.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
             SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
                           AND s2.exclude = 0 AND s2.imported = 0
+                          AND (s2.include_only_active = 0 OR s2.include_only = 1)
                      THEN 1 ELSE 0 END) AS can_add_count
         FROM entries e
         LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
@@ -420,6 +427,7 @@ async def list_seasons(
                 SUM(CASE WHEN s.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
                 SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
                               AND s.exclude = 0 AND s.imported = 0
+                              AND (s.include_only_active = 0 OR s.include_only = 1)
                          THEN 1 ELSE 0 END) AS can_add_count
             FROM entries e
             LEFT JOIN streams s ON s.entry_id = e.entry_id
@@ -483,12 +491,14 @@ async def list_episodes(
                  WHERE s2.entry_id = e.entry_id
                    AND p2.strm_mode = 'import_selected' AND p2.is_active = 1
                    AND s2.exclude = 0 AND s2.imported = 0
+                   AND (s2.include_only_active = 0 OR s2.include_only = 1)
                 ) AS can_add_count,
                 (SELECT s2.filtered_title FROM streams s2
                  JOIN providers p2 ON p2.slug = s2.provider
                  WHERE s2.entry_id = e.entry_id
                    AND p2.strm_mode = 'import_selected' AND p2.is_active = 1
                    AND s2.exclude = 0
+                   AND (s2.include_only_active = 0 OR s2.include_only = 1)
                    AND s2.filtered_title IS NOT NULL AND s2.filtered_title != ''
                  ORDER BY p2.priority, p2.slug
                  LIMIT 1
@@ -532,6 +542,7 @@ async def list_tv_vod_years(
                 SUM(CASE WHEN s.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
                 SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
                               AND s.exclude = 0 AND s.imported = 0
+                              AND (s.include_only_active = 0 OR s.include_only = 1)
                          THEN 1 ELSE 0 END) AS can_add_count
             FROM entries e
             LEFT JOIN streams s ON s.entry_id = e.entry_id
@@ -587,6 +598,7 @@ async def list_tv_vod_episodes(
                  WHERE s2.entry_id = e.entry_id
                    AND p2.strm_mode = 'import_selected' AND p2.is_active = 1
                    AND s2.exclude = 0 AND s2.imported = 0
+                   AND (s2.include_only_active = 0 OR s2.include_only = 1)
                 ) AS can_add_count
             FROM entries e
             WHERE e.type = 'tv_vod'

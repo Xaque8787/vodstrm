@@ -87,8 +87,11 @@ CREATE TABLE IF NOT EXISTS entries (
 -- One row per provider per entry. The same content can be supplied
 -- by multiple providers; each provider may only have one active
 -- stream URL per entry at a time (enforced by unique index below).
--- Filter output columns (filtered_title, filter_hits, exclude, include_only)
--- are populated by the filter engine after each ingest or manual reapply.
+-- Filter output columns (filtered_title, filter_hits, exclude, include_only,
+-- include_only_active) are populated by the filter engine after each ingest
+-- or manual reapply. include_only_active=1 means at least one include_only
+-- rule was in scope for this stream; combined with include_only=0 it means
+-- the stream did not pass the filter and should be suppressed.
 CREATE TABLE IF NOT EXISTS streams (
     stream_id      INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_id       TEXT NOT NULL REFERENCES entries(entry_id),
@@ -102,6 +105,7 @@ CREATE TABLE IF NOT EXISTS streams (
     filter_hits      TEXT DEFAULT '[]',
     exclude          INTEGER DEFAULT 0,
     include_only     INTEGER DEFAULT 0,
+    include_only_active INTEGER NOT NULL DEFAULT 0,
     strm_path        TEXT,
     last_written_url TEXT,
     -- 1 = eligible for STRM ownership (set by manual Add or follow engine;
