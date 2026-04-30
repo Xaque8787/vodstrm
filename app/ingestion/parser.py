@@ -30,13 +30,8 @@ _NXN_RE = re.compile(r"\b(?P<season>\d{1,3})[xX](?P<episode>\d{1,3})\b")
 
 _YEAR_RE = re.compile(r"\b(?:19\d{2}|20\d{2})\b")
 
-_AIR_DATE_RE = re.compile(
-    r"\b(?:"
-    r"(?:19|20)\d{2}[ ._-]\d{2}[ ._-]\d{2}"
-    r"|"
-    r"\d{2}[ ._-]\d{2}[ ._-](?:19|20)\d{2}"
-    r")\b"
-)
+_AIR_DATE_FWD_RE = re.compile(r"(?<=\s)(?:19|20)\d{2}[ ._-]\d{2}[ ._-]\d{2}\b")
+_AIR_DATE_REV_RE = re.compile(r"(?<=\s)\d{2}[ ._-]\d{2}[ ._-](?:19|20)\d{2}\b")
 
 _ATTR_RE = re.compile(r'([\w-]+)="([^"]*)"')
 
@@ -128,14 +123,13 @@ def _build_metadata_json(entry: dict) -> str:
 
 
 def _extract_air_date(value: str) -> tuple[str | None, str]:
-    match = _AIR_DATE_RE.search(value)
-    if not match:
+    fwd_matches = list(_AIR_DATE_FWD_RE.finditer(value))
+    rev_matches = list(_AIR_DATE_REV_RE.finditer(value))
+    match = (fwd_matches or rev_matches or [None])[-1]
+    if match is None:
         return None, value
     raw = match.group(0)
-    # normalise separator to '-'
     formatted = re.sub(r"[ ._]", "-", raw)
-    # Keep only the text before the date — mirrors how movie year stripping works.
-    # Everything after the date is encoding noise (quality tags, release group, etc.)
     cleaned = value[: match.start()]
     return formatted, cleaned
 
