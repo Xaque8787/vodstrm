@@ -25,11 +25,8 @@ logger = logging.getLogger("app.ingestion.parser")
 # REGEX
 # ---------------------------------------------------------------------------
 
-_SEASON_EPISODE_RE = re.compile(
-    r"\b(?:S(?P<season>\d{1,3})[ ._-]?E(?P<episode>\d{1,3})"
-    r"|(?P<season2>\d{1,3})[xX](?P<episode2>\d{1,3}))\b",
-    re.IGNORECASE,
-)
+_SE_RE  = re.compile(r"\bS(?P<season>\d{1,3})[ ._-]?E(?P<episode>\d{1,3})\b", re.IGNORECASE)
+_NXN_RE = re.compile(r"\b(?P<season>\d{1,3})[xX](?P<episode>\d{1,3})\b")
 
 _YEAR_RE = re.compile(r"\b(?:19\d{2}|20\d{2})\b")
 
@@ -184,11 +181,11 @@ def _classify(entry: dict) -> dict:
         logger.debug("[PARSER] Classified as LIVE: %s", name[:80])
         return entry
 
-    # SERIES — S##E## or ##x## pattern
-    match = _SEASON_EPISODE_RE.search(name)
+    # SERIES — prefer explicit S##E## form; fall back to ##x## only if absent
+    match = _SE_RE.search(name) or _NXN_RE.search(name)
     if match:
-        season = match.group("season") or match.group("season2")
-        episode = match.group("episode") or match.group("episode2")
+        season = match.group("season")
+        episode = match.group("episode")
         entry["type"] = "series"
         entry["series_type"] = "season_episode"
         entry["season"] = int(season)
