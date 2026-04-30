@@ -14,6 +14,27 @@
     margin-bottom: calc(var(--spacing) * 3);
   }
 
+  /* ── Flash / error banners ── */
+  .flash-banner {
+    background: var(--color-success-bg);
+    border: 1px solid #a3cfbb;
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);
+    font-size: 0.875rem;
+    color: #0a3622;
+    margin-bottom: calc(var(--spacing) * 2);
+  }
+
+  .error-banner {
+    background: var(--color-error-bg);
+    border: 1px solid #f1aeb5;
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);
+    font-size: 0.875rem;
+    color: var(--color-error-text);
+    margin-bottom: calc(var(--spacing) * 2);
+  }
+
   /* ── Integration card ── */
   .integration-card {
     background: var(--color-surface);
@@ -56,54 +77,112 @@
     padding: calc(var(--spacing) * 2.5);
     display: flex;
     flex-direction: column;
-    gap: calc(var(--spacing) * 2.5);
+    gap: calc(var(--spacing) * 3);
   }
 
-  /* ── Settings section ── */
-  .settings-section {
+  /* ── Section labels ── */
+  .section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--color-text-muted);
+    margin-bottom: calc(var(--spacing) * 1.5);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* ── Settings form ── */
+  .settings-form {
     display: flex;
     flex-direction: column;
     gap: calc(var(--spacing) * 1.5);
   }
 
-  .section-label {
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--color-text-muted);
-    margin-bottom: 4px;
-  }
-
-  .settings-grid {
+  .form-row {
     display: grid;
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: 160px 1fr;
     gap: calc(var(--spacing)) calc(var(--spacing) * 2);
     align-items: center;
-    font-size: 0.875rem;
   }
 
-  .settings-key {
+  .form-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .form-hint {
+    font-size: 0.75rem;
     color: var(--color-text-muted);
-    font-size: 0.82rem;
-  }
-
-  .settings-val {
-    font-weight: 500;
-  }
-
-  .settings-val code {
-    background: #eef0f2;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 0.82rem;
-  }
-
-  .settings-hint {
-    font-size: 0.78rem;
-    color: var(--color-text-muted);
-    margin-top: 2px;
     grid-column: 2;
+    margin-top: -4px;
+  }
+
+  .form-input {
+    padding: 7px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    font-family: var(--font);
+    background: var(--color-surface);
+    color: var(--color-text);
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+  .form-input:focus { outline: none; border-color: var(--color-primary); }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
+  }
+
+  /* Toggle switch */
+  .toggle-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .toggle-wrap input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-track {
+    width: 40px;
+    height: 22px;
+    background: var(--color-border);
+    border-radius: 11px;
+    transition: background 0.2s;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transition: transform 0.2s;
+  }
+
+  .toggle-wrap input:checked ~ .toggle-track { background: var(--color-primary); }
+  .toggle-wrap input:checked ~ .toggle-track .toggle-thumb { transform: translateX(18px); }
+
+  .toggle-label-text {
+    font-size: 0.875rem;
+    font-weight: 500;
   }
 
   /* ── Status section ── */
@@ -116,18 +195,14 @@
 
   .status-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: calc(var(--spacing) * 1.5);
   }
 
-  .stat-box {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
+  .stat-box { display: flex; flex-direction: column; gap: 2px; }
 
   .stat-label {
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -137,19 +212,16 @@
   .stat-value {
     font-size: 1rem;
     font-weight: 700;
-    color: var(--color-text);
   }
 
   .stat-value.muted {
-    color: var(--color-text-muted);
     font-size: 0.82rem;
     font-weight: 400;
+    color: var(--color-text-muted);
   }
 
-  /* ── Progress bar ── */
-  .progress-wrap {
-    margin-top: calc(var(--spacing));
-  }
+  /* Progress bar */
+  .progress-wrap { margin-top: var(--spacing); }
 
   .progress-bar-track {
     width: 100%;
@@ -167,12 +239,12 @@
   }
 
   .progress-label {
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     color: var(--color-text-muted);
     margin-top: 4px;
   }
 
-  /* ── Warning banner ── */
+  /* Warning banner */
   .warn-banner {
     background: #fff3cd;
     border: 1px solid #ffc107;
@@ -185,27 +257,14 @@
     align-items: flex-start;
   }
 
-  .warn-icon {
-    flex-shrink: 0;
-    font-size: 1rem;
-    line-height: 1.4;
-  }
-
-  /* ── No run yet ── */
   .no-run-note {
     font-size: 0.82rem;
     color: var(--color-text-muted);
     font-style: italic;
+    margin-top: calc(var(--spacing) * 1.5);
   }
 
-  /* ── Action buttons ── */
-  .actions-section {
-    display: flex;
-    gap: var(--spacing);
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
+  /* ── Buttons ── */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -218,36 +277,23 @@
     border: 1px solid transparent;
     cursor: pointer;
     transition: background 0.12s, border-color 0.12s, opacity 0.12s;
-    text-decoration: none;
     white-space: nowrap;
   }
-  .btn:disabled, .btn.disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    pointer-events: none;
-  }
-  .btn-primary {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-    color: #fff;
-  }
-  .btn-primary:hover:not(:disabled):not(.disabled) {
-    background: var(--color-primary-hover);
-    border-color: var(--color-primary-hover);
-  }
-  .btn-danger-outline {
-    background: transparent;
-    border-color: var(--color-danger);
-    color: var(--color-danger);
-  }
-  .btn-danger-outline:hover:not(:disabled):not(.disabled) {
-    background: var(--color-danger);
-    color: #fff;
-  }
+  .btn:disabled, .btn.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+  .btn-primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .btn-primary:hover:not(:disabled):not(.disabled) { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+
+  .btn-secondary { background: transparent; border-color: var(--color-border); color: var(--color-text); }
+  .btn-secondary:hover:not(:disabled):not(.disabled) { background: var(--color-bg); }
+
+  .btn-danger-outline { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
+  .btn-danger-outline:hover:not(:disabled):not(.disabled) { background: var(--color-danger); color: #fff; }
+
+  .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
 
   .btn-spinner {
-    width: 14px;
-    height: 14px;
+    width: 14px; height: 14px;
     border: 2px solid rgba(255,255,255,0.4);
     border-top-color: #fff;
     border-radius: 50%;
@@ -257,24 +303,14 @@
   .btn-spinner.visible { display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── Env hint note ── */
-  .env-note {
-    font-size: 0.78rem;
-    color: var(--color-text-muted);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: calc(var(--spacing) * 1.5);
-    line-height: 1.6;
+  .actions-row {
+    display: flex;
+    gap: var(--spacing);
+    flex-wrap: wrap;
+    align-items: center;
   }
 
-  .env-note code {
-    background: #eef0f2;
-    padding: 1px 5px;
-    border-radius: 3px;
-  }
-
-  /* ── Confirm modal ── */
+  /* ── Modal ── */
   .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -287,10 +323,7 @@
     pointer-events: none;
     transition: opacity 0.15s;
   }
-  .modal-backdrop.open {
-    opacity: 1;
-    pointer-events: all;
-  }
+  .modal-backdrop.open { opacity: 1; pointer-events: all; }
 
   .modal {
     background: var(--color-surface);
@@ -305,31 +338,9 @@
   }
   .modal-backdrop.open .modal { transform: translateY(0); }
 
-  .modal-title {
-    font-size: 1rem;
-    font-weight: 700;
-    margin-bottom: calc(var(--spacing) * 1.5);
-  }
-
-  .modal-body {
-    font-size: 0.875rem;
-    color: var(--color-text-muted);
-    margin-bottom: calc(var(--spacing) * 2.5);
-    line-height: 1.6;
-  }
-
-  .modal-actions {
-    display: flex;
-    gap: var(--spacing);
-    justify-content: flex-end;
-  }
-
-  .btn-secondary {
-    background: transparent;
-    border-color: var(--color-border);
-    color: var(--color-text);
-  }
-  .btn-secondary:hover { background: var(--color-bg); }
+  .modal-title { font-size: 1rem; font-weight: 700; margin-bottom: calc(var(--spacing) * 1.5); }
+  .modal-body  { font-size: 0.875rem; color: var(--color-text-muted); margin-bottom: calc(var(--spacing) * 2.5); line-height: 1.6; }
+  .modal-actions { display: flex; gap: var(--spacing); justify-content: flex-end; }
 </style>
 {% endblock %}
 
@@ -337,13 +348,20 @@
 <div class="integrations-wrap">
   <h1 class="integrations-heading">Integrations</h1>
 
+  {% if flash %}
+  <div class="flash-banner">{{ flash }}</div>
+  {% endif %}
+  {% if error %}
+  <div class="error-banner">{{ error }}</div>
+  {% endif %}
+
   <!-- ── TMDB Card ── -->
   <div class="integration-card">
     <div class="integration-card-header">
       <span class="integration-card-title">The Movie Database (TMDB)</span>
       {% if tmdb_running %}
         <span class="integration-badge badge-running">Running</span>
-      {% elif tmdb_enabled and tmdb_key_set %}
+      {% elif tmdb_enabled and tmdb_api_key %}
         <span class="integration-badge badge-enabled">Enabled</span>
       {% else %}
         <span class="integration-badge badge-disabled">Disabled</span>
@@ -352,117 +370,130 @@
 
     <div class="integration-card-body">
 
-      <!-- Settings -->
-      <div class="settings-section">
+      <!-- Settings form -->
+      <div>
         <div class="section-label">Configuration</div>
-        <div class="settings-grid">
-          <span class="settings-key">Enabled</span>
-          <span class="settings-val">
-            {% if tmdb_enabled %}<strong>Yes</strong>{% else %}No{% endif %}
-          </span>
+        <form class="settings-form" method="post" action="/integrations/tmdb/settings">
 
-          <span class="settings-key">API Key</span>
-          <span class="settings-val">
-            {% if tmdb_key_set %}
-              <code>••••••••••••••••</code>
-            {% else %}
-              <span style="color: var(--color-danger); font-size:0.82rem;">Not set</span>
-            {% endif %}
-          </span>
+          <div class="form-row">
+            <label class="form-label" for="tmdb-enabled">Enable</label>
+            <div class="toggle-row">
+              <label class="toggle-wrap">
+                <input type="checkbox" id="tmdb-enabled" name="enabled" value="1"
+                  {% if tmdb_enabled %}checked{% endif %}>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+              <span class="toggle-label-text" id="toggle-label-text">
+                {% if tmdb_enabled %}Enabled{% else %}Disabled{% endif %}
+              </span>
+            </div>
+          </div>
 
-          <span class="settings-key">Language</span>
-          <span class="settings-val"><code>{{ tmdb_language }}</code></span>
-        </div>
+          <div class="form-row">
+            <label class="form-label" for="tmdb-api-key">API Key</label>
+            <input
+              class="form-input"
+              type="password"
+              id="tmdb-api-key"
+              name="api_key"
+              autocomplete="new-password"
+              placeholder="{% if tmdb_api_key %}••••••••••••••••{% else %}Enter your TMDB API key{% endif %}"
+              value="">
+            <span class="form-hint">
+              Leave blank to keep existing key.
+              Get a free key at <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org</a>.
+            </span>
+          </div>
 
-        <div class="env-note">
-          Configure via environment variables: <code>TMDB_ENABLED=true</code>,
-          <code>TMDB_API_KEY=your_key</code>, <code>TMDB_LANGUAGE=en-US</code>.
-          Changes take effect on next application restart.
-        </div>
+          <div class="form-row">
+            <label class="form-label" for="tmdb-language">Language</label>
+            <input
+              class="form-input"
+              type="text"
+              id="tmdb-language"
+              name="language"
+              value="{{ tmdb_language }}"
+              placeholder="en-US"
+              style="max-width: 120px;">
+          </div>
+
+          <div style="padding-top: 4px;">
+            <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
+          </div>
+        </form>
       </div>
 
       <!-- Status -->
-      <div class="settings-section">
+      <div>
         <div class="section-label">Status</div>
 
-        {% if last_run %}
-          {% set pct = ((enriched / total * 100) | int) if total > 0 else 0 %}
-          <div class="status-section">
-            <div class="status-grid">
-              <div class="stat-box">
-                <span class="stat-label">Enriched</span>
-                <span class="stat-value" id="stat-enriched">{{ enriched }} / {{ total }}</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-label">Unenriched</span>
-                <span class="stat-value" id="stat-unenriched">{{ total - enriched }}</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-label">Last Run</span>
-                <span class="stat-value muted" id="stat-last-run">{{ last_run.run_at[:19].replace('T', ' ') }}</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-label">Triggered By</span>
-                <span class="stat-value muted" id="stat-triggered-by">{{ last_run.triggered_by }}</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-label">Duration</span>
-                <span class="stat-value muted" id="stat-duration">{{ "%.1f" | format(last_run.duration_seconds) }}s</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-label">API Calls</span>
-                <span class="stat-value muted" id="stat-api-calls">{{ last_run.api_calls_made }}</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-label">Cache Hits</span>
-                <span class="stat-value muted" id="stat-cache-hits">{{ last_run.cache_hits }}</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-label">Errors</span>
-                <span class="stat-value muted" id="stat-errors">{{ last_run.errors }}</span>
-              </div>
+        {% set pct = ((enriched / total * 100) | int) if total > 0 else 0 %}
+        <div class="status-section">
+          <div class="status-grid">
+            <div class="stat-box">
+              <span class="stat-label">Enriched</span>
+              <span class="stat-value" id="stat-enriched">{{ enriched }} / {{ total }}</span>
             </div>
-
-            <div class="progress-wrap">
-              <div class="progress-bar-track">
-                <div class="progress-bar-fill" id="progress-fill" style="width: {{ pct }}%"></div>
-              </div>
-              <div class="progress-label" id="progress-label">{{ pct }}% enriched</div>
+            <div class="stat-box">
+              <span class="stat-label">Unenriched</span>
+              <span class="stat-value" id="stat-unenriched">{{ total - enriched }}</span>
             </div>
+            {% if last_run %}
+            <div class="stat-box">
+              <span class="stat-label">Last Run</span>
+              <span class="stat-value muted" id="stat-last-run">{{ last_run.run_at[:19].replace('T', ' ') }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Triggered By</span>
+              <span class="stat-value muted" id="stat-triggered-by">{{ last_run.triggered_by }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Duration</span>
+              <span class="stat-value muted" id="stat-duration">{{ "%.1f"|format(last_run.duration_seconds) }}s</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">API Calls</span>
+              <span class="stat-value muted" id="stat-api-calls">{{ last_run.api_calls_made }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Cache Hits</span>
+              <span class="stat-value muted" id="stat-cache-hits">{{ last_run.cache_hits }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Errors</span>
+              <span class="stat-value muted" id="stat-errors">{{ last_run.errors }}</span>
+            </div>
+            {% endif %}
           </div>
 
-          {% if last_run.error_detail %}
-          <div class="warn-banner">
-            <span class="warn-icon">&#9888;</span>
-            <span>Last run error: {{ last_run.error_detail }}</span>
+          <div class="progress-wrap">
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="progress-fill" style="width: {{ pct }}%"></div>
+            </div>
+            <div class="progress-label" id="progress-label">{{ pct }}% enriched</div>
           </div>
+
+          {% if not last_run %}
+          <p class="no-run-note">No enrichment runs yet.</p>
           {% endif %}
+        </div>
 
-        {% else %}
-          <div class="status-section">
-            <div class="status-grid">
-              <div class="stat-box">
-                <span class="stat-label">Enriched</span>
-                <span class="stat-value" id="stat-enriched">{{ enriched }} / {{ total }}</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-label">Unenriched</span>
-                <span class="stat-value" id="stat-unenriched">{{ total - enriched }}</span>
-              </div>
-            </div>
-            <p class="no-run-note" style="margin-top: calc(var(--spacing) * 1.5);">No enrichment runs yet.</p>
-          </div>
+        {% if last_run and last_run.error_detail %}
+        <div class="warn-banner" style="margin-top: calc(var(--spacing) * 1.5);">
+          <span>&#9888;</span>
+          <span>Last run error: {{ last_run.error_detail }}</span>
+        </div>
         {% endif %}
       </div>
 
       <!-- Actions -->
-      <div class="settings-section">
+      <div>
         <div class="section-label">Actions</div>
-        <div class="actions-section">
+        <div class="actions-row">
           <button
             id="btn-run-now"
             class="btn btn-primary"
-            {% if not tmdb_enabled or not tmdb_key_set or tmdb_running %}disabled{% endif %}
+            {% if not tmdb_enabled or not tmdb_api_key or tmdb_running %}disabled{% endif %}
             onclick="triggerTmdb()"
           >
             <span class="btn-spinner" id="run-spinner"></span>
@@ -478,23 +509,13 @@
             Remove All TMDB Metadata
           </button>
         </div>
-
-        {% if not tmdb_enabled %}
-        <p style="font-size:0.78rem; color: var(--color-text-muted); margin-top: 4px;">
-          Set <code>TMDB_ENABLED=true</code> in your environment to enable enrichment.
-        </p>
-        {% elif not tmdb_key_set %}
-        <p style="font-size:0.78rem; color: var(--color-danger); margin-top: 4px;">
-          <code>TMDB_API_KEY</code> is not set — enrichment will not run.
-        </p>
-        {% endif %}
       </div>
 
-    </div>
-  </div>
+    </div><!-- /card-body -->
+  </div><!-- /card -->
 </div>
 
-<!-- ── Clear confirmation modal ── -->
+<!-- Confirm clear modal -->
 <div class="modal-backdrop" id="clear-modal">
   <div class="modal">
     <div class="modal-title">Remove All TMDB Metadata?</div>
@@ -516,23 +537,38 @@
   const POLL_INTERVAL = 4000;
   let pollTimer = null;
 
+  // Toggle label text
+  const toggleInput = document.getElementById("tmdb-enabled");
+  const toggleLabelText = document.getElementById("toggle-label-text");
+  if (toggleInput && toggleLabelText) {
+    toggleInput.addEventListener("change", () => {
+      toggleLabelText.textContent = toggleInput.checked ? "Enabled" : "Disabled";
+    });
+  }
+
+  // API key: only submit value if user actually typed something
+  document.querySelector(".settings-form").addEventListener("submit", function() {
+    const keyInput = document.getElementById("tmdb-api-key");
+    if (!keyInput.value.trim()) {
+      keyInput.disabled = true;
+    }
+  });
+
   function setRunning(running) {
-    const btn = document.getElementById("btn-run-now");
+    const btn     = document.getElementById("btn-run-now");
     const spinner = document.getElementById("run-spinner");
-    const label = document.getElementById("run-label");
+    const label   = document.getElementById("run-label");
     const clearBtn = document.getElementById("btn-clear");
+    const enabled = {{ "true" if tmdb_enabled else "false" }};
+    const keySet  = {{ "true" if tmdb_api_key  else "false" }};
 
     if (running) {
       btn.disabled = true;
-      btn.classList.add("disabled");
       spinner.classList.add("visible");
       label.textContent = "Running\u2026";
       if (clearBtn) clearBtn.disabled = true;
     } else {
-      const enabled = {{ "true" if tmdb_enabled else "false" }};
-      const keySet  = {{ "true" if tmdb_key_set  else "false" }};
       btn.disabled = !(enabled && keySet);
-      btn.classList.remove("disabled");
       spinner.classList.remove("visible");
       label.textContent = "Run Now";
       if (clearBtn) clearBtn.disabled = false;
@@ -543,25 +579,24 @@
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     const total    = data.total    ?? 0;
     const enriched = data.enriched ?? 0;
-    const unenriched = total - enriched;
     const pct = total > 0 ? Math.round(enriched / total * 100) : 0;
 
-    set("stat-enriched",   enriched + " / " + total);
-    set("stat-unenriched", unenriched);
+    set("stat-enriched",  enriched + " / " + total);
+    set("stat-unenriched", total - enriched);
 
-    const fill  = document.getElementById("progress-fill");
-    const plbl  = document.getElementById("progress-label");
-    if (fill)  fill.style.width = pct + "%";
-    if (plbl)  plbl.textContent = pct + "% enriched";
+    const fill = document.getElementById("progress-fill");
+    const plbl = document.getElementById("progress-label");
+    if (fill) fill.style.width = pct + "%";
+    if (plbl) plbl.textContent = pct + "% enriched";
 
     const lr = data.last_run;
     if (lr) {
-      set("stat-last-run",      (lr.run_at || "").slice(0, 19).replace("T", " "));
-      set("stat-triggered-by",  lr.triggered_by || "");
-      set("stat-duration",      (lr.duration_seconds != null ? lr.duration_seconds.toFixed(1) : "—") + "s");
-      set("stat-api-calls",     lr.api_calls_made ?? "—");
-      set("stat-cache-hits",    lr.cache_hits     ?? "—");
-      set("stat-errors",        lr.errors         ?? "—");
+      set("stat-last-run",     (lr.run_at || "").slice(0, 19).replace("T", " "));
+      set("stat-triggered-by", lr.triggered_by || "");
+      set("stat-duration",     (lr.duration_seconds != null ? lr.duration_seconds.toFixed(1) : "—") + "s");
+      set("stat-api-calls",    lr.api_calls_made ?? "—");
+      set("stat-cache-hits",   lr.cache_hits     ?? "—");
+      set("stat-errors",       lr.errors         ?? "—");
     }
   }
 
@@ -572,19 +607,14 @@
       const data = await res.json();
       setRunning(data.running);
       updateStats(data);
-      if (data.running) {
-        pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
-      } else {
-        pollTimer = null;
-      }
+      pollTimer = data.running ? setTimeout(pollStatus, POLL_INTERVAL) : null;
     } catch {
       pollTimer = null;
     }
   }
 
   async function triggerTmdb() {
-    const btn = document.getElementById("btn-run-now");
-    btn.disabled = true;
+    document.getElementById("btn-run-now").disabled = true;
     try {
       const res  = await fetch("/integrations/tmdb/trigger", { method: "POST" });
       const data = await res.json();
@@ -592,44 +622,34 @@
         setRunning(true);
         pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
       } else {
-        alert("Could not start enrichment: " + (data.reason || "unknown error"));
-        btn.disabled = false;
+        alert("Could not start enrichment: " + (data.reason || "unknown"));
+        document.getElementById("btn-run-now").disabled = false;
       }
     } catch {
       alert("Request failed — please try again.");
-      btn.disabled = false;
+      document.getElementById("btn-run-now").disabled = false;
     }
   }
 
-  function openClearModal() {
-    document.getElementById("clear-modal").classList.add("open");
-  }
-
-  function closeClearModal() {
-    document.getElementById("clear-modal").classList.remove("open");
-  }
+  function openClearModal()  { document.getElementById("clear-modal").classList.add("open"); }
+  function closeClearModal() { document.getElementById("clear-modal").classList.remove("open"); }
 
   async function confirmClear() {
     closeClearModal();
     try {
       const res  = await fetch("/integrations/tmdb/clear", { method: "POST" });
       const data = await res.json();
-      if (data.ok) {
-        location.reload();
-      } else {
-        alert("Could not clear metadata: " + (data.reason || "unknown error"));
-      }
+      if (data.ok) { location.reload(); }
+      else { alert("Could not clear: " + (data.reason || "unknown")); }
     } catch {
       alert("Request failed — please try again.");
     }
   }
 
-  // Close modal on backdrop click
   document.getElementById("clear-modal").addEventListener("click", function(e) {
     if (e.target === this) closeClearModal();
   });
 
-  // If already running on page load, start polling
   {% if tmdb_running %}
   pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
   {% endif %}

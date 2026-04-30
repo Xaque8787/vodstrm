@@ -11,14 +11,12 @@ next scheduled ingest will call trigger_tmdb_enrichment() again and pick up
 any entries that were missed.
 """
 import logging
-import os
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import json
-from datetime import datetime, timezone
 
 from app.database import get_db
 from app.utils.env import local_now_iso
@@ -60,16 +58,29 @@ _bucket = _TokenBucket(rate=3.0)  # 3 req/s — well within TMDB free tier
 # ── Settings helpers ──────────────────────────────────────────────────────
 
 
+def _get_tmdb_settings() -> dict:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT settings FROM integrations WHERE slug = 'tmdb'"
+        ).fetchone()
+    if not row:
+        return {}
+    try:
+        return json.loads(row["settings"] or "{}")
+    except (ValueError, TypeError):
+        return {}
+
+
 def _tmdb_enabled() -> bool:
-    return os.getenv("TMDB_ENABLED", "false").lower() == "true"
+    return _get_tmdb_settings().get("enabled", False) is True
 
 
 def _tmdb_api_key() -> str:
-    return os.getenv("TMDB_API_KEY", "").strip()
+    return (_get_tmdb_settings().get("api_key") or "").strip()
 
 
 def _tmdb_language() -> str:
-    return os.getenv("TMDB_LANGUAGE", "en-US").strip()
+    return (_get_tmdb_settings().get("language") or "en-US").strip()
 
 
 # ── TMDB HTTP helpers ─────────────────────────────────────────────────────

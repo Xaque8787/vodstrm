@@ -165,6 +165,15 @@ CREATE TABLE IF NOT EXISTS filter_patterns (
 CREATE INDEX IF NOT EXISTS idx_filter_patterns_filter ON filter_patterns(filter_id);
 
 -- -------------------------------------------------------
+-- INTEGRATIONS: per-integration settings (key/value as JSON)
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS integrations (
+    slug       TEXT PRIMARY KEY,
+    settings   TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- -------------------------------------------------------
 -- TMDB: cached metadata from The Movie Database API
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS tmdb_shows (
