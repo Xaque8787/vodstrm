@@ -489,7 +489,12 @@
   <!-- ── TMDB Card ── -->
   <div class="integration-card">
     <div class="integration-card-header">
-      <span class="integration-card-title">The Movie Database (TMDB)</span>
+      <img
+        src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg"
+        alt="TMDB"
+        style="height: 16px; width: auto; flex-shrink: 0;"
+      >
+      <span class="integration-card-title">The Movie Database</span>
       {% if tmdb_running %}
         <span id="status-badge" class="integration-badge badge-running">Running</span>
       {% elif tmdb_enabled and tmdb_api_key %}

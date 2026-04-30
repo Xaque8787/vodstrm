@@ -203,15 +203,23 @@ def resolve_cover_art(conn, entry_id: str, entry_tmdb_id, entry_tmdb_type: str) 
 
 
 _TRAILING_YEAR_RE = re.compile(r"\s+((?:19|20)\d{2})$")
+_COLON_RE = re.compile(r"\s*:\s*")
+
+
+def _normalize_query(title: str) -> str:
+    """Replace colons with a space and collapse whitespace for TMDB queries."""
+    return _COLON_RE.sub(" ", title).strip()
 
 
 def _search_show(title: str, year: int | None) -> dict | None:
+    query = _normalize_query(title)
+
     # Attempt (a): if cleaned_title has a trailing year suffix, strip it and
     # pass as first_air_date_year so TMDB receives "Castle" + year=2009 rather
     # than the literal query "Castle 2009" which matches nothing.
-    m = _TRAILING_YEAR_RE.search(title)
+    m = _TRAILING_YEAR_RE.search(query)
     if m:
-        stripped = title[: m.start()]
+        stripped = query[: m.start()]
         extracted_year = int(m.group(1))
         data = _tmdb_get("/search/tv", {"query": stripped, "first_air_date_year": extracted_year})
         results = data.get("results") or []
@@ -222,13 +230,13 @@ def _search_show(title: str, year: int | None) -> dict | None:
         results = data.get("results") or []
         if results:
             return results[0]
-        # Attempt (c): original full title, no year filter
-        data = _tmdb_get("/search/tv", {"query": title})
+        # Attempt (c): normalized full title, no year filter
+        data = _tmdb_get("/search/tv", {"query": query})
         results = data.get("results") or []
         return results[0] if results else None
 
-    # No trailing year — single call as before
-    params: dict = {"query": title}
+    # No trailing year — single call
+    params: dict = {"query": query}
     if year:
         params["first_air_date_year"] = year
     data = _tmdb_get("/search/tv", params)
@@ -237,7 +245,7 @@ def _search_show(title: str, year: int | None) -> dict | None:
 
 
 def _search_movie(title: str, year: int | None) -> dict | None:
-    params: dict = {"query": title}
+    params: dict = {"query": _normalize_query(title)}
     if year:
         params["year"] = year
     data = _tmdb_get("/search/movie", params)
