@@ -1,0 +1,637 @@
+{% extends "base.html" %}
+{% block title %}Integrations — VODSTRM{% endblock %}
+
+{% block head %}
+<style>
+  .integrations-wrap {
+    padding: calc(var(--spacing) * 3);
+    max-width: 860px;
+  }
+
+  .integrations-heading {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: calc(var(--spacing) * 3);
+  }
+
+  /* ── Integration card ── */
+  .integration-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: calc(var(--spacing) * 3);
+    overflow: hidden;
+  }
+
+  .integration-card-header {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  .integration-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    flex: 1;
+  }
+
+  .integration-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-enabled  { background: #d1e7dd; color: #0a3622; }
+  .badge-disabled { background: #e9ecef; color: #495057; }
+  .badge-running  { background: #fff3cd; color: #664d03; }
+
+  .integration-card-body {
+    padding: calc(var(--spacing) * 2.5);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 2.5);
+  }
+
+  /* ── Settings section ── */
+  .settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 1.5);
+  }
+
+  .section-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+    margin-bottom: 4px;
+  }
+
+  .settings-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: calc(var(--spacing)) calc(var(--spacing) * 2);
+    align-items: center;
+    font-size: 0.875rem;
+  }
+
+  .settings-key {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+  }
+
+  .settings-val {
+    font-weight: 500;
+  }
+
+  .settings-val code {
+    background: #eef0f2;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.82rem;
+  }
+
+  .settings-hint {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    margin-top: 2px;
+    grid-column: 2;
+  }
+
+  /* ── Status section ── */
+  .status-section {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 2);
+  }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: calc(var(--spacing) * 1.5);
+  }
+
+  .stat-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-label {
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
+  .stat-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
+  .stat-value.muted {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+    font-weight: 400;
+  }
+
+  /* ── Progress bar ── */
+  .progress-wrap {
+    margin-top: calc(var(--spacing));
+  }
+
+  .progress-bar-track {
+    width: 100%;
+    height: 6px;
+    background: var(--color-border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--color-primary);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  .progress-label {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+  }
+
+  /* ── Warning banner ── */
+  .warn-banner {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);
+    font-size: 0.82rem;
+    color: #664d03;
+    display: flex;
+    gap: var(--spacing);
+    align-items: flex-start;
+  }
+
+  .warn-icon {
+    flex-shrink: 0;
+    font-size: 1rem;
+    line-height: 1.4;
+  }
+
+  /* ── No run yet ── */
+  .no-run-note {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+
+  /* ── Action buttons ── */
+  .actions-section {
+    display: flex;
+    gap: var(--spacing);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-family: var(--font);
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn:disabled, .btn.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .btn-primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled):not(.disabled) {
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+  }
+  .btn-danger-outline {
+    background: transparent;
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+  }
+  .btn-danger-outline:hover:not(:disabled):not(.disabled) {
+    background: var(--color-danger);
+    color: #fff;
+  }
+
+  .btn-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .btn-spinner.visible { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Env hint note ── */
+  .env-note {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 1.5);
+    line-height: 1.6;
+  }
+
+  .env-note code {
+    background: #eef0f2;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ── Confirm modal ── */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+  .modal-backdrop.open {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .modal {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: calc(var(--spacing) * 3);
+    max-width: 440px;
+    width: 90%;
+    transform: translateY(-10px);
+    transition: transform 0.15s;
+  }
+  .modal-backdrop.open .modal { transform: translateY(0); }
+
+  .modal-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: calc(var(--spacing) * 1.5);
+  }
+
+  .modal-body {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    margin-bottom: calc(var(--spacing) * 2.5);
+    line-height: 1.6;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: var(--spacing);
+    justify-content: flex-end;
+  }
+
+  .btn-secondary {
+    background: transparent;
+    border-color: var(--color-border);
+    color: var(--color-text);
+  }
+  .btn-secondary:hover { background: var(--color-bg); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="integrations-wrap">
+  <h1 class="integrations-heading">Integrations</h1>
+
+  <!-- ── TMDB Card ── -->
+  <div class="integration-card">
+    <div class="integration-card-header">
+      <span class="integration-card-title">The Movie Database (TMDB)</span>
+      {% if tmdb_running %}
+        <span class="integration-badge badge-running">Running</span>
+      {% elif tmdb_enabled and tmdb_key_set %}
+        <span class="integration-badge badge-enabled">Enabled</span>
+      {% else %}
+        <span class="integration-badge badge-disabled">Disabled</span>
+      {% endif %}
+    </div>
+
+    <div class="integration-card-body">
+
+      <!-- Settings -->
+      <div class="settings-section">
+        <div class="section-label">Configuration</div>
+        <div class="settings-grid">
+          <span class="settings-key">Enabled</span>
+          <span class="settings-val">
+            {% if tmdb_enabled %}<strong>Yes</strong>{% else %}No{% endif %}
+          </span>
+
+          <span class="settings-key">API Key</span>
+          <span class="settings-val">
+            {% if tmdb_key_set %}
+              <code>••••••••••••••••</code>
+            {% else %}
+              <span style="color: var(--color-danger); font-size:0.82rem;">Not set</span>
+            {% endif %}
+          </span>
+
+          <span class="settings-key">Language</span>
+          <span class="settings-val"><code>{{ tmdb_language }}</code></span>
+        </div>
+
+        <div class="env-note">
+          Configure via environment variables: <code>TMDB_ENABLED=true</code>,
+          <code>TMDB_API_KEY=your_key</code>, <code>TMDB_LANGUAGE=en-US</code>.
+          Changes take effect on next application restart.
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="settings-section">
+        <div class="section-label">Status</div>
+
+        {% if last_run %}
+          {% set pct = ((enriched / total * 100) | int) if total > 0 else 0 %}
+          <div class="status-section">
+            <div class="status-grid">
+              <div class="stat-box">
+                <span class="stat-label">Enriched</span>
+                <span class="stat-value" id="stat-enriched">{{ enriched }} / {{ total }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Unenriched</span>
+                <span class="stat-value" id="stat-unenriched">{{ total - enriched }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Last Run</span>
+                <span class="stat-value muted" id="stat-last-run">{{ last_run.run_at[:19].replace('T', ' ') }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Triggered By</span>
+                <span class="stat-value muted" id="stat-triggered-by">{{ last_run.triggered_by }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Duration</span>
+                <span class="stat-value muted" id="stat-duration">{{ "%.1f" | format(last_run.duration_seconds) }}s</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">API Calls</span>
+                <span class="stat-value muted" id="stat-api-calls">{{ last_run.api_calls_made }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Cache Hits</span>
+                <span class="stat-value muted" id="stat-cache-hits">{{ last_run.cache_hits }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Errors</span>
+                <span class="stat-value muted" id="stat-errors">{{ last_run.errors }}</span>
+              </div>
+            </div>
+
+            <div class="progress-wrap">
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="progress-fill" style="width: {{ pct }}%"></div>
+              </div>
+              <div class="progress-label" id="progress-label">{{ pct }}% enriched</div>
+            </div>
+          </div>
+
+          {% if last_run.error_detail %}
+          <div class="warn-banner">
+            <span class="warn-icon">&#9888;</span>
+            <span>Last run error: {{ last_run.error_detail }}</span>
+          </div>
+          {% endif %}
+
+        {% else %}
+          <div class="status-section">
+            <div class="status-grid">
+              <div class="stat-box">
+                <span class="stat-label">Enriched</span>
+                <span class="stat-value" id="stat-enriched">{{ enriched }} / {{ total }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Unenriched</span>
+                <span class="stat-value" id="stat-unenriched">{{ total - enriched }}</span>
+              </div>
+            </div>
+            <p class="no-run-note" style="margin-top: calc(var(--spacing) * 1.5);">No enrichment runs yet.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Actions -->
+      <div class="settings-section">
+        <div class="section-label">Actions</div>
+        <div class="actions-section">
+          <button
+            id="btn-run-now"
+            class="btn btn-primary"
+            {% if not tmdb_enabled or not tmdb_key_set or tmdb_running %}disabled{% endif %}
+            onclick="triggerTmdb()"
+          >
+            <span class="btn-spinner" id="run-spinner"></span>
+            <span id="run-label">{% if tmdb_running %}Running…{% else %}Run Now{% endif %}</span>
+          </button>
+
+          <button
+            id="btn-clear"
+            class="btn btn-danger-outline"
+            {% if tmdb_running %}disabled{% endif %}
+            onclick="openClearModal()"
+          >
+            Remove All TMDB Metadata
+          </button>
+        </div>
+
+        {% if not tmdb_enabled %}
+        <p style="font-size:0.78rem; color: var(--color-text-muted); margin-top: 4px;">
+          Set <code>TMDB_ENABLED=true</code> in your environment to enable enrichment.
+        </p>
+        {% elif not tmdb_key_set %}
+        <p style="font-size:0.78rem; color: var(--color-danger); margin-top: 4px;">
+          <code>TMDB_API_KEY</code> is not set — enrichment will not run.
+        </p>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ── Clear confirmation modal ── -->
+<div class="modal-backdrop" id="clear-modal">
+  <div class="modal">
+    <div class="modal-title">Remove All TMDB Metadata?</div>
+    <div class="modal-body">
+      This will remove all TMDB poster art and metadata from your library.
+      Cover art will fall back to tvg-logo until re-enrichment runs.
+      This cannot be undone.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeClearModal()">Cancel</button>
+      <button class="btn btn-danger-outline" onclick="confirmClear()">Remove All</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const POLL_INTERVAL = 4000;
+  let pollTimer = null;
+
+  function setRunning(running) {
+    const btn = document.getElementById("btn-run-now");
+    const spinner = document.getElementById("run-spinner");
+    const label = document.getElementById("run-label");
+    const clearBtn = document.getElementById("btn-clear");
+
+    if (running) {
+      btn.disabled = true;
+      btn.classList.add("disabled");
+      spinner.classList.add("visible");
+      label.textContent = "Running\u2026";
+      if (clearBtn) clearBtn.disabled = true;
+    } else {
+      const enabled = {{ "true" if tmdb_enabled else "false" }};
+      const keySet  = {{ "true" if tmdb_key_set  else "false" }};
+      btn.disabled = !(enabled && keySet);
+      btn.classList.remove("disabled");
+      spinner.classList.remove("visible");
+      label.textContent = "Run Now";
+      if (clearBtn) clearBtn.disabled = false;
+    }
+  }
+
+  function updateStats(data) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    const total    = data.total    ?? 0;
+    const enriched = data.enriched ?? 0;
+    const unenriched = total - enriched;
+    const pct = total > 0 ? Math.round(enriched / total * 100) : 0;
+
+    set("stat-enriched",   enriched + " / " + total);
+    set("stat-unenriched", unenriched);
+
+    const fill  = document.getElementById("progress-fill");
+    const plbl  = document.getElementById("progress-label");
+    if (fill)  fill.style.width = pct + "%";
+    if (plbl)  plbl.textContent = pct + "% enriched";
+
+    const lr = data.last_run;
+    if (lr) {
+      set("stat-last-run",      (lr.run_at || "").slice(0, 19).replace("T", " "));
+      set("stat-triggered-by",  lr.triggered_by || "");
+      set("stat-duration",      (lr.duration_seconds != null ? lr.duration_seconds.toFixed(1) : "—") + "s");
+      set("stat-api-calls",     lr.api_calls_made ?? "—");
+      set("stat-cache-hits",    lr.cache_hits     ?? "—");
+      set("stat-errors",        lr.errors         ?? "—");
+    }
+  }
+
+  async function pollStatus() {
+    try {
+      const res  = await fetch("/integrations/tmdb/status");
+      if (!res.ok) return;
+      const data = await res.json();
+      setRunning(data.running);
+      updateStats(data);
+      if (data.running) {
+        pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+      } else {
+        pollTimer = null;
+      }
+    } catch {
+      pollTimer = null;
+    }
+  }
+
+  async function triggerTmdb() {
+    const btn = document.getElementById("btn-run-now");
+    btn.disabled = true;
+    try {
+      const res  = await fetch("/integrations/tmdb/trigger", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setRunning(true);
+        pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+      } else {
+        alert("Could not start enrichment: " + (data.reason || "unknown error"));
+        btn.disabled = false;
+      }
+    } catch {
+      alert("Request failed — please try again.");
+      btn.disabled = false;
+    }
+  }
+
+  function openClearModal() {
+    document.getElementById("clear-modal").classList.add("open");
+  }
+
+  function closeClearModal() {
+    document.getElementById("clear-modal").classList.remove("open");
+  }
+
+  async function confirmClear() {
+    closeClearModal();
+    try {
+      const res  = await fetch("/integrations/tmdb/clear", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        location.reload();
+      } else {
+        alert("Could not clear metadata: " + (data.reason || "unknown error"));
+      }
+    } catch {
+      alert("Request failed — please try again.");
+    }
+  }
+
+  // Close modal on backdrop click
+  document.getElementById("clear-modal").addEventListener("click", function(e) {
+    if (e.target === this) closeClearModal();
+  });
+
+  // If already running on page load, start polling
+  {% if tmdb_running %}
+  pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+  {% endif %}
+</script>
+{% endblock %}
