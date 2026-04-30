@@ -184,6 +184,12 @@ def download_all_providers() -> None:
     except Exception as exc:
         logger.error("[DOWNLOADER] generate_live_m3u failed after all downloads: %s", exc, exc_info=True)
 
+    from app.tasks.tmdb import trigger_tmdb_enrichment
+    try:
+        trigger_tmdb_enrichment(triggered_by="download:all")
+    except Exception as exc:
+        logger.error("[DOWNLOADER] TMDB trigger failed after all downloads: %s", exc, exc_info=True)
+
 
 @task("download_provider")
 def download_provider(provider_slug: str) -> None:
@@ -214,3 +220,9 @@ def download_provider(provider_slug: str) -> None:
         generate_live_m3u()
     except Exception as exc:
         logger.error("[DOWNLOADER] generate_live_m3u failed after download of '%s': %s", provider_slug, exc, exc_info=True)
+
+    from app.tasks.tmdb import trigger_tmdb_enrichment
+    try:
+        trigger_tmdb_enrichment(triggered_by=f"download:{provider_slug}")
+    except Exception as exc:
+        logger.error("[DOWNLOADER] TMDB trigger failed after download of '%s': %s", provider_slug, exc, exc_info=True)
