@@ -20,6 +20,8 @@ VODSTRM is a self-hosted media library manager that ingests M3U and Xtream Codes
   - [Filters](#filters)
   - [Schedules](#schedules)
   - [Admin](#admin)
+- [Integrations](#integrations)
+  - [TMDB](#tmdb)
 
 ---
 
@@ -329,3 +331,22 @@ A low-level view into the entries and streams tables in the database.
 - **Streams tab** — Shows the individual stream records attached to each entry, including which provider they came from, their current URL, and their `filtered_title`. Expand any row to inspect the raw metadata JSON and the filter hits that were applied during the last filter run.
 
 The **Clear Entries** and **Clear Streams** buttons wipe the respective tables. Use with caution — clearing entries will remove all ownership and follow data, and the next ingestion run will treat everything as new.
+
+---
+
+## Integrations
+
+**URL:** `/integrations`
+
+Integrations connect VODSTRM to external services for metadata enrichment and library management. Each integration is independently configured and runs asynchronously in the background — the core ingest pipeline is never slowed down by external API calls.
+
+### TMDB
+
+The TMDB (The Movie Database) integration enriches your ingested content with metadata fetched from the TMDB API. After each ingest run, new movies and series entries are queued for lookup. A background processor then resolves them against the TMDB API in a rate-limited, best-effort manner, writing cover art URLs and matched TMDB IDs back to the database.
+
+To enable it:
+
+1. Register for a free account at [themoviedb.org](https://www.themoviedb.org) and generate an API key from your account settings.
+2. Open the Integrations page, enter your API key in the TMDB settings block, and enable the integration.
+
+The status widget on the Integrations page shows the current queue depth, the last time the processor ran, and how many items have completed or failed. Failed lookups are retained so you can see what did not resolve — they will not block the rest of the queue.
