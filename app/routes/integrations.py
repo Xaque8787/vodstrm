@@ -45,8 +45,8 @@ async def integrations_page(
             "tmdb_key_set": bool(_tmdb_api_key()),
             "tmdb_language": _tmdb_language(),
             "tmdb_running": is_running(),
-            "total": counts["total"] if counts else 0,
-            "enriched": counts["enriched"] if counts else 0,
+            "total": (counts["total"] or 0) if counts else 0,
+            "enriched": (counts["enriched"] or 0) if counts else 0,
             "last_run": dict(last_run) if last_run else None,
         },
     )
