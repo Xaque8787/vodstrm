@@ -95,13 +95,13 @@
           {{ sort_th("S", "season") }}
           {{ sort_th("E", "episode") }}
           {{ sort_th("air_date", "air_date") }}
-          {{ sort_th("series_type", "series_type") }}
-          {{ sort_th("created_at", "created_at") }}
+          <th class="lib-th-expand"></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="lib-tbody">
         {% for row in rows %}
-        <tr>
+        {% set entry_streams = streams_by_entry.get(row.entry_id, []) %}
+        <tr class="lib-stream-row" data-idx="{{ loop.index0 }}">
           <td><code class="lib-hash">{{ row.entry_id[:12] }}</code></td>
           <td><span class="lib-type-badge lib-type-badge--{{ row.type }}">{{ row.type }}</span></td>
           <td class="lib-title">{{ row.cleaned_title or "—" }}</td>
@@ -109,8 +109,53 @@
           <td>{{ row.season if row.season is not none else "—" }}</td>
           <td>{{ row.episode if row.episode is not none else "—" }}</td>
           <td>{{ row.air_date or "—" }}</td>
-          <td>{{ row.series_type or "—" }}</td>
-          <td class="lib-date">{{ row.created_at or "—" }}</td>
+          <td class="lib-expand-cell">
+            <button class="lib-expand-btn" type="button" aria-label="Expand">&#x25B6;</button>
+          </td>
+        </tr>
+        <tr class="lib-detail-row" id="lib-detail-{{ loop.index0 }}" style="display:none">
+          <td colspan="8">
+            <div class="lib-detail-body">
+
+              <div class="lib-detail-item">
+                <div class="lib-detail-label">created_at</div>
+                <div class="lib-detail-value">{{ row.created_at or "—" }}</div>
+              </div>
+
+              <div class="lib-detail-item">
+                <div class="lib-detail-label">streams ({{ entry_streams | length }})</div>
+                {% if entry_streams %}
+                <table class="lib-streams-inner">
+                  <thead>
+                    <tr>
+                      <th>provider</th>
+                      <th>filtered_title</th>
+                      <th>excl</th>
+                      <th>incl only</th>
+                      <th>stream_url</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for s in entry_streams %}
+                    <tr>
+                      <td>{{ s.provider }}</td>
+                      <td class="{% if s.filtered_title and s.filtered_title != row.cleaned_title %}lib-filtered-changed{% endif %}">
+                        {{ s.filtered_title or "—" }}
+                      </td>
+                      <td class="lib-flag">{% if s.exclude %}<span class="lib-flag--yes">yes</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                      <td class="lib-flag">{% if s.include_only %}<span class="lib-flag--yes">yes</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                      <td class="lib-detail-url">{{ s.stream_url or "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+                {% else %}
+                <div class="lib-detail-value text-muted">No streams</div>
+                {% endif %}
+              </div>
+
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

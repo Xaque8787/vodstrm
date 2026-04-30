@@ -1,0 +1,994 @@
+{% extends "base.html" %}
+{% block title %}Integrations — VODSTRM{% endblock %}
+
+{% block head %}
+<style>
+  .integrations-wrap {
+    padding: calc(var(--spacing) * 3);
+    max-width: 860px;
+  }
+
+  .integrations-heading {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: calc(var(--spacing) * 3);
+  }
+
+  .flash-banner {
+    background: var(--color-success-bg);
+    border: 1px solid #a3cfbb;
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);
+    font-size: 0.875rem;
+    color: #0a3622;
+    margin-bottom: calc(var(--spacing) * 2);
+  }
+
+  .error-banner {
+    background: var(--color-error-bg);
+    border: 1px solid #f1aeb5;
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);
+    font-size: 0.875rem;
+    color: var(--color-error-text);
+    margin-bottom: calc(var(--spacing) * 2);
+  }
+
+  /* ── Integration card ── */
+  .integration-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: calc(var(--spacing) * 3);
+    overflow: hidden;
+  }
+
+  .integration-card-header {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  .integration-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    flex: 1;
+  }
+
+  .integration-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-enabled  { background: #d1e7dd; color: #0a3622; }
+  .badge-disabled { background: #e9ecef; color: #495057; }
+  .badge-running  { background: #fff3cd; color: #664d03; }
+
+  .integration-card-body {
+    padding: calc(var(--spacing) * 2.5);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 3);
+  }
+
+  .section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--color-text-muted);
+    margin-bottom: calc(var(--spacing) * 1.5);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* ── Settings form ── */
+  .settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 1.5);
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: calc(var(--spacing)) calc(var(--spacing) * 2);
+    align-items: center;
+  }
+
+  .form-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .form-hint {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    grid-column: 2;
+    margin-top: -4px;
+  }
+
+  .form-input {
+    padding: 7px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    font-family: var(--font);
+    background: var(--color-surface);
+    color: var(--color-text);
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+  .form-input:focus { outline: none; border-color: var(--color-primary); }
+
+  .toggle-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .toggle-wrap input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-track {
+    width: 40px;
+    height: 22px;
+    background: var(--color-border);
+    border-radius: 11px;
+    transition: background 0.2s;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transition: transform 0.2s;
+  }
+
+  .toggle-wrap input:checked ~ .toggle-track { background: var(--color-primary); }
+  .toggle-wrap input:checked ~ .toggle-track .toggle-thumb { transform: translateX(18px); }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
+  }
+
+  .toggle-label-text { font-size: 0.875rem; font-weight: 500; }
+
+  /* ── Status section ── */
+  .status-section {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 2);
+  }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: calc(var(--spacing) * 1.5);
+    margin-bottom: calc(var(--spacing) * 2);
+  }
+
+  .stat-box { display: flex; flex-direction: column; gap: 2px; }
+
+  .stat-label {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
+  .stat-value {
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .stat-value.muted {
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: var(--color-text-muted);
+  }
+
+  /* Progress bar */
+  .progress-wrap { margin-top: var(--spacing); }
+
+  .progress-bar-track {
+    width: 100%;
+    height: 8px;
+    background: var(--color-border);
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+  }
+
+  .progress-bar-enriched {
+    height: 100%;
+    background: var(--color-primary);
+    transition: width 0.4s ease;
+  }
+
+  .progress-bar-skipped {
+    height: 100%;
+    background: #dee2e6;
+    transition: width 0.4s ease;
+  }
+
+  .progress-legend {
+    display: flex;
+    gap: calc(var(--spacing) * 2);
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot-enriched { background: var(--color-primary); }
+  .dot-skipped  { background: #adb5bd; }
+  .dot-pending  { background: var(--color-border); border: 1px solid #adb5bd; }
+
+  .no-run-note {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+    margin-top: calc(var(--spacing) * 1.5);
+  }
+
+  .warn-banner {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: var(--radius);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);
+    font-size: 0.82rem;
+    color: #664d03;
+    display: flex;
+    gap: var(--spacing);
+    align-items: flex-start;
+    margin-top: calc(var(--spacing) * 1.5);
+  }
+
+  /* ── Not-found section ── */
+  .not-found-section {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .not-found-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2);
+    cursor: pointer;
+    user-select: none;
+    gap: var(--spacing);
+  }
+
+  .not-found-header:hover { background: rgba(0,0,0,0.02); }
+
+  .not-found-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing);
+  }
+
+  .not-found-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e9ecef;
+    color: #495057;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 10px;
+  }
+
+  .not-found-chevron {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    transition: transform 0.2s;
+  }
+  .not-found-chevron.open { transform: rotate(180deg); }
+
+  .not-found-body {
+    display: none;
+    border-top: 1px solid var(--color-border);
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .not-found-body.open { display: block; }
+
+  .not-found-loading {
+    padding: calc(var(--spacing) * 2);
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+
+  .not-found-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  .not-found-table th {
+    text-align: left;
+    padding: 6px 16px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    background: var(--color-bg);
+    position: sticky;
+    top: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .not-found-table td {
+    padding: 7px 16px;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+
+  .not-found-table tr:last-child td { border-bottom: none; }
+
+  .type-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 8px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .type-series { background: #cfe2ff; color: #084298; }
+  .type-movie  { background: #d1e7dd; color: #0a3622; }
+
+  .not-found-empty {
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2);
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-family: var(--font);
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+    white-space: nowrap;
+  }
+  .btn:disabled, .btn.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+  .btn-primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .btn-primary:hover:not(:disabled):not(.disabled) { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+
+  .btn-secondary { background: transparent; border-color: var(--color-border); color: var(--color-text); }
+  .btn-secondary:hover:not(:disabled):not(.disabled) { background: var(--color-bg); }
+
+  .btn-danger-outline { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
+  .btn-danger-outline:hover:not(:disabled):not(.disabled) { background: var(--color-danger); color: #fff; }
+
+  .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
+  .btn-spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .btn-spinner.visible { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .actions-row {
+    display: flex;
+    gap: var(--spacing);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  /* ── Modal ── */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+  .modal-backdrop.open { opacity: 1; pointer-events: all; }
+
+  .modal {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: calc(var(--spacing) * 3);
+    max-width: 440px;
+    width: 90%;
+    transform: translateY(-10px);
+    transition: transform 0.15s;
+  }
+  .modal-backdrop.open .modal { transform: translateY(0); }
+
+  .modal-title { font-size: 1rem; font-weight: 700; margin-bottom: calc(var(--spacing) * 1.5); }
+  .modal-body  { font-size: 0.875rem; color: var(--color-text-muted); margin-bottom: calc(var(--spacing) * 2.5); line-height: 1.6; }
+  .modal-actions { display: flex; gap: var(--spacing); justify-content: flex-end; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="integrations-wrap">
+  <h1 class="integrations-heading">Integrations</h1>
+
+  {% if flash %}
+  <div class="flash-banner">{{ flash }}</div>
+  {% endif %}
+  {% if error %}
+  <div class="error-banner">{{ error }}</div>
+  {% endif %}
+
+  <!-- ── TMDB Card ── -->
+  <div class="integration-card">
+    <div class="integration-card-header">
+      <img
+        src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg"
+        alt="TMDB"
+        style="height: 16px; width: auto; flex-shrink: 0;"
+      >
+      <span class="integration-card-title">The Movie Database</span>
+      {% if tmdb_running %}
+        <span id="status-badge" class="integration-badge badge-running">Running</span>
+      {% elif tmdb_enabled and tmdb_api_key %}
+        <span id="status-badge" class="integration-badge badge-enabled">Enabled</span>
+      {% else %}
+        <span id="status-badge" class="integration-badge badge-disabled">Disabled</span>
+      {% endif %}
+    </div>
+
+    <div class="integration-card-body">
+
+      <!-- Settings form -->
+      <div>
+        <div class="section-label">Configuration</div>
+        <form class="settings-form" method="post" action="/integrations/tmdb/settings">
+
+          <div class="form-row">
+            <label class="form-label" for="tmdb-enabled">Enable</label>
+            <div class="toggle-row">
+              <label class="toggle-wrap">
+                <input type="checkbox" id="tmdb-enabled" name="enabled" value="1"
+                  {% if tmdb_enabled %}checked{% endif %}>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+              <span class="toggle-label-text" id="toggle-label-text">
+                {% if tmdb_enabled %}Enabled{% else %}Disabled{% endif %}
+              </span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="tmdb-api-key">API Key</label>
+            <input
+              class="form-input"
+              type="password"
+              id="tmdb-api-key"
+              name="api_key"
+              autocomplete="new-password"
+              placeholder="{% if tmdb_api_key %}••••••••••••••••{% else %}Enter your TMDB API key{% endif %}"
+              value="">
+            <span class="form-hint">
+              Leave blank to keep existing key.
+              Get a free key at <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org</a>.
+            </span>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="tmdb-language">Language</label>
+            <input
+              class="form-input"
+              type="text"
+              id="tmdb-language"
+              name="language"
+              value="{{ tmdb_language }}"
+              placeholder="en-US"
+              style="max-width: 120px;">
+          </div>
+
+          <div style="padding-top: 4px;">
+            <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Status -->
+      <div>
+        <div class="section-label">Status</div>
+
+        {% set enrichable = total - skipped %}
+        {% set pct_enriched = ((enriched / total * 100) | int) if total > 0 else 0 %}
+        {% set pct_skipped  = ((skipped  / total * 100) | int) if total > 0 else 0 %}
+
+        <div class="status-section">
+          <div class="status-grid">
+            <div class="stat-box">
+              <span class="stat-label">Enriched</span>
+              <span class="stat-value" id="stat-enriched">{{ enriched }} / {{ total }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Not Found on TMDB</span>
+              <span class="stat-value" id="stat-skipped">{{ skipped }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Pending</span>
+              <span class="stat-value" id="stat-pending">{{ total - enriched - skipped }}</span>
+            </div>
+            {% if last_run %}
+            <div class="stat-box">
+              <span class="stat-label">Last Run</span>
+              <span class="stat-value muted" id="stat-last-run">{{ last_run.run_at[:19].replace('T', ' ') }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Triggered By</span>
+              <span class="stat-value muted" id="stat-triggered-by">{{ last_run.triggered_by }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Duration</span>
+              <span class="stat-value muted" id="stat-duration">{{ "%.1f"|format(last_run.duration_seconds) }}s</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">API Calls</span>
+              <span class="stat-value muted" id="stat-api-calls">{{ last_run.api_calls_made }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label" title="Titles already matched in a previous run — TMDB API was not called again">DB Reuse</span>
+              <span class="stat-value muted" id="stat-cache-hits">{{ last_run.cache_hits }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Errors</span>
+              <span class="stat-value muted" id="stat-errors">{{ last_run.errors }}</span>
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="progress-wrap">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px;">
+              <span style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-muted);">Library Coverage</span>
+              <span style="font-size:0.72rem; color:var(--color-text-muted);" id="coverage-pct-label">{{ pct_enriched }}% matched</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-enriched" id="progress-enriched" style="width: {{ pct_enriched }}%"></div>
+              <div class="progress-bar-skipped"  id="progress-skipped"  style="width: {{ pct_skipped }}%"></div>
+            </div>
+            <div class="progress-legend">
+              <span class="legend-item"><span class="legend-dot dot-enriched"></span><span id="legend-enriched-text">{{ enriched }} matched</span></span>
+              <span class="legend-item"><span class="legend-dot dot-skipped"></span><span id="legend-skipped-text">{{ skipped }} not found</span></span>
+              <span class="legend-item"><span class="legend-dot dot-pending"></span><span id="legend-pending-text">{{ total - enriched - skipped }} pending</span></span>
+            </div>
+          </div>
+
+          {% if not last_run %}
+          <p class="no-run-note">No enrichment runs yet.</p>
+          {% endif %}
+        </div>
+
+        {% if last_run and last_run.error_detail %}
+        <div class="warn-banner">
+          <span>&#9888;</span>
+          <span>Last run error: {{ last_run.error_detail }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Not-found collapsible -->
+        {% if skipped > 0 %}
+        <div class="not-found-section" style="margin-top: calc(var(--spacing) * 1.5);" id="not-found-section">
+          <div class="not-found-header" onclick="toggleNotFound()">
+            <span class="not-found-title">
+              Titles not found on TMDB
+              <span class="not-found-count" id="not-found-count">{{ skipped }}</span>
+            </span>
+            <span class="not-found-chevron" id="not-found-chevron">&#9660;</span>
+          </div>
+          <div class="not-found-body" id="not-found-body">
+            <div class="not-found-loading" id="not-found-loading">Loading…</div>
+            <table class="not-found-table" id="not-found-table" style="display:none">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>Year</th>
+                  <th>Skipped</th>
+                </tr>
+              </thead>
+              <tbody id="not-found-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Actions -->
+      <div>
+        <div class="section-label">Actions</div>
+        <div class="actions-row">
+          <button
+            id="btn-run-now"
+            class="btn btn-primary"
+            {% if not tmdb_enabled or not tmdb_api_key or tmdb_running %}disabled{% endif %}
+            onclick="triggerTmdb()"
+          >
+            <span class="btn-spinner" id="run-spinner"></span>
+            <span id="run-label">{% if tmdb_running %}Running…{% else %}Run Now{% endif %}</span>
+          </button>
+
+          {% if skipped > 0 %}
+          <button
+            id="btn-retry-skipped"
+            class="btn btn-secondary"
+            {% if not tmdb_enabled or not tmdb_api_key or tmdb_running %}disabled{% endif %}
+            onclick="retrySkipped()"
+          >Retry Not Found</button>
+          {% endif %}
+
+          <button
+            id="btn-clear"
+            class="btn btn-danger-outline"
+            {% if tmdb_running %}disabled{% endif %}
+            onclick="openClearModal()"
+          >Remove All TMDB Metadata</button>
+        </div>
+      </div>
+
+      <!-- Attribution -->
+      <div style="display: flex; align-items: center; gap: 10px; padding-top: calc(var(--spacing) * 0.5); border-top: 1px solid var(--color-border);">
+        <img
+          src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg"
+          alt="TMDB"
+          style="height: 13px; width: auto; flex-shrink: 0; opacity: 0.7;"
+        >
+        <span style="font-size: 0.75rem; color: var(--color-text-muted);">
+          This product uses the TMDB API but is not endorsed or certified by TMDB.
+          <a href="https://www.themoviedb.org" target="_blank" rel="noopener" style="color: var(--color-text-muted);">themoviedb.org</a>
+        </span>
+      </div>
+
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+</div>
+
+<!-- Confirm clear modal -->
+<div class="modal-backdrop" id="clear-modal">
+  <div class="modal">
+    <div class="modal-title">Remove All TMDB Metadata?</div>
+    <div class="modal-body">
+      This will remove all TMDB poster art and metadata from your library.
+      Cover art will fall back to tvg-logo until re-enrichment runs.
+      This cannot be undone.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeClearModal()">Cancel</button>
+      <button class="btn btn-danger-outline" onclick="confirmClear()">Remove All</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const POLL_INTERVAL = 4000;
+  let pollTimer = null;
+  let notFoundLoaded = false;
+
+  // Toggle label text
+  const toggleInput = document.getElementById("tmdb-enabled");
+  const toggleLabelText = document.getElementById("toggle-label-text");
+  if (toggleInput && toggleLabelText) {
+    toggleInput.addEventListener("change", () => {
+      toggleLabelText.textContent = toggleInput.checked ? "Enabled" : "Disabled";
+    });
+  }
+
+  // Don't submit blank API key (preserve existing)
+  document.querySelector(".settings-form").addEventListener("submit", function() {
+    const keyInput = document.getElementById("tmdb-api-key");
+    if (!keyInput.value.trim()) {
+      keyInput.disabled = true;
+    }
+  });
+
+  // ── Progress bar helpers ───────────────────────────────────────────────
+
+  function updateProgress(total, enriched, skipped) {
+    const pctEnriched = total > 0 ? Math.round(enriched / total * 100) : 0;
+    const pctSkipped  = total > 0 ? Math.round(skipped  / total * 100) : 0;
+    const pending     = Math.max(0, total - enriched - skipped);
+
+    const fillE = document.getElementById("progress-enriched");
+    const fillS = document.getElementById("progress-skipped");
+    if (fillE) fillE.style.width = pctEnriched + "%";
+    if (fillS) fillS.style.width = pctSkipped  + "%";
+
+    const covLabel = document.getElementById("coverage-pct-label");
+    if (covLabel) covLabel.textContent = pctEnriched + "% matched";
+
+    const ltE = document.getElementById("legend-enriched-text");
+    const ltS = document.getElementById("legend-skipped-text");
+    const ltP = document.getElementById("legend-pending-text");
+    if (ltE) ltE.textContent = enriched + " matched";
+    if (ltS) ltS.textContent = skipped  + " not found";
+    if (ltP) ltP.textContent = pending  + " pending";
+
+    const nc = document.getElementById("not-found-count");
+    if (nc) nc.textContent = skipped;
+  }
+
+  // ── Stat update ─────────────────────────────────────────────────────────
+
+  function set(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function updateStats(data) {
+    const total    = data.total    ?? 0;
+    const enriched = data.enriched ?? 0;
+    const skipped  = data.skipped  ?? 0;
+
+    set("stat-enriched",  enriched + " / " + total);
+    set("stat-skipped",   skipped);
+    set("stat-pending",   Math.max(0, total - enriched - skipped));
+
+    updateProgress(total, enriched, skipped);
+
+    const lr = data.last_run;
+    if (lr) {
+      set("stat-last-run",     (lr.run_at || "").slice(0, 19).replace("T", " "));
+      set("stat-triggered-by", lr.triggered_by || "");
+      set("stat-duration",     (lr.duration_seconds != null ? lr.duration_seconds.toFixed(1) : "\u2014") + "s");
+      set("stat-api-calls",    lr.api_calls_made ?? "\u2014");
+      set("stat-cache-hits",   lr.cache_hits     ?? "\u2014");
+      set("stat-errors",       lr.errors         ?? "\u2014");
+    }
+  }
+
+  // ── Run state ────────────────────────────────────────────────────────────
+
+  function setRunning(running) {
+    const btn      = document.getElementById("btn-run-now");
+    const spinner  = document.getElementById("run-spinner");
+    const label    = document.getElementById("run-label");
+    const clearBtn = document.getElementById("btn-clear");
+    const retryBtn = document.getElementById("btn-retry-skipped");
+    const badge    = document.getElementById("status-badge");
+    const enabled  = {{ "true" if tmdb_enabled else "false" }};
+    const keySet   = {{ "true" if tmdb_api_key  else "false" }};
+    const canAct   = enabled && keySet && !running;
+
+    if (btn) {
+      btn.disabled = !canAct;
+      spinner.classList.toggle("visible", running);
+      label.textContent = running ? "Running\u2026" : "Run Now";
+    }
+    if (clearBtn) clearBtn.disabled = running;
+    if (retryBtn) retryBtn.disabled = !canAct;
+
+    if (badge) {
+      badge.className = "integration-badge " + (
+        running        ? "badge-running"  :
+        (enabled && keySet) ? "badge-enabled" :
+                              "badge-disabled"
+      );
+      badge.textContent = running ? "Running" : (enabled && keySet ? "Enabled" : "Disabled");
+    }
+  }
+
+  // ── Poll ─────────────────────────────────────────────────────────────────
+
+  async function pollStatus() {
+    try {
+      const res  = await fetch("/integrations/tmdb/status");
+      if (!res.ok) return;
+      const data = await res.json();
+      const wasRunning = pollTimer !== null;
+      setRunning(data.running);
+      updateStats(data);
+      if (data.running) {
+        pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+      } else {
+        // One final poll after task finishes to capture the run log entry
+        if (wasRunning) {
+          pollTimer = setTimeout(pollStatus, 1500);
+        } else {
+          pollTimer = null;
+        }
+      }
+    } catch {
+      pollTimer = null;
+    }
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────────────
+
+  async function triggerTmdb() {
+    document.getElementById("btn-run-now").disabled = true;
+    try {
+      const res  = await fetch("/integrations/tmdb/trigger", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setRunning(true);
+        pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+      } else {
+        alert("Could not start enrichment: " + (data.reason || "unknown"));
+        setRunning(false);
+      }
+    } catch {
+      alert("Request failed \u2014 please try again.");
+      setRunning(false);
+    }
+  }
+
+  async function retrySkipped() {
+    const btn = document.getElementById("btn-retry-skipped");
+    if (btn) btn.disabled = true;
+    try {
+      const res  = await fetch("/integrations/tmdb/retry-skipped", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setRunning(true);
+        notFoundLoaded = false;
+        pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+      } else {
+        alert("Could not start retry: " + (data.reason || "unknown"));
+        if (btn) btn.disabled = false;
+      }
+    } catch {
+      alert("Request failed \u2014 please try again.");
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function openClearModal()  { document.getElementById("clear-modal").classList.add("open"); }
+  function closeClearModal() { document.getElementById("clear-modal").classList.remove("open"); }
+
+  async function confirmClear() {
+    closeClearModal();
+    try {
+      const res  = await fetch("/integrations/tmdb/clear", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) { location.reload(); }
+      else { alert("Could not clear: " + (data.reason || "unknown")); }
+    } catch {
+      alert("Request failed \u2014 please try again.");
+    }
+  }
+
+  document.getElementById("clear-modal").addEventListener("click", function(e) {
+    if (e.target === this) closeClearModal();
+  });
+
+  // ── Not-found collapsible ─────────────────────────────────────────────
+
+  async function toggleNotFound() {
+    const body    = document.getElementById("not-found-body");
+    const chevron = document.getElementById("not-found-chevron");
+    if (!body) return;
+    const isOpen = body.classList.toggle("open");
+    chevron.classList.toggle("open", isOpen);
+
+    if (isOpen && !notFoundLoaded) {
+      notFoundLoaded = true;
+      await loadNotFound();
+    }
+  }
+
+  async function loadNotFound() {
+    const loading = document.getElementById("not-found-loading");
+    const table   = document.getElementById("not-found-table");
+    const tbody   = document.getElementById("not-found-tbody");
+    try {
+      const res  = await fetch("/integrations/tmdb/unenriched");
+      const rows = await res.json();
+
+      if (!rows.length) {
+        loading.textContent = "No not-found titles.";
+        return;
+      }
+
+      tbody.innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        const skippedDate = r.tmdb_skipped_at
+          ? r.tmdb_skipped_at.slice(0, 10)
+          : "\u2014";
+        tr.innerHTML = `
+          <td>${escHtml(r.cleaned_title || r.entry_id)}</td>
+          <td><span class="type-pill type-${r.type}">${r.type}</span></td>
+          <td>${r.year || "\u2014"}</td>
+          <td>${skippedDate}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      loading.style.display = "none";
+      table.style.display   = "";
+    } catch {
+      loading.textContent = "Failed to load — please try again.";
+    }
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+
+  {% if tmdb_running %}
+  pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
+  {% endif %}
+
+  // When user manually triggers, pollTimer is set before pollStatus fires,
+  // so wasRunning will be true on the cycle that sees running=false.
+</script>
+{% endblock %}

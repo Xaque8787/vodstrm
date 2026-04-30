@@ -57,15 +57,16 @@ def _upsert_entry(conn: sqlite3.Connection, entry: dict) -> None:
         cover_art, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(entry_id) DO UPDATE SET
-        cleaned_title = excluded.cleaned_title,
-        raw_title     = excluded.raw_title,
-        year          = excluded.year,
-        season        = excluded.season,
-        episode       = excluded.episode,
-        air_date      = excluded.air_date,
-        series_type   = excluded.series_type,
-        cover_art     = CASE WHEN excluded.cover_art IS NOT NULL THEN excluded.cover_art ELSE entries.cover_art END,
-        updated_at    = excluded.updated_at
+        cleaned_title   = excluded.cleaned_title,
+        raw_title       = excluded.raw_title,
+        year            = excluded.year,
+        season          = excluded.season,
+        episode         = excluded.episode,
+        air_date        = excluded.air_date,
+        series_type     = excluded.series_type,
+        cover_art       = CASE WHEN excluded.cover_art IS NOT NULL THEN excluded.cover_art ELSE entries.cover_art END,
+        tmdb_skipped_at = NULL,
+        updated_at      = excluded.updated_at
     """
     conn.execute(sql, (
         entry["entry_id"],

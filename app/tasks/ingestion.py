@@ -183,6 +183,12 @@ def ingest_all_providers() -> None:
     except Exception as exc:
         logger.error("[INGESTION] Live M3U generation failed: %s", exc, exc_info=True)
 
+    from app.tasks.tmdb import trigger_tmdb_enrichment
+    try:
+        trigger_tmdb_enrichment(triggered_by="ingest:all")
+    except Exception as exc:
+        logger.error("[INGESTION] TMDB trigger failed: %s", exc, exc_info=True)
+
 
 @task("ingest_provider")
 def ingest_provider(provider_slug: str) -> None:
@@ -207,3 +213,9 @@ def ingest_provider(provider_slug: str) -> None:
         logger.error(
             "[INGESTION] Live M3U generation failed after ingest of '%s': %s", provider_slug, exc, exc_info=True
         )
+
+    from app.tasks.tmdb import trigger_tmdb_enrichment
+    try:
+        trigger_tmdb_enrichment(triggered_by=f"ingest:{provider_slug}")
+    except Exception as exc:
+        logger.error("[INGESTION] TMDB trigger failed after ingest of '%s': %s", provider_slug, exc, exc_info=True)

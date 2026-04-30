@@ -23,7 +23,6 @@ _ENTRIES_SORT_COLS = {
     "season":       "e.season",
     "episode":      "e.episode",
     "air_date":     "e.air_date",
-    "series_type":  "e.series_type",
     "created_at":   "e.created_at",
 }
 
@@ -88,6 +87,8 @@ async def library_page(
         entry_count  = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
         stream_count = conn.execute("SELECT COUNT(*) FROM streams").fetchone()[0]
 
+        streams_by_entry: dict[str, list] = {}
+
         if tab == "entries":
             sort_col = _ENTRIES_SORT_COLS.get(sort, "e.type")
             order_sql = "DESC" if order == "desc" else "ASC"
@@ -104,7 +105,7 @@ async def library_page(
             rows = conn.execute(
                 f"""
                 SELECT e.entry_id, e.type, e.cleaned_title, e.raw_title,
-                       e.year, e.season, e.episode, e.air_date, e.series_type,
+                       e.year, e.season, e.episode, e.air_date,
                        e.created_at
                 FROM entries e
                 {where_sql}
@@ -113,6 +114,22 @@ async def library_page(
                 """,
                 params + [_LIBRARY_PAGE_SIZE, offset],
             ).fetchall()
+
+            entry_ids = [r["entry_id"] for r in rows]
+            if entry_ids:
+                placeholders = ",".join("?" * len(entry_ids))
+                stream_rows = conn.execute(
+                    f"""
+                    SELECT entry_id, stream_id, provider, stream_url,
+                           filtered_title, exclude, include_only, ingested_at
+                    FROM streams
+                    WHERE entry_id IN ({placeholders})
+                    ORDER BY provider ASC
+                    """,
+                    entry_ids,
+                ).fetchall()
+                for sr in stream_rows:
+                    streams_by_entry.setdefault(sr["entry_id"], []).append(dict(sr))
 
         else:
             sort_col  = _STREAMS_SORT_COLS.get(sort, "e.cleaned_title")
@@ -154,19 +171,20 @@ async def library_page(
     return templates.TemplateResponse(
         "admin/library.html",
         {
-            "request":      request,
-            "current_user": current_user,
-            "tab":          tab,
-            "rows":         data,
-            "entry_count":  entry_count,
-            "stream_count": stream_count,
-            "page":         page,
-            "total_pages":  total_pages,
-            "total":        total,
-            "flash":        flash,
-            "q":            search,
-            "sort":         sort,
-            "order":        order,
+            "request":          request,
+            "current_user":     current_user,
+            "tab":              tab,
+            "rows":             data,
+            "streams_by_entry": streams_by_entry if tab == "entries" else {},
+            "entry_count":      entry_count,
+            "stream_count":     stream_count,
+            "page":             page,
+            "total_pages":      total_pages,
+            "total":            total,
+            "flash":            flash,
+            "q":                search,
+            "sort":             sort,
+            "order":            order,
         },
     )
 

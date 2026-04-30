@@ -14,6 +14,61 @@ from app.ingestion.sync import _delete_strm_file
 
 logger = logging.getLogger(__name__)
 
+# Cover art cascade expressed as a SQL subquery.
+# Level 1 — tvg-logo from any stream's metadata_json (provider-supplied)
+# Level 2 — TMDB poster via entries.tmdb_id / entries.tmdb_type
+# Level 3 — NULL (caller renders placeholder)
+_COVER_ART_SUBQUERY = """
+    COALESCE(
+        (SELECT json_extract(_sm.metadata_json, '$.tvg-logo')
+         FROM streams _sm
+         WHERE _sm.entry_id = e.entry_id
+           AND json_extract(_sm.metadata_json, '$.tvg-logo') IS NOT NULL
+           AND json_extract(_sm.metadata_json, '$.tvg-logo') != ''
+         LIMIT 1),
+        CASE
+            WHEN e.tmdb_type = 'show'
+            THEN (SELECT 'https://image.tmdb.org/t/p/w500' || ts.poster_path
+                  FROM tmdb_shows ts
+                  WHERE ts.tmdb_id = e.tmdb_id AND ts.poster_path IS NOT NULL
+                  LIMIT 1)
+            WHEN e.tmdb_type = 'movie'
+            THEN (SELECT 'https://image.tmdb.org/t/p/w500' || tm.poster_path
+                  FROM tmdb_movies tm
+                  WHERE tm.tmdb_id = e.tmdb_id AND tm.poster_path IS NOT NULL
+                  LIMIT 1)
+        END
+    )
+"""
+
+# For group queries (series/tv_vod) we pick the best cover art across the group:
+# prefer any TMDB poster (consistent canonical image), then fall back to tvg-logo.
+_COVER_ART_GROUP_SUBQUERY = """
+    COALESCE(
+        (SELECT 'https://image.tmdb.org/t/p/w500' || ts.poster_path
+         FROM entries _eg
+         JOIN tmdb_shows ts ON ts.tmdb_id = _eg.tmdb_id
+         WHERE _eg.cleaned_title = e.cleaned_title
+           AND _eg.tmdb_type = 'show'
+           AND ts.poster_path IS NOT NULL
+         LIMIT 1),
+        (SELECT 'https://image.tmdb.org/t/p/w500' || tm.poster_path
+         FROM entries _em
+         JOIN tmdb_movies tm ON tm.tmdb_id = _em.tmdb_id
+         WHERE _em.cleaned_title = e.cleaned_title
+           AND _em.tmdb_type = 'movie'
+           AND tm.poster_path IS NOT NULL
+         LIMIT 1),
+        (SELECT json_extract(_sg.metadata_json, '$.tvg-logo')
+         FROM streams _sg
+         JOIN entries _esg ON _esg.entry_id = _sg.entry_id
+         WHERE _esg.cleaned_title = e.cleaned_title
+           AND json_extract(_sg.metadata_json, '$.tvg-logo') IS NOT NULL
+           AND json_extract(_sg.metadata_json, '$.tvg-logo') != ''
+         LIMIT 1)
+    )
+"""
+
 router = APIRouter(prefix="/library")
 templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "..", "templates")
@@ -184,7 +239,8 @@ async def list_entries(
             individual_query = f"""
                 SELECT
                     e.entry_id, e.type, e.cleaned_title, e.year,
-                    e.season, e.episode, e.cover_art,
+                    e.season, e.episode,
+                    {_COVER_ART_SUBQUERY} AS cover_art,
                     {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
                     {_OWNER_SLUG_SUBQUERY} AS owner_slug,
                     (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
@@ -221,7 +277,8 @@ async def list_entries(
             q = f"""
                 SELECT
                     e.entry_id, e.type, e.cleaned_title, e.year,
-                    e.season, e.episode, e.cover_art,
+                    e.season, e.episode,
+                    {_COVER_ART_SUBQUERY} AS cover_art,
                     {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
                     {_OWNER_SLUG_SUBQUERY} AS owner_slug,
                     (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
@@ -251,7 +308,7 @@ def _series_group_query(extra_where: str) -> str:
             MIN(e.year) AS year,
             COUNT(DISTINCT e.season) AS season_count,
             COUNT(e.entry_id) AS episode_count,
-            MAX(e.cover_art) AS cover_art,
+            {_COVER_ART_GROUP_SUBQUERY} AS cover_art,
             SUM(CASE WHEN s2.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
             SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
                           AND s2.exclude = 0 AND s2.imported = 0
@@ -273,7 +330,7 @@ def _tv_vod_group_query(extra_where: str) -> str:
             'tv_vod' AS type,
             COUNT(DISTINCT substr(e.air_date, 1, 4)) AS year_count,
             COUNT(e.entry_id) AS episode_count,
-            MAX(e.cover_art) AS cover_art,
+            {_COVER_ART_GROUP_SUBQUERY} AS cover_art,
             SUM(CASE WHEN s2.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
             SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
                           AND s2.exclude = 0 AND s2.imported = 0
@@ -355,11 +412,11 @@ async def list_seasons(
     """Return seasons for a series title with per-season ownership info."""
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 e.season,
                 COUNT(e.entry_id) AS episode_count,
-                MAX(e.cover_art) AS cover_art,
+                {_COVER_ART_GROUP_SUBQUERY} AS cover_art,
                 SUM(CASE WHEN s.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
                 SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
                               AND s.exclude = 0 AND s.imported = 0
@@ -415,9 +472,10 @@ async def list_episodes(
     """Return individual episodes for a given series title + season."""
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
-                e.entry_id, e.episode, e.cover_art,
+                e.entry_id, e.episode,
+                {_COVER_ART_SUBQUERY} AS cover_art,
                 (SELECT s2.provider FROM streams s2 WHERE s2.entry_id = e.entry_id AND s2.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
                 (SELECT COUNT(*) FROM streams s2 WHERE s2.entry_id = e.entry_id) AS stream_count,
                 (SELECT COUNT(*) FROM streams s2
@@ -466,11 +524,11 @@ async def list_tv_vod_years(
     """Return years for a tv_vod show title with per-year ownership and follow info."""
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 substr(e.air_date, 1, 4) AS year,
                 COUNT(e.entry_id) AS episode_count,
-                MAX(e.cover_art) AS cover_art,
+                {_COVER_ART_GROUP_SUBQUERY} AS cover_art,
                 SUM(CASE WHEN s.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
                 SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
                               AND s.exclude = 0 AND s.imported = 0
@@ -518,9 +576,10 @@ async def list_tv_vod_episodes(
     """Return individual episodes for a tv_vod show title + year."""
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
-                e.entry_id, e.air_date, e.cover_art,
+                e.entry_id, e.air_date,
+                {_COVER_ART_SUBQUERY} AS cover_art,
                 (SELECT s2.provider FROM streams s2 WHERE s2.entry_id = e.entry_id AND s2.strm_path IS NOT NULL LIMIT 1) AS owner_slug,
                 (SELECT COUNT(*) FROM streams s2 WHERE s2.entry_id = e.entry_id) AS stream_count,
                 (SELECT COUNT(*) FROM streams s2

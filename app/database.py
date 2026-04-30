@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS entries (
     air_date    TEXT,
     series_type TEXT CHECK(series_type IN ('season_episode', 'air_date') OR series_type IS NULL),
     cover_art   TEXT,
+    tmdb_id         INTEGER DEFAULT NULL,
+    tmdb_type       TEXT DEFAULT NULL,
+    tmdb_skipped_at TEXT DEFAULT NULL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );
@@ -161,6 +164,57 @@ CREATE TABLE IF NOT EXISTS filter_patterns (
 );
 
 CREATE INDEX IF NOT EXISTS idx_filter_patterns_filter ON filter_patterns(filter_id);
+
+-- -------------------------------------------------------
+-- INTEGRATIONS: per-integration settings (key/value as JSON)
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS integrations (
+    slug       TEXT PRIMARY KEY,
+    settings   TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- -------------------------------------------------------
+-- TMDB: cached metadata from The Movie Database API
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tmdb_shows (
+    tmdb_id        INTEGER PRIMARY KEY,
+    tmdb_title     TEXT,
+    poster_path    TEXT,
+    first_air_date TEXT,
+    overview       TEXT,
+    cached_at      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tmdb_seasons (
+    tmdb_id        INTEGER NOT NULL,
+    season_number  INTEGER NOT NULL,
+    episode_count  INTEGER,
+    poster_path    TEXT,
+    PRIMARY KEY (tmdb_id, season_number)
+);
+
+CREATE TABLE IF NOT EXISTS tmdb_movies (
+    tmdb_id      INTEGER PRIMARY KEY,
+    tmdb_title   TEXT,
+    poster_path  TEXT,
+    release_date TEXT,
+    overview     TEXT,
+    cached_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tmdb_run_log (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at           TEXT,
+    triggered_by     TEXT,
+    entries_checked  INTEGER,
+    api_calls_made   INTEGER,
+    enriched         INTEGER,
+    cache_hits       INTEGER,
+    errors           INTEGER,
+    error_detail     TEXT,
+    duration_seconds REAL
+);
 
 -- -------------------------------------------------------
 -- LIBRARY: follow rules (import_selected eligibility)
