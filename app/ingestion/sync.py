@@ -195,7 +195,7 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict], quality_t
         # quality comparison. raw_title lives on entries; the stream row itself
         # does not store it independently.
         existing_stream = conn.execute(
-            "SELECT e.raw_title FROM entries e "
+            "SELECT e.raw_title, s.batch_id AS stream_batch_id FROM entries e "
             "JOIN streams s ON s.entry_id = e.entry_id "
             "WHERE s.entry_id = ? AND s.provider = ?",
             (entry_id, provider),
@@ -231,13 +231,24 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict], quality_t
             incoming_score = _quality_score(incoming_raw, terms)
             existing_score = _quality_score(existing_raw, terms)
 
-            if incoming_score > existing_score:
+            # If the existing stream is from a previous run it was not present
+            # in the current M3U, so its URL may be dead. The incoming stream
+            # is the only live option and must always win regardless of score.
+            existing_is_stale = existing_stream["stream_batch_id"] != batch_id
+
+            if existing_is_stale or incoming_score > existing_score:
                 _upsert_stream(conn, entry)
                 updated_streams += 1
-                logger.debug(
-                    "[SYNC] Stream UPDATED (quality win %d>%d) entry=%s  provider=%s",
-                    incoming_score, existing_score, entry_id[:12], provider or "?",
-                )
+                if existing_is_stale:
+                    logger.debug(
+                        "[SYNC] Stream UPDATED (prior winner absent, incoming takes over) entry=%s  provider=%s",
+                        entry_id[:12], provider or "?",
+                    )
+                else:
+                    logger.debug(
+                        "[SYNC] Stream UPDATED (quality win %d>%d) entry=%s  provider=%s",
+                        incoming_score, existing_score, entry_id[:12], provider or "?",
+                    )
             else:
                 # Existing wins or tie — stamp batch_id only so stale cleanup
                 # does not remove the winning row at the end of this run.

@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.auth.jwt_handler import TokenData, get_current_admin
 from app.database import get_db
+from app.tasks.strm import _remove_empty_dirs, _vod_root
 
 logger = logging.getLogger(__name__)
 
@@ -189,13 +190,35 @@ async def library_page(
     )
 
 
+def _delete_strm_files(conn) -> int:
+    """Delete all .strm files referenced in streams.strm_path. Returns count deleted."""
+    paths = conn.execute(
+        "SELECT strm_path FROM streams WHERE strm_path IS NOT NULL"
+    ).fetchall()
+    deleted = 0
+    seen_dirs: set[str] = set()
+    for (path,) in paths:
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+                deleted += 1
+                seen_dirs.add(os.path.dirname(path))
+            except OSError as exc:
+                logger.warning("[ADMIN] Could not delete strm file %s: %s", path, exc)
+    for d in seen_dirs:
+        _remove_empty_dirs(d)
+    return deleted
+
+
 @router.post("/library/clear/entries")
 async def clear_entries(current_user: TokenData = Depends(get_current_admin)):
     with get_db() as conn:
+        deleted = _delete_strm_files(conn)
         conn.execute("DELETE FROM streams")
         conn.execute("DELETE FROM entries")
     logger.warning(
-        "[ADMIN] entries + streams tables cleared by '%s'", current_user.username
+        "[ADMIN] entries + streams tables cleared by '%s' (strm files deleted=%d)",
+        current_user.username, deleted,
     )
     return RedirectResponse("/admin/library?flash=cleared&tab=entries", status_code=302)
 
@@ -203,8 +226,10 @@ async def clear_entries(current_user: TokenData = Depends(get_current_admin)):
 @router.post("/library/clear/streams")
 async def clear_streams(current_user: TokenData = Depends(get_current_admin)):
     with get_db() as conn:
+        deleted = _delete_strm_files(conn)
         conn.execute("DELETE FROM streams")
     logger.warning(
-        "[ADMIN] streams table cleared by '%s'", current_user.username
+        "[ADMIN] streams table cleared by '%s' (strm files deleted=%d)",
+        current_user.username, deleted,
     )
     return RedirectResponse("/admin/library?flash=streams_cleared&tab=streams", status_code=302)

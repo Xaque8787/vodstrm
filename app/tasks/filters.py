@@ -17,13 +17,15 @@ def reapply_filters(provider_slug: str | None = None) -> None:
     with get_db() as conn:
         filters = load_filters(conn)
 
-    if not filters:
-        logger.info("[FILTERS] No enabled filters — nothing to apply")
-        return
-
     logger.info("[FILTERS] Reapply start — provider=%s filters=%d", provider_slug or "*", len(filters))
 
     with get_db() as conn:
         updated = run_filters_for_provider(conn, filters, provider=provider_slug)
 
     logger.info("[FILTERS] Reapply done — provider=%s streams_updated=%d", provider_slug or "*", updated)
+
+    from app.tasks.strm import generate_strm
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[FILTERS] STRM sync after reapply failed: %s", exc, exc_info=True)

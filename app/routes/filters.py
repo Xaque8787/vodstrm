@@ -166,7 +166,7 @@ async def delete_filter_route(filter_id: int, current_user: TokenData = Depends(
 
 
 @router.post("/reapply")
-async def reapply_filters(request: Request, current_user: TokenData = Depends(get_current_user)):
+async def reapply_filters_route(request: Request, current_user: TokenData = Depends(get_current_user)):
     form = await request.form()
     provider_slug = (form.get("provider") or "").strip() or None
 
@@ -176,4 +176,11 @@ async def reapply_filters(request: Request, current_user: TokenData = Depends(ge
         updated = run_filters_for_provider(conn, filters, provider=provider_slug)
 
     logger.info("[FILTERS] Reapply — provider=%s streams=%d by=%s", provider_slug or "*", updated, current_user.username)
+
+    from app.tasks.strm import generate_strm
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[FILTERS] STRM sync after reapply failed: %s", exc, exc_info=True)
+
     return RedirectResponse(f"/filters?flash=reapplied&count={updated}", status_code=302)
