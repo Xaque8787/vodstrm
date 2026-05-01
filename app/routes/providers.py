@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -18,6 +19,26 @@ from app.utils.slugify import slugify
 logger = logging.getLogger(__name__)
 
 _M3U_DIR = os.getenv("M3U_DIR", "data/m3u")
+
+
+def _parse_quality_terms(raw: str) -> str:
+    """
+    Accept a JSON array string from the form and return a validated JSON
+    array string. Falls back to '[]' on any parse error.
+    Non-empty strings that are not valid JSON are treated as a
+    newline/comma-delimited list as a convenience fallback.
+    """
+    if not raw or not raw.strip():
+        return "[]"
+    raw = raw.strip()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            terms = [str(t).strip() for t in parsed if str(t).strip()]
+            return json.dumps(terms)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return "[]"
 
 
 def _default_browse_root() -> str:
@@ -79,7 +100,7 @@ def _provider_name_taken(name: str, exclude_slug: str | None = None) -> bool:
 def _list_providers() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, slug, type, url, username, port, stream_format, is_active, priority, local_file_path, created_at FROM providers ORDER BY priority, name"
+            "SELECT id, name, slug, type, url, username, port, stream_format, is_active, priority, local_file_path, quality_terms, created_at FROM providers ORDER BY priority, name"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -87,7 +108,7 @@ def _list_providers() -> list[dict]:
 def _get_provider_by_slug(slug: str) -> dict | None:
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id, name, slug, type, url, username, password, port, stream_format, is_active, created_at FROM providers WHERE slug = ?",
+            "SELECT id, name, slug, type, url, username, password, port, stream_format, is_active, quality_terms, created_at FROM providers WHERE slug = ?",
             (slug,),
         ).fetchone()
     return dict(row) if row else None
@@ -116,6 +137,7 @@ async def add_m3u_provider(
     name: str = Form(...),
     url: str = Form(...),
     priority: int = Form(10),
+    quality_terms: str = Form("[]"),
     current_user: TokenData = Depends(get_current_user),
 ):
     try:
@@ -156,8 +178,8 @@ async def add_m3u_provider(
     slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO providers (name, slug, type, url, priority) VALUES (?, ?, 'm3u', ?, ?)",
-            (data.name, slug, data.url, max(1, priority)),
+            "INSERT INTO providers (name, slug, type, url, priority, quality_terms) VALUES (?, ?, 'm3u', ?, ?, ?)",
+            (data.name, slug, data.url, max(1, priority), _parse_quality_terms(quality_terms)),
         )
     logger.info("Provider added (m3u): %s", data.name)
     return RedirectResponse("/providers", status_code=302)
@@ -174,6 +196,7 @@ async def add_xtream_provider(
     port: str = Form(""),
     stream_format: str = Form("ts"),
     priority: int = Form(10),
+    quality_terms: str = Form("[]"),
     current_user: TokenData = Depends(get_current_user),
 ):
     try:
@@ -224,8 +247,8 @@ async def add_xtream_provider(
     slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO providers (name, slug, type, url, username, password, port, stream_format, priority) VALUES (?, ?, 'xtream', ?, ?, ?, ?, ?, ?)",
-            (data.name, slug, data.full_server_url(), data.username, data.password, data.port, data.stream_format, max(1, priority)),
+            "INSERT INTO providers (name, slug, type, url, username, password, port, stream_format, priority, quality_terms) VALUES (?, ?, 'xtream', ?, ?, ?, ?, ?, ?, ?)",
+            (data.name, slug, data.full_server_url(), data.username, data.password, data.port, data.stream_format, max(1, priority), _parse_quality_terms(quality_terms)),
         )
     logger.info("Provider added (xtream): %s", data.name)
     return RedirectResponse("/providers", status_code=302)
@@ -238,6 +261,7 @@ async def edit_m3u_provider(
     name: str = Form(...),
     url: str = Form(...),
     priority: int = Form(10),
+    quality_terms: str = Form("[]"),
     current_user: TokenData = Depends(get_current_user),
 ):
     provider = _get_provider_by_slug(provider_slug)
@@ -278,8 +302,8 @@ async def edit_m3u_provider(
     new_slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "UPDATE providers SET name = ?, slug = ?, url = ?, priority = ? WHERE slug = ?",
-            (data.name, new_slug, data.url, max(1, priority), provider_slug),
+            "UPDATE providers SET name = ?, slug = ?, url = ?, priority = ?, quality_terms = ? WHERE slug = ?",
+            (data.name, new_slug, data.url, max(1, priority), _parse_quality_terms(quality_terms), provider_slug),
         )
     logger.info("Provider updated (m3u): %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)
@@ -297,6 +321,7 @@ async def edit_xtream_provider(
     port: str = Form(""),
     stream_format: str = Form("ts"),
     priority: int = Form(10),
+    quality_terms: str = Form("[]"),
     current_user: TokenData = Depends(get_current_user),
 ):
     provider = _get_provider_by_slug(provider_slug)
@@ -339,8 +364,8 @@ async def edit_xtream_provider(
     new_slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "UPDATE providers SET name = ?, slug = ?, url = ?, username = ?, password = ?, port = ?, stream_format = ?, priority = ? WHERE slug = ?",
-            (data.name, new_slug, data.full_server_url(), data.username, data.password, data.port, data.stream_format, max(1, priority), provider_slug),
+            "UPDATE providers SET name = ?, slug = ?, url = ?, username = ?, password = ?, port = ?, stream_format = ?, priority = ?, quality_terms = ? WHERE slug = ?",
+            (data.name, new_slug, data.full_server_url(), data.username, data.password, data.port, data.stream_format, max(1, priority), _parse_quality_terms(quality_terms), provider_slug),
         )
     logger.info("Provider updated (xtream): %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)
@@ -434,6 +459,7 @@ async def add_local_file_provider(
     name: str = Form(...),
     local_file_path: str = Form(...),
     priority: int = Form(10),
+    quality_terms: str = Form("[]"),
     current_user: TokenData = Depends(get_current_user),
 ):
     try:
@@ -474,8 +500,8 @@ async def add_local_file_provider(
     slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO providers (name, slug, type, local_file_path, priority) VALUES (?, ?, 'local_file', ?, ?)",
-            (data.name, slug, data.local_file_path, max(1, priority)),
+            "INSERT INTO providers (name, slug, type, local_file_path, priority, quality_terms) VALUES (?, ?, 'local_file', ?, ?, ?)",
+            (data.name, slug, data.local_file_path, max(1, priority), _parse_quality_terms(quality_terms)),
         )
     logger.info("Provider added (local_file): %s → %s", data.name, data.local_file_path)
     return RedirectResponse("/providers", status_code=302)
@@ -488,6 +514,7 @@ async def edit_local_file_provider(
     name: str = Form(...),
     local_file_path: str = Form(...),
     priority: int = Form(10),
+    quality_terms: str = Form("[]"),
     current_user: TokenData = Depends(get_current_user),
 ):
     provider = _get_provider_by_slug(provider_slug)
@@ -528,8 +555,8 @@ async def edit_local_file_provider(
     new_slug = slugify(data.name)
     with get_db() as conn:
         conn.execute(
-            "UPDATE providers SET name = ?, slug = ?, local_file_path = ?, priority = ? WHERE slug = ?",
-            (data.name, new_slug, data.local_file_path, max(1, priority), provider_slug),
+            "UPDATE providers SET name = ?, slug = ?, local_file_path = ?, priority = ?, quality_terms = ? WHERE slug = ?",
+            (data.name, new_slug, data.local_file_path, max(1, priority), _parse_quality_terms(quality_terms), provider_slug),
         )
     logger.info("Provider updated (local_file): %s by %s", provider_slug, current_user.username)
     return RedirectResponse("/providers", status_code=302)

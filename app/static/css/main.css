@@ -1780,3 +1780,114 @@ code {
   padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2);
   border-top: 1px solid var(--color-border);
 }
+
+/* ── Quality Terms ──────────────────────────────────────────────────────── */
+.quality-section {
+  margin-top: calc(var(--spacing) * 2);
+  padding-top: calc(var(--spacing) * 2);
+  border-top: 1px solid var(--color-border);
+}
+
+.quality-section__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: calc(var(--spacing) * 0.75);
+  display: block;
+}
+
+.quality-section__hint {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin-bottom: calc(var(--spacing) * 1.25);
+  line-height: 1.4;
+}
+
+.quality-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--spacing) * 0.75);
+  margin-bottom: calc(var(--spacing) * 1.25);
+  min-height: 28px;
+}
+
+.quality-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #e8f0fe;
+  color: #1a56db;
+  border: 1px solid #c3d3fd;
+  border-radius: 4px;
+  padding: 2px 8px 2px 10px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: default;
+}
+
+.quality-tag__remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #4b72c9;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.quality-tag__remove:hover {
+  opacity: 1;
+  color: var(--color-danger);
+}
+
+.quality-add-row {
+  display: flex;
+  gap: calc(var(--spacing) * 0.75);
+  align-items: center;
+}
+
+.quality-add-input {
+  font-size: 0.875rem;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  width: 180px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition: border-color 0.15s;
+}
+
+.quality-add-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.12);
+}
+
+.quality-add-btn {
+  font-size: 0.8125rem;
+  padding: 5px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.quality-add-btn:hover {
+  background: #f1f3f5;
+  border-color: #adb5bd;
+}
+
+.quality-empty {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}

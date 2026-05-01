@@ -196,6 +196,7 @@ def _winning_stream_ids(conn: sqlite3.Connection) -> set[int]:
         JOIN providers p ON p.slug = s.provider
         WHERE p.is_active = 1
           AND s.exclude = 0
+          AND (s.include_only_active = 0 OR s.include_only = 1)
           AND e.type != 'live'
           AND (
               p.strm_mode = 'generate_all'
@@ -242,6 +243,7 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
         JOIN providers p ON p.slug = s.provider
         WHERE p.is_active = 1
           AND s.exclude = 0
+          AND (s.include_only_active = 0 OR s.include_only = 1)
           AND e.type != 'live'
           AND (
               p.strm_mode = 'generate_all'
@@ -437,6 +439,7 @@ def deactivate_provider_strm(provider_slug: str) -> dict:
                   AND s.provider != ?
                   AND p.is_active = 1
                   AND s.exclude = 0
+                  AND (s.include_only_active = 0 OR s.include_only = 1)
                   AND (
                       p.strm_mode = 'generate_all'
                       OR (p.strm_mode = 'import_selected' AND s.imported = 1)

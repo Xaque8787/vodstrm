@@ -143,6 +143,7 @@ def apply_filters(stream: dict[str, Any], entry: dict[str, Any], filters: list[d
         "filter_hits": json.dumps(hits),
         "exclude": exclude,
         "include_only": include_only,
+        "include_only_active": 1 if include_only_rules else 0,
     }
 
 
@@ -154,26 +155,40 @@ def run_filters_for_provider(
     """Apply filters to all streams for a provider (or all streams if provider=None). Returns count updated."""
     if provider:
         rows = conn.execute(
-            """SELECT s.stream_id, s.provider, e.cleaned_title, e.raw_title, e.type
+            """SELECT s.stream_id, s.provider, s.metadata_json, e.cleaned_title, e.raw_title, e.type
                FROM streams s JOIN entries e ON s.entry_id = e.entry_id WHERE s.provider = ?""",
             (provider,),
         ).fetchall()
     else:
         rows = conn.execute(
-            """SELECT s.stream_id, s.provider, e.cleaned_title, e.raw_title, e.type
+            """SELECT s.stream_id, s.provider, s.metadata_json, e.cleaned_title, e.raw_title, e.type
                FROM streams s JOIN entries e ON s.entry_id = e.entry_id"""
         ).fetchall()
 
     updated = 0
     for row in rows:
+        # Use the stream's own raw title from metadata_json when available.
+        # entries.raw_title is shared across all streams for the same content
+        # and reflects whichever stream last wrote it — not reliable when
+        # multiple streams for the same (entry_id, provider) competed via
+        # the quality check. metadata_json.name is stored per-stream at
+        # ingest time and is always the correct title for this specific stream.
+        raw_title = row["raw_title"] or ""
+        if row["metadata_json"]:
+            try:
+                meta = json.loads(row["metadata_json"])
+                raw_title = meta.get("name") or raw_title
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         result = apply_filters(
             {"provider": row["provider"]},
-            {"cleaned_title": row["cleaned_title"], "raw_title": row["raw_title"], "type": row["type"]},
+            {"cleaned_title": row["cleaned_title"], "raw_title": raw_title, "type": row["type"]},
             filters,
         )
         conn.execute(
-            """UPDATE streams SET filtered_title=?, filter_hits=?, exclude=?, include_only=? WHERE stream_id=?""",
-            (result["filtered_title"], result["filter_hits"], result["exclude"], result["include_only"], row["stream_id"]),
+            """UPDATE streams SET filtered_title=?, filter_hits=?, exclude=?, include_only=?, include_only_active=? WHERE stream_id=?""",
+            (result["filtered_title"], result["filter_hits"], result["exclude"], result["include_only"], result["include_only_active"], row["stream_id"]),
         )
         updated += 1
 
