@@ -242,6 +242,14 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict], quality_t
                 # Existing wins or tie — stamp batch_id only so stale cleanup
                 # does not remove the winning row at the end of this run.
                 _stamp_stream_batch_id(conn, entry_id, provider, batch_id)
+                # _upsert_entry already ran above and overwrote entries.raw_title
+                # with the loser's title. Restore the winner's raw_title so that
+                # the filter engine (which reads from entries) sees the correct
+                # title for this stream.
+                conn.execute(
+                    "UPDATE entries SET raw_title = ? WHERE entry_id = ?",
+                    (existing_raw, entry_id),
+                )
                 quality_kept += 1
                 logger.debug(
                     "[SYNC] Stream KEPT   (quality %s %d<=%d) entry=%s  provider=%s",
