@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/static/vodstrm_images/vodstrm_256.png" alt="VODSTRM" width="128" />
+  <img src="app/static/vodstrm_images/vodstrm_1024.png" alt="VODSTRM" width="600" />
 </p>
 
 # VODSTRM
