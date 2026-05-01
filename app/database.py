@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS providers (
     strm_mode TEXT NOT NULL DEFAULT 'generate_all' CHECK(strm_mode IN ('generate_all', 'import_selected')),
     priority INTEGER NOT NULL DEFAULT 10,
     local_file_path TEXT,
+    quality_terms TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

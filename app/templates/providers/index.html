@@ -68,6 +68,16 @@
       <label for="m3u-priority" title="Lower number = higher priority when multiple providers share the same content">Priority</label>
       <input type="number" id="m3u-priority" name="priority" value="10" min="1" max="999" style="width:88px" />
     </div>
+    <div class="quality-section">
+      <span class="quality-section__label">Quality Priority <span class="label-optional">(optional)</span></span>
+      <p class="quality-section__hint">Terms matched against each stream's raw title. Higher-scoring streams win on conflict. Enter plain text — no regex needed.</p>
+      <div class="quality-tags" id="qtags-add-m3u"></div>
+      <div class="quality-add-row">
+        <input type="text" class="quality-add-input" placeholder="e.g. bluray" id="qadd-add-m3u" autocomplete="off" />
+        <button type="button" class="quality-add-btn" data-qadd="add-m3u">+ Add Term</button>
+      </div>
+      <input type="hidden" name="quality_terms" id="qhidden-add-m3u" value="[]" />
+    </div>
     <div class="provider-form__footer">
       <button type="submit" class="btn btn-primary">Add Provider</button>
     </div>
@@ -128,6 +138,16 @@
         <input type="number" id="xt-priority" name="priority" value="10" min="1" max="999" style="width:88px" />
       </div>
     </div>
+    <div class="quality-section">
+      <span class="quality-section__label">Quality Priority <span class="label-optional">(optional)</span></span>
+      <p class="quality-section__hint">Terms matched against each stream's raw title. Higher-scoring streams win on conflict. Enter plain text — no regex needed.</p>
+      <div class="quality-tags" id="qtags-add-xtream"></div>
+      <div class="quality-add-row">
+        <input type="text" class="quality-add-input" placeholder="e.g. bluray" id="qadd-add-xtream" autocomplete="off" />
+        <button type="button" class="quality-add-btn" data-qadd="add-xtream">+ Add Term</button>
+      </div>
+      <input type="hidden" name="quality_terms" id="qhidden-add-xtream" value="[]" />
+    </div>
     <div class="provider-form__footer">
       <button type="submit" class="btn btn-primary">Add Provider</button>
     </div>
@@ -157,6 +177,16 @@
     <div class="form-group form-group--sm">
       <label for="local-priority" title="Lower number = higher priority when multiple providers share the same content">Priority</label>
       <input type="number" id="local-priority" name="priority" value="10" min="1" max="999" style="width:88px" />
+    </div>
+    <div class="quality-section">
+      <span class="quality-section__label">Quality Priority <span class="label-optional">(optional)</span></span>
+      <p class="quality-section__hint">Terms matched against each stream's raw title. Higher-scoring streams win on conflict. Enter plain text — no regex needed.</p>
+      <div class="quality-tags" id="qtags-add-local"></div>
+      <div class="quality-add-row">
+        <input type="text" class="quality-add-input" placeholder="e.g. bluray" id="qadd-add-local" autocomplete="off" />
+        <button type="button" class="quality-add-btn" data-qadd="add-local">+ Add Term</button>
+      </div>
+      <input type="hidden" name="quality_terms" id="qhidden-add-local" value="[]" />
     </div>
     <div class="provider-form__footer">
       <button type="submit" class="btn btn-primary" id="add-local-submit"
@@ -262,6 +292,16 @@
                 <input type="number" name="priority" value="{{ p.priority }}" min="1" max="999" style="width:72px" />
               </div>
             </div>
+            <div class="quality-section">
+              <span class="quality-section__label">Quality Priority</span>
+              <p class="quality-section__hint">Terms matched against each stream's raw title. Higher-scoring streams win on conflict. Order determines tiebreaker weight. Enter plain text — no regex needed.</p>
+              <div class="quality-tags" id="qtags-{{ p.slug }}"></div>
+              <div class="quality-add-row">
+                <input type="text" class="quality-add-input" placeholder="e.g. bluray" id="qadd-{{ p.slug }}" autocomplete="off" />
+                <button type="button" class="quality-add-btn" data-qadd="{{ p.slug }}">+ Add Term</button>
+              </div>
+              <input type="hidden" name="quality_terms" id="qhidden-{{ p.slug }}" value="{{ p.quality_terms or '[]' }}" />
+            </div>
             <div class="inline-edit-actions">
               <button type="submit" class="btn btn-primary btn-sm">Save</button>
               <button type="button" class="btn btn-secondary btn-sm cancel-edit-btn"
@@ -328,6 +368,16 @@
                 <input type="number" name="priority" value="{{ p.priority }}" min="1" max="999" style="width:72px" />
               </div>
             </div>
+            <div class="quality-section">
+              <span class="quality-section__label">Quality Priority</span>
+              <p class="quality-section__hint">Terms matched against each stream's raw title. Higher-scoring streams win on conflict. Order determines tiebreaker weight. Enter plain text — no regex needed.</p>
+              <div class="quality-tags" id="qtags-{{ p.slug }}"></div>
+              <div class="quality-add-row">
+                <input type="text" class="quality-add-input" placeholder="e.g. bluray" id="qadd-{{ p.slug }}" autocomplete="off" />
+                <button type="button" class="quality-add-btn" data-qadd="{{ p.slug }}">+ Add Term</button>
+              </div>
+              <input type="hidden" name="quality_terms" id="qhidden-{{ p.slug }}" value="{{ p.quality_terms or '[]' }}" />
+            </div>
             <div class="inline-edit-actions">
               <button type="submit" class="btn btn-primary btn-sm">Save</button>
               <button type="button" class="btn btn-secondary btn-sm cancel-edit-btn"
@@ -360,6 +410,16 @@
                 <label title="Lower = higher priority">Priority</label>
                 <input type="number" name="priority" value="{{ p.priority }}" min="1" max="999" style="width:72px" />
               </div>
+            </div>
+            <div class="quality-section">
+              <span class="quality-section__label">Quality Priority</span>
+              <p class="quality-section__hint">Terms matched against each stream's raw title. Higher-scoring streams win on conflict. Order determines tiebreaker weight. Enter plain text — no regex needed.</p>
+              <div class="quality-tags" id="qtags-{{ p.slug }}"></div>
+              <div class="quality-add-row">
+                <input type="text" class="quality-add-input" placeholder="e.g. bluray" id="qadd-{{ p.slug }}" autocomplete="off" />
+                <button type="button" class="quality-add-btn" data-qadd="{{ p.slug }}">+ Add Term</button>
+              </div>
+              <input type="hidden" name="quality_terms" id="qhidden-{{ p.slug }}" value="{{ p.quality_terms or '[]' }}" />
             </div>
             <div class="inline-edit-actions">
               <button type="submit" class="btn btn-primary btn-sm">Save</button>
@@ -620,5 +680,63 @@
       btn.textContent = open ? btn.textContent.replace("Hide", "Show") : btn.textContent.replace("Show", "Hide");
     });
   });
+
+  // ── Quality Terms Widget ──────────────────────────────────────────────────
+
+  function initQualityWidget(id) {
+    const tagsEl  = document.getElementById("qtags-"   + id);
+    const addEl   = document.getElementById("qadd-"    + id);
+    const hidden  = document.getElementById("qhidden-" + id);
+    if (!tagsEl || !addEl || !hidden) return;
+
+    let terms = [];
+    try { terms = JSON.parse(hidden.value) || []; } catch(_) { terms = []; }
+
+    function renderTags() {
+      hidden.value = JSON.stringify(terms);
+      tagsEl.innerHTML = "";
+      if (terms.length === 0) {
+        tagsEl.innerHTML = '<span class="quality-empty">No terms — all streams overwrite unconditionally.</span>';
+        return;
+      }
+      terms.forEach((term, i) => {
+        const tag = document.createElement("span");
+        tag.className = "quality-tag";
+        tag.innerHTML = esc(term) +
+          '<button type="button" class="quality-tag__remove" aria-label="Remove ' + esc(term) + '">&times;</button>';
+        tag.querySelector("button").addEventListener("click", () => {
+          terms.splice(i, 1);
+          renderTags();
+        });
+        tagsEl.appendChild(tag);
+      });
+    }
+
+    function addTerm() {
+      const val = addEl.value.trim();
+      if (!val) return;
+      if (!terms.includes(val)) {
+        terms.push(val);
+        renderTags();
+      }
+      addEl.value = "";
+      addEl.focus();
+    }
+
+    document.querySelector('[data-qadd="' + id + '"]').addEventListener("click", addTerm);
+    addEl.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addTerm(); } });
+
+    renderTags();
+  }
+
+  // Init widgets for all edit rows (provider slugs available from template)
+  {% for p in providers %}
+  initQualityWidget("{{ p.slug }}");
+  {% endfor %}
+
+  // Init add-form widgets
+  initQualityWidget("add-m3u");
+  initQualityWidget("add-xtream");
+  initQualityWidget("add-local");
 </script>
 {% endblock %}

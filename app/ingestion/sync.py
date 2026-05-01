@@ -10,8 +10,10 @@ Responsibilities:
 
 This layer never modifies raw parsed data and never touches the M3U files.
 """
+import json
 import logging
 import os
+import re
 import sqlite3
 from typing import Iterable
 
@@ -20,6 +22,28 @@ from app.utils.env import local_now_iso, resolve_path
 logger = logging.getLogger("app.ingestion.sync")
 
 _VOD_ROOT_RELATIVE = os.getenv("VOD_DIR", "data/vod")
+
+
+# ---------------------------------------------------------------------------
+# QUALITY SCORING
+# ---------------------------------------------------------------------------
+
+def _quality_score(raw_title: str, quality_terms: list[str]) -> int:
+    """
+    Count how many quality terms appear in raw_title as whole words.
+    Each term is matched with word boundaries (case insensitive) so that
+    e.g. 'hd' does not match 'uhd' or 'hdr', and '1080p' does not match
+    '21080p'. Terms are treated as plain text — special regex characters
+    are escaped before comparison.
+    """
+    if not quality_terms or not raw_title:
+        return 0
+    score = 0
+    for term in quality_terms:
+        pattern = r"\b" + re.escape(term) + r"\b"
+        if re.search(pattern, raw_title, re.IGNORECASE):
+            score += 1
+    return score
 
 
 def _delete_strm_file(path: str) -> None:
@@ -86,10 +110,10 @@ def _upsert_entry(conn: sqlite3.Connection, entry: dict) -> None:
 
 def _upsert_stream(conn: sqlite3.Connection, entry: dict) -> None:
     """
-    Insert or update a stream row.
-    Conflict key: (entry_id, provider) — one active stream URL per provider per entry.
-    metadata_json is always refreshed so provider metadata changes are captured
-    even when the stream URL has not changed.
+    Insert or fully update a stream row.
+    Used when the incoming stream wins the quality check or when no quality
+    terms are configured (unconditional overwrite, preserving old behaviour).
+    Conflict key: (entry_id, provider).
     """
     sql = """
     INSERT INTO streams (
@@ -114,20 +138,44 @@ def _upsert_stream(conn: sqlite3.Connection, entry: dict) -> None:
     ))
 
 
+def _stamp_stream_batch_id(conn: sqlite3.Connection, entry_id: str, provider: str, batch_id: str) -> None:
+    """
+    Update only batch_id on an existing stream row without touching any other
+    fields. Used when the existing stream wins the quality check — the row
+    must be stamped with the current batch_id so stale cleanup does not
+    incorrectly delete it (stale cleanup removes rows whose batch_id differs
+    from the current run's batch_id).
+    """
+    conn.execute(
+        "UPDATE streams SET batch_id = ? WHERE entry_id = ? AND provider = ?",
+        (batch_id, entry_id, provider),
+    )
+
+
 # ---------------------------------------------------------------------------
 # BATCH WRITE
 # ---------------------------------------------------------------------------
 
-def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict]) -> dict:
+def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict], quality_terms: list[str] | None = None) -> dict:
     """
     Upsert a collection of parsed entries into entries + streams tables.
 
+    When quality_terms is a non-empty list, incoming streams are scored
+    against existing streams for the same (entry_id, provider). The
+    higher-scoring stream wins; ties keep the existing row. When
+    quality_terms is empty or None the existing unconditional-overwrite
+    behaviour is preserved.
+
     Returns a summary dict with insert/update counts.
     """
+    terms = quality_terms or []
+    use_quality = bool(terms)
+
     inserted_entries = 0
     updated_entries = 0
     inserted_streams = 0
     updated_streams = 0
+    quality_kept = 0
 
     for entry in entries:
         entry_id = entry.get("entry_id")
@@ -135,9 +183,22 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict]) -> dict:
             logger.warning("[SYNC] Entry missing entry_id, skipping: %s", entry.get("raw_title", "?"))
             continue
 
-        # Determine whether this entry already exists so we can count accurately
         existing = conn.execute(
             "SELECT 1 FROM entries WHERE entry_id = ?", (entry_id,)
+        ).fetchone()
+
+        provider = entry.get("provider")
+        batch_id = entry.get("batch_id", "")
+
+        # Fetch existing stream's raw_title BEFORE upserting the entry so that
+        # the entry upsert (which overwrites raw_title) does not corrupt the
+        # quality comparison. raw_title lives on entries; the stream row itself
+        # does not store it independently.
+        existing_stream = conn.execute(
+            "SELECT e.raw_title FROM entries e "
+            "JOIN streams s ON s.entry_id = e.entry_id "
+            "WHERE s.entry_id = ? AND s.provider = ?",
+            (entry_id, provider),
         ).fetchone()
 
         _upsert_entry(conn, entry)
@@ -155,26 +216,45 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict]) -> dict:
                 entry_id[:12], entry.get("type", "?"), entry.get("cleaned_title", "?")[:60],
             )
 
-        # Stream check
-        existing_stream = conn.execute(
-            "SELECT 1 FROM streams WHERE entry_id = ? AND provider = ?",
-            (entry_id, entry.get("provider")),
-        ).fetchone()
-
-        _upsert_stream(conn, entry)
-
-        if existing_stream:
-            updated_streams += 1
-            logger.debug(
-                "[SYNC] Stream UPDATED  entry=%s  provider=%s",
-                entry_id[:12], entry.get("provider", "?"),
-            )
-        else:
+        if existing_stream is None:
+            # Fresh insert — quality check does not apply
+            _upsert_stream(conn, entry)
             inserted_streams += 1
             logger.debug(
                 "[SYNC] Stream INSERTED entry=%s  provider=%s  url=%s",
-                entry_id[:12], entry.get("provider", "?"),
+                entry_id[:12], provider or "?",
                 (entry.get("stream_url") or "")[:80],
+            )
+        elif use_quality:
+            existing_raw = existing_stream["raw_title"] or ""
+            incoming_raw = entry.get("raw_title") or ""
+            incoming_score = _quality_score(incoming_raw, terms)
+            existing_score = _quality_score(existing_raw, terms)
+
+            if incoming_score > existing_score:
+                _upsert_stream(conn, entry)
+                updated_streams += 1
+                logger.debug(
+                    "[SYNC] Stream UPDATED (quality win %d>%d) entry=%s  provider=%s",
+                    incoming_score, existing_score, entry_id[:12], provider or "?",
+                )
+            else:
+                # Existing wins or tie — stamp batch_id only so stale cleanup
+                # does not remove the winning row at the end of this run.
+                _stamp_stream_batch_id(conn, entry_id, provider, batch_id)
+                quality_kept += 1
+                logger.debug(
+                    "[SYNC] Stream KEPT   (quality %s %d<=%d) entry=%s  provider=%s",
+                    "tie" if incoming_score == existing_score else "loss",
+                    incoming_score, existing_score, entry_id[:12], provider or "?",
+                )
+        else:
+            # No quality terms — unconditional overwrite (original behaviour)
+            _upsert_stream(conn, entry)
+            updated_streams += 1
+            logger.debug(
+                "[SYNC] Stream UPDATED  entry=%s  provider=%s",
+                entry_id[:12], provider or "?",
             )
 
     summary = {
@@ -182,11 +262,12 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict]) -> dict:
         "updated_entries": updated_entries,
         "inserted_streams": inserted_streams,
         "updated_streams": updated_streams,
+        "quality_kept": quality_kept,
     }
 
     logger.info(
-        "[SYNC] Persist complete — entries new=%d updated=%d | streams new=%d updated=%d",
-        inserted_entries, updated_entries, inserted_streams, updated_streams,
+        "[SYNC] Persist complete — entries new=%d updated=%d | streams new=%d updated=%d kept=%d",
+        inserted_entries, updated_entries, inserted_streams, updated_streams, quality_kept,
     )
     return summary
 
@@ -430,7 +511,18 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
         provider, batch_id[:12] if batch_id else "?", len(all_entries),
     )
 
-    persist_summary = persist_entries(conn, all_entries)
+    quality_terms: list[str] = []
+    if provider:
+        prow = conn.execute(
+            "SELECT quality_terms FROM providers WHERE slug = ?", (provider,)
+        ).fetchone()
+        if prow and prow["quality_terms"]:
+            try:
+                quality_terms = json.loads(prow["quality_terms"]) or []
+            except (json.JSONDecodeError, TypeError):
+                quality_terms = []
+
+    persist_summary = persist_entries(conn, all_entries, quality_terms=quality_terms)
 
     stale_removed = 0
     orphans_removed = 0
