@@ -116,8 +116,14 @@ code {
 }
 
 .auth-logo {
-  text-align: center;
-  margin-bottom: calc(var(--spacing) * 1.5);
+  display: flex;
+  justify-content: center;
+  margin-bottom: calc(var(--spacing) * 2);
+}
+
+.auth-logo img {
+  width: 180px;
+  height: auto;
 }
 
 .auth-title {
