@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="app/static/vodstrm_images/vodstrm_1024.png" alt="VODSTRM" width="600" />
+</p>
+
 # VODSTRM
 
 VODSTRM is a self-hosted media library manager that ingests M3U and Xtream Codes playlists, organizes the content into a structured `.strm` file library, and keeps everything in sync automatically. Point it at your IPTV providers, apply filters to clean up titles, and let your media server (Jellyfin, Plex, Emby, etc.) pick up the rest.
