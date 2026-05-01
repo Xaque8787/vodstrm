@@ -232,6 +232,31 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
 
     winners = _winning_stream_ids(conn)
 
+    # Pass 0 — clear strm_path on streams that are now ineligible due to
+    # exclude/include_only filter state but still have a file on disk from
+    # before the filter was applied. These rows don't appear in the eligible
+    # `rows` query below, so they must be handled here explicitly.
+    ineligible_with_path = conn.execute(
+        """
+        SELECT s.stream_id, s.strm_path
+        FROM streams s
+        JOIN entries e ON e.entry_id = s.entry_id
+        WHERE s.strm_path IS NOT NULL
+          AND (s.exclude = 1 OR (s.include_only_active = 1 AND s.include_only = 0))
+        """
+    ).fetchall()
+    for row in ineligible_with_path:
+        try:
+            if os.path.exists(row["strm_path"]):
+                os.remove(row["strm_path"])
+                _remove_empty_dirs(os.path.dirname(row["strm_path"]))
+        except OSError as exc:
+            logger.warning("[STRM] Could not delete ineligible file %s: %s", row["strm_path"], exc)
+        conn.execute(
+            "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
+            (row["stream_id"],),
+        )
+
     rows = conn.execute(
         """
         SELECT s.stream_id, s.stream_url, s.provider,
