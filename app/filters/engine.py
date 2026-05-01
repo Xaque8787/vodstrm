@@ -153,6 +153,22 @@ def run_filters_for_provider(
     provider: str | None = None,
 ) -> int:
     """Apply filters to all streams for a provider (or all streams if provider=None). Returns count updated."""
+    # Reset all filter outputs first so disabled/deleted filters don't leave
+    # stale values from a previous run. This makes filter application a
+    # full wipe-and-rewrite rather than an accumulation.
+    if provider:
+        conn.execute(
+            """UPDATE streams SET filtered_title = NULL, filter_hits = NULL,
+               exclude = 0, include_only = 0, include_only_active = 0
+               WHERE provider = ?""",
+            (provider,),
+        )
+    else:
+        conn.execute(
+            """UPDATE streams SET filtered_title = NULL, filter_hits = NULL,
+               exclude = 0, include_only = 0, include_only_active = 0"""
+        )
+
     if provider:
         rows = conn.execute(
             """SELECT s.stream_id, s.provider, s.metadata_json, e.cleaned_title, e.raw_title, e.type

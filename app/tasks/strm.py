@@ -257,6 +257,12 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
     # ownership blocks winners during the write pass.
     for row in rows:
         if row["stream_id"] not in winners and row["strm_path"]:
+            try:
+                if os.path.exists(row["strm_path"]):
+                    os.remove(row["strm_path"])
+                    _remove_empty_dirs(os.path.dirname(row["strm_path"]))
+            except OSError as exc:
+                logger.warning("[STRM] Could not delete loser file %s: %s", row["strm_path"], exc)
             conn.execute(
                 "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
                 (row["stream_id"],),
