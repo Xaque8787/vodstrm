@@ -185,6 +185,11 @@ Select a `.m3u` file already present on the host (mounted into the container). U
 Each provider has the following options available after creation:
 
 - **Priority** — When multiple providers supply the same content, the provider with the lowest priority number wins. If two providers tie, they are broken alphabetically by their internal slug. This determines which URL ends up inside the `.strm` file.
+- **Quality Terms** — An ordered list of plain-text terms used to score incoming streams before deciding whether they should overwrite an existing stream row for the same content. When quality terms are configured, each ingest run compares the incoming stream's raw title against the existing one: the stream whose title contains more matching terms wins. If the scores are equal the existing stream is kept. If no quality terms are configured the new stream always overwrites the existing one (the original behaviour).
+
+  Terms are matched as whole words and are case-insensitive, so `hd` will not match `uhd` or `hdr`. The order of the list does not affect scoring — each term that appears in the title counts as one point regardless of position in the list.
+
+  **Example:** With quality terms `["4k", "2160p", "1080p", "hd"]`, a stream titled `Movie Title 4K HDR` scores 2 (`4k` and `hd`) while one titled `Movie Title HD` scores 1. The 4K stream wins and its URL is written to the `.strm` file. On the next run, if the 4K version disappears from the provider's playlist entirely, the incoming lower-quality stream automatically wins because the existing row is from a previous run — stale rows never block a live incoming stream.
 - **Active toggle** — Shows the current state. Active providers show a green toggle; inactive providers show a grey toggle that you can click to re-enable them.
 - **Disable** — Clicking the active toggle on a live provider opens a confirmation modal before proceeding. Confirming will mark the provider inactive, immediately remove all of its streams and entries from the database, and hand its owned `.strm` files over to the next eligible provider (or delete them if no alternative exists). This is a destructive operation — data can only be restored by re-enabling the provider and running a fresh ingest.
 - **Edit** — Update connection details (URL, credentials, format, file path) at any time.
