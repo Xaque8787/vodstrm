@@ -568,8 +568,7 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
     try:
         from app.filters.engine import load_filters, run_filters_for_provider
         filters = load_filters(conn)
-        if filters:
-            summary["filter_streams_updated"] = run_filters_for_provider(conn, filters, provider=provider)
+        summary["filter_streams_updated"] = run_filters_for_provider(conn, filters, provider=provider)
     except Exception as exc:
         logger.warning("[SYNC] Filter apply step failed (non-fatal): %s", exc)
 
