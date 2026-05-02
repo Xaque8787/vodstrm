@@ -421,36 +421,30 @@ def purge_inactive_and_deleted_providers(conn: sqlite3.Connection) -> tuple[int,
 # FOLLOW RULES ENGINE
 # ---------------------------------------------------------------------------
 
-def apply_follow_rules(conn: sqlite3.Connection, provider_id: int) -> int:
+def apply_follow_rules(conn: sqlite3.Connection, provider_slug: str) -> int:
     """
-    Mark streams as eligible (imported=1) for follow rules matching provider_id.
+    Mark streams as imported=1 for any follow rule that matches content from provider_slug.
 
-    For each follow rule, finds streams from that provider where the entry
-    type and title match the rule pattern. Season NULL matches all seasons;
-    an integer season matches only that exact season number.
+    Rules are global — scoped only by entry_type/entry_title/season, not by which
+    provider they were originally created against. This ensures that a follow created
+    while only Provider A existed will also auto-import matching streams from Provider B
+    when Provider B is first ingested.
 
-    Only sets imported=1 (never clears it — removal is a separate manual action).
+    Season NULL matches all seasons; an integer season matches only that exact season.
+    For tv_vod, the season column stores the year as an integer.
+
+    Only sets imported=1 (never clears — removal is a manual action).
     Returns count of newly marked streams.
     """
-    provider_row = conn.execute(
-        "SELECT slug FROM providers WHERE id = ?", (provider_id,)
-    ).fetchone()
-    if not provider_row:
-        return 0
-
     rules = conn.execute(
-        "SELECT entry_type, entry_title, season FROM follows WHERE provider_id = ?",
-        (provider_id,),
+        "SELECT DISTINCT entry_type, entry_title, season FROM follows"
     ).fetchall()
     if not rules:
         return 0
 
     marked = 0
-    slug = provider_row["slug"]
     for rule in rules:
         if rule["season"] is not None and rule["entry_type"] == "tv_vod":
-            # Year-specific tv_vod follow: season stores the year integer,
-            # matched against the first 4 chars of air_date.
             conn.execute(
                 """
                 UPDATE streams SET imported = 1
@@ -459,10 +453,10 @@ def apply_follow_rules(conn: sqlite3.Connection, provider_id: int) -> int:
                       SELECT entry_id FROM entries
                       WHERE type = 'tv_vod'
                         AND substr(air_date, 1, 4) = ?
-                        AND lower(cleaned_title) LIKE lower(?)
+                        AND lower(cleaned_title) = lower(?)
                   )
                 """,
-                (slug, str(rule["season"]), f"%{rule['entry_title']}%"),
+                (provider_slug, str(rule["season"]), rule["entry_title"]),
             )
         elif rule["season"] is not None:
             conn.execute(
@@ -472,10 +466,10 @@ def apply_follow_rules(conn: sqlite3.Connection, provider_id: int) -> int:
                   AND entry_id IN (
                       SELECT entry_id FROM entries
                       WHERE type = ? AND season = ?
-                        AND lower(cleaned_title) LIKE lower(?)
+                        AND lower(cleaned_title) = lower(?)
                   )
                 """,
-                (slug, rule["entry_type"], rule["season"], f"%{rule['entry_title']}%"),
+                (provider_slug, rule["entry_type"], rule["season"], rule["entry_title"]),
             )
         else:
             conn.execute(
@@ -485,10 +479,10 @@ def apply_follow_rules(conn: sqlite3.Connection, provider_id: int) -> int:
                   AND entry_id IN (
                       SELECT entry_id FROM entries
                       WHERE type = ?
-                        AND lower(cleaned_title) LIKE lower(?)
+                        AND lower(cleaned_title) = lower(?)
                   )
                 """,
-                (slug, rule["entry_type"], f"%{rule['entry_title']}%"),
+                (provider_slug, rule["entry_type"], rule["entry_title"]),
             )
         marked += conn.execute("SELECT changes()").fetchone()[0]
 
@@ -574,10 +568,10 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
 
     try:
         provider_row = conn.execute(
-            "SELECT id, strm_mode FROM providers WHERE slug = ?", (provider,)
+            "SELECT strm_mode FROM providers WHERE slug = ?", (provider,)
         ).fetchone()
         if provider_row and provider_row["strm_mode"] == "import_selected":
-            follow_marked = apply_follow_rules(conn, provider_row["id"])
+            follow_marked = apply_follow_rules(conn, provider)
             summary["follow_streams_marked"] = follow_marked
             if follow_marked:
                 logger.info(

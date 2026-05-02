@@ -224,15 +224,15 @@ CREATE TABLE IF NOT EXISTS tmdb_run_log (
 -- -------------------------------------------------------
 -- LIBRARY: follow rules (import_selected eligibility)
 -- -------------------------------------------------------
--- One row per rule: when this provider ingests content matching
--- entry_type + entry_title (+ optional season), mark those streams
--- as imported=1 so they become eligible for STRM ownership.
--- season NULL = match all seasons; non-NULL = match exact season only.
--- entry_type is restricted to movie/series; tv_vod is intentionally excluded.
+-- One row per rule per provider: when any import_selected provider ingests content
+-- matching entry_type + entry_title (+ optional season), mark those streams as
+-- imported=1 so they become eligible for STRM ownership. Rules are matched globally
+-- across all providers — provider_id is stored for FK integrity only.
+-- season NULL = match all seasons; non-NULL = match exact season / year (tv_vod).
 CREATE TABLE IF NOT EXISTS follows (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
-    entry_type  TEXT NOT NULL CHECK(entry_type IN ('movie', 'series')),
+    entry_type  TEXT NOT NULL CHECK(entry_type IN ('movie', 'series', 'tv_vod')),
     entry_title TEXT NOT NULL,
     season      INTEGER,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
