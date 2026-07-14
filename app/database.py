@@ -235,10 +235,43 @@ CREATE TABLE IF NOT EXISTS follows (
     entry_type  TEXT NOT NULL CHECK(entry_type IN ('movie', 'series', 'tv_vod')),
     entry_title TEXT NOT NULL,
     season      INTEGER,
+    mode        TEXT NOT NULL DEFAULT 'strm' CHECK(mode IN ('strm', 'download')),
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_follows_provider_id ON follows(provider_id);
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- downloads — one row per entry_id, follows the integration queue state machine:
+-- pending → probing → downloading → completed | failed | cancelled
+-- Keyed by entry_id (not stream-level) so a downloaded file survives provider removal.
+-- A completed download suppresses STRM generation for that entry (Model B).
+CREATE TABLE IF NOT EXISTS downloads (
+    entry_id          TEXT PRIMARY KEY REFERENCES entries(entry_id) ON DELETE SET NULL,
+    status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK(status IN ('pending','probing','downloading','completed','failed','cancelled')),
+    mode              TEXT NOT NULL DEFAULT 'download',
+    stream_url        TEXT,
+    provider          TEXT,
+    container         TEXT DEFAULT 'mkv',
+    staging_path      TEXT,
+    local_path        TEXT,
+    probe_data        TEXT,
+    file_size         INTEGER,
+    fail_reason       TEXT,
+    retry_count       INTEGER NOT NULL DEFAULT 0,
+    reencode_eligible INTEGER NOT NULL DEFAULT 0,
+    queued_at         TEXT,
+    probing_at        TEXT,
+    downloading_at    TEXT,
+    completed_at      TEXT,
+    failed_at         TEXT,
+    cancelled_at      TEXT,
+    updated_at        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
+CREATE INDEX IF NOT EXISTS idx_downloads_entry_id ON downloads(entry_id);
 
 """
 

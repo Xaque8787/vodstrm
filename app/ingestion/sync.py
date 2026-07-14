@@ -63,6 +63,18 @@ def _delete_strm_file(path: str) -> None:
         logger.warning("[SYNC] Failed to delete strm file %s: %s", path, exc)
 
 
+def _safe_remove(path: str) -> None:
+    """Remove a file if it exists, ignoring errors. Cleans empty parent dirs."""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            parent = os.path.dirname(os.path.abspath(path))
+            if parent and os.path.isdir(parent) and not os.listdir(parent):
+                os.rmdir(parent)
+    except OSError as exc:
+        logger.warning("[SYNC] Failed to remove %s: %s", path, exc)
+
+
 # ---------------------------------------------------------------------------
 # UPSERT HELPERS
 # ---------------------------------------------------------------------------
@@ -329,12 +341,48 @@ def cleanup_stale_streams(conn: sqlite3.Connection, provider: str, current_batch
 
 def cleanup_orphan_entries(conn: sqlite3.Connection) -> int:
     """
-    Delete entries that have no streams remaining.
-    Happens when all providers have dropped a piece of content.
+    Delete entries that have no streams remaining — unless they have an active
+    or completed download. An entry with a local media file is not an orphan,
+    even if all providers have dropped the content.
+
+    For entries that ARE deleted, any associated failed/cancelled download rows
+    and their staging files are cleaned up first.
     Returns the number of rows deleted.
     """
+    # Clean up staging/local files for entries that will be deleted
+    doomed = conn.execute(
+        """
+        SELECT e.entry_id FROM entries e
+        WHERE e.entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)
+          AND e.entry_id NOT IN (
+              SELECT entry_id FROM downloads
+              WHERE status IN ('pending','probing','downloading','completed')
+          )
+        """,
+    ).fetchall()
+
+    for row in doomed:
+        eid = row["entry_id"]
+        dl = conn.execute(
+            "SELECT staging_path, local_path FROM downloads WHERE entry_id = ?",
+            (eid,),
+        ).fetchone()
+        if dl:
+            if dl["staging_path"] and os.path.exists(dl["staging_path"]):
+                _safe_remove(dl["staging_path"])
+            if dl["local_path"] and os.path.exists(dl["local_path"]):
+                _safe_remove(dl["local_path"])
+            conn.execute("DELETE FROM downloads WHERE entry_id = ?", (eid,))
+
     cursor = conn.execute(
-        "DELETE FROM entries WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)"
+        """
+        DELETE FROM entries
+        WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)
+          AND entry_id NOT IN (
+              SELECT entry_id FROM downloads
+              WHERE status IN ('pending','probing','downloading','completed')
+          )
+        """
     )
     deleted = cursor.rowcount
     if deleted:

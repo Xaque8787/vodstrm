@@ -78,11 +78,12 @@ import_selected mode.  For each entry where this provider currently owns the
 import logging
 import os
 import re
+import shutil
 import sqlite3
 
 from app.database import get_db
 from app.tasks.base import task
-from app.utils.env import resolve_path
+from app.utils.env import resolve_path, local_now_iso
 
 logger = logging.getLogger("app.tasks.strm")
 
@@ -141,6 +142,23 @@ def _derive_path(
     return os.path.join(vod_root, "unsorted", f"{t}.strm")
 
 
+def _derive_media_path(
+    entry_type: str,
+    title: str,
+    year: int | None,
+    season: int | None,
+    episode: int | None,
+    vod_root: str,
+    container: str = "mkv",
+    air_date: str | None = None,
+) -> str:
+    """Derive the final media file path by replacing .strm with the container ext."""
+    strm_path = _derive_path(
+        entry_type, title, year, season, episode, vod_root, air_date=air_date
+    )
+    return os.path.splitext(strm_path)[0] + f".{container}"
+
+
 # ---------------------------------------------------------------------------
 # Filesystem helpers
 # ---------------------------------------------------------------------------
@@ -187,6 +205,9 @@ def _winning_stream_ids(conn: sqlite3.Connection) -> set[int]:
     Eligibility:
       - generate_all providers: all non-excluded streams
       - import_selected providers: only streams with imported = 1
+
+    Entries with an active or completed download are excluded — the local
+    media file replaces the .strm (Model B).
     """
     rows = conn.execute(
         """
@@ -201,6 +222,10 @@ def _winning_stream_ids(conn: sqlite3.Connection) -> set[int]:
           AND (
               p.strm_mode = 'generate_all'
               OR (p.strm_mode = 'import_selected' AND s.imported = 1)
+          )
+          AND s.entry_id NOT IN (
+              SELECT entry_id FROM downloads
+              WHERE status IN ('pending','probing','downloading','completed')
           )
         ORDER BY p.priority, p.slug
         """,
@@ -252,6 +277,32 @@ def _sync_streams(conn: sqlite3.Connection, vod_root: str) -> dict:
                 _remove_empty_dirs(os.path.dirname(row["strm_path"]))
         except OSError as exc:
             logger.warning("[STRM] Could not delete ineligible file %s: %s", row["strm_path"], exc)
+        conn.execute(
+            "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
+            (row["stream_id"],),
+        )
+
+    # Pass 0b — delete .strm files for entries that now have a completed or
+    # active download. These entries are excluded from _winning_stream_ids so
+    # their .strm files won't be cleaned up by the loser pass below.
+    downloaded_with_strm = conn.execute(
+        """
+        SELECT s.stream_id, s.strm_path
+        FROM streams s
+        WHERE s.strm_path IS NOT NULL
+          AND s.entry_id IN (
+              SELECT entry_id FROM downloads
+              WHERE status IN ('pending','probing','downloading','completed')
+          )
+        """
+    ).fetchall()
+    for row in downloaded_with_strm:
+        try:
+            if os.path.exists(row["strm_path"]):
+                os.remove(row["strm_path"])
+                _remove_empty_dirs(os.path.dirname(row["strm_path"]))
+        except OSError as exc:
+            logger.warning("[STRM] Could not delete pre-download .strm %s: %s", row["strm_path"], exc)
         conn.execute(
             "UPDATE streams SET strm_path = NULL, last_written_url = NULL WHERE stream_id = ?",
             (row["stream_id"],),
@@ -376,6 +427,128 @@ def _sync_one(
 
     if not path_changed:
         stats["unchanged"] += 1
+
+
+# ---------------------------------------------------------------------------
+# Download reconciliation & cleanup
+# ---------------------------------------------------------------------------
+
+def _reconcile_download_paths(conn: sqlite3.Connection, vod_root: str) -> int:
+    """
+    Move media files whose derived path has changed (filter rules changed a
+    title, or a different provider won priority with a different filtered_title).
+    Also detects missing media files and cancels their download rows.
+    Returns count of files moved.
+    """
+    rows = conn.execute(
+        """
+        SELECT d.entry_id, d.local_path, d.container,
+               e.type, e.cleaned_title, e.year, e.season, e.episode, e.air_date,
+               (SELECT s.filtered_title FROM streams s
+                JOIN providers p ON p.slug = s.provider
+                WHERE s.entry_id = d.entry_id
+                  AND p.is_active = 1 AND s.exclude = 0
+                  AND (s.include_only_active = 0 OR s.include_only = 1)
+                  AND (p.strm_mode = 'generate_all'
+                       OR (p.strm_mode = 'import_selected' AND s.imported = 1))
+                ORDER BY p.priority, p.slug LIMIT 1) AS filtered_title
+        FROM downloads d
+        JOIN entries e ON e.entry_id = d.entry_id
+        WHERE d.status = 'completed' AND d.local_path IS NOT NULL
+        """,
+    ).fetchall()
+
+    moved = 0
+    now = local_now_iso()
+    for row in rows:
+        title = row["filtered_title"] or row["cleaned_title"]
+        target_path = _derive_media_path(
+            row["type"], title, row["year"], row["season"], row["episode"],
+            vod_root, container=row["container"], air_date=row["air_date"],
+        )
+
+        local_path = row["local_path"]
+        if os.path.abspath(local_path) == os.path.abspath(target_path):
+            continue
+
+        if not os.path.exists(local_path):
+            conn.execute(
+                "UPDATE downloads SET status='cancelled', fail_reason='file_missing', "
+                "cancelled_at=?, updated_at=? WHERE entry_id=?",
+                (now, now, row["entry_id"]),
+            )
+            logger.debug(
+                "[STRM] Download file missing — entry=%s path=%s",
+                row["entry_id"][:12], local_path,
+            )
+            continue
+
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        os.rename(local_path, target_path)
+        _remove_empty_dirs(os.path.dirname(local_path))
+        conn.execute(
+            "UPDATE downloads SET local_path=?, updated_at=? WHERE entry_id=?",
+            (target_path, now, row["entry_id"]),
+        )
+        moved += 1
+        logger.debug(
+            "[STRM] Moved media file — entry=%s  %s → %s",
+            row["entry_id"][:12], local_path, target_path,
+        )
+    if moved:
+        conn.commit()
+        logger.info("[STRM] Reconciled %d download path(s)", moved)
+    return moved
+
+
+def _cleanup_downloads(conn: sqlite3.Connection) -> int:
+    """
+    Periodic download maintenance — runs inside generate_strm:
+    1. Delete staging .part files not belonging to active downloads
+    2. Delete cancelled download rows older than 24h
+    3. Delete failed download rows older than retention (default 90 days)
+    Returns count of rows deleted.
+    """
+    now = local_now_iso()
+    deleted = 0
+
+    # 1. Clean orphaned staging files
+    staging_dir = resolve_path("data/downloads")
+    if os.path.isdir(staging_dir):
+        active_staging = {
+            row[0] for row in conn.execute(
+                "SELECT staging_path FROM downloads "
+                "WHERE status IN ('probing','downloading') AND staging_path IS NOT NULL"
+            ).fetchall()
+        }
+        for fname in os.listdir(staging_dir):
+            fpath = os.path.join(staging_dir, fname)
+            if fpath not in active_staging:
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass
+
+    # 2. Delete cancelled rows older than 24h
+    cursor = conn.execute(
+        "DELETE FROM downloads WHERE status='cancelled' "
+        "AND cancelled_at IS NOT NULL AND cancelled_at < datetime(?, '-1 day')",
+        (now,),
+    )
+    deleted += cursor.rowcount
+
+    # 3. Delete failed rows older than 90 days
+    cursor = conn.execute(
+        "DELETE FROM downloads WHERE status='failed' "
+        "AND failed_at IS NOT NULL AND failed_at < datetime(?, '-90 days')",
+        (now,),
+    )
+    deleted += cursor.rowcount
+
+    if deleted:
+        conn.commit()
+        logger.debug("[STRM] Cleaned up %d old download row(s)", deleted)
+    return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -621,6 +794,8 @@ def generate_strm() -> None:
               AND entry_id IN (SELECT entry_id FROM entries WHERE type = 'live')
             """
         )
+        _reconcile_download_paths(conn, vod_root)
+        _cleanup_downloads(conn)
         stats = _sync_streams(conn, vod_root)
         orphans = _cleanup_orphans(conn, vod_root)
 

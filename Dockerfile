@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cron \
     tzdata \
     gosu \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TZ=America/Los_Angeles
@@ -25,7 +26,8 @@ RUN chmod +x docker-entrypoint.sh && \
     mkdir -p /app/data/vod/movies && \
     mkdir -p /app/data/vod/series && \
     mkdir -p /app/data/vod/unsorted && \
-    mkdir -p /app/data/vod/livetv
+    mkdir -p /app/data/vod/livetv && \
+    mkdir -p /app/data/downloads
 
 EXPOSE 2112
 
