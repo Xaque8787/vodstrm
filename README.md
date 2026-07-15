@@ -379,10 +379,10 @@ The Downloads integration converts remote stream URLs into local media files sto
 #### How It Works
 
 1. **Queuing** — Downloads are queued in two ways:
-   - **Manual** — Click the Download button on any individual entry in the Library page.
+   - **Manual** — Click the Download button on any entry, season, series, or TV VOD year in the Library page. Downloads can be queued at any granularity — a single episode, an entire season, a full series, or all episodes in a TV VOD year.
    - **Follow rules** — Create a follow rule in Download mode (instead of STRM mode) to automatically queue downloads for matching content as it appears in future ingestion runs.
 
-2. **Processing** — The `Process Download Queue` scheduled task wakes on a configurable interval and claims up to `max_concurrent` pending rows. Each row moves through a state machine:
+2. **Processing** — The `Process Download Queue` scheduled task wakes on a configurable interval and claims up to `max_concurrent` pending rows. The processor also starts automatically whenever a new download is queued — no need to wait for the next scheduled run. Each row moves through a state machine:
 
    ```
    pending -> probing -> downloading -> completed
@@ -394,11 +394,13 @@ The Downloads integration converts remote stream URLs into local media files sto
    - **Downloading** — The stream is downloaded via `ffmpeg -c copy` (stream-copy remux, no re-encoding) into a staging file.
    - **Finalizing** — The staging file is moved to its final path in the VOD directory (e.g. `data/vod/movies/Movie Title (Year).mkv`), and a STRM sync is triggered to remove the now-obsolete `.strm` file.
 
-3. **STRM interaction** — When a download completes, the entry's `.strm` file is deleted. Your media server picks up the local media file instead. If a download is cancelled or its file is deleted, the `.strm` file is regenerated on the next sync.
+3. **STRM interaction** — When a download completes, the entry's `.strm` file is deleted and your media server picks up the local media file instead. If a download is cancelled or its file is deleted, the `.strm` file is regenerated on the next sync. During every STRM sync, completed download files are also moved to match their current derived path — if a filter rule changes a title, the media file is relocated automatically.
 
-4. **Failure handling** — Failed downloads are retained with a reason (e.g. `probe_failed`, `ffmpeg_failed`, `no_eligible_stream`). They can be retried individually from the Downloads page or in bulk via the Clear Failed button. Failed rows are kept for a configurable retention period (default 90 days).
+4. **Failure handling** — Failed downloads are retained with a reason (e.g. `probe_failed`, `ffmpeg_failed`, `no_eligible_stream`). They can be retried individually from the Downloads page or in bulk via the Clear Failed button. Failed rows are automatically cleaned up after 90 days; cancelled rows after 24 hours. Both happen during STRM sync.
 
-5. **Orphan protection** — Entries with active or completed downloads are never deleted during orphan cleanup, even if their provider is removed. This ensures downloaded content persists independently of provider state.
+5. **Provider independence** — Download rows are keyed by entry_id, not by stream or provider. If a provider is removed, the downloaded file and its database row survive. The foreign key uses ON DELETE SET NULL, so the row persists even if the underlying entry is orphaned.
+
+6. **Automatic maintenance** — On startup, any downloads stuck in the probing or downloading state are reset to pending. During STRM sync, orphaned staging files in the download directory are removed, and completed downloads whose local file has gone missing are automatically cancelled.
 
 #### Configuration
 
@@ -407,9 +409,9 @@ On the Integrations page, the Downloads settings card provides:
 - **Enable toggle** — Turn the integration on or off.
 - **Max Concurrent** — Number of simultaneous downloads (1-10). Default is 2.
 - **Container** — Output file format: `mkv` (default), `mp4`, or `ts`.
-- **Retention (days)** — How long failed/cancelled download rows are retained. Default is 90 days.
+- **Retention (days)** — How long failed download rows are kept before automatic cleanup. Default is 90 days. Cancelled rows are cleaned after 24 hours.
 
-The status widget shows queue counts (pending, downloading, completed, failed, total) and a **Process Now** button to trigger the processor immediately.
+The status widget shows queue counts by status (pending, probing, downloading, completed, failed, cancelled, total) and a **Process Now** button to trigger the processor immediately.
 
 #### Downloads Page
 
