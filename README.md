@@ -26,6 +26,7 @@ VODSTRM is a self-hosted media library manager that ingests M3U and Xtream Codes
   - [Admin](#admin)
 - [Integrations](#integrations)
   - [TMDB](#tmdb)
+  - [Downloads](#downloads)
 
 ---
 
@@ -36,7 +37,8 @@ VODSTRM is a self-hosted media library manager that ingests M3U and Xtream Codes
 - Generates `.strm` files organized into Movies, Series, TV VOD, Live, and Unsorted categories
 - Flexible filtering system — clean up messy titles, exclude unwanted content, or whitelist specific entries
 - Automatic scheduling for downloads, ingestion, and library sync
-- Follow rules to automatically add new episodes/seasons as they appear
+- Follow rules to automatically add new episodes/seasons as they appear — in STRM mode (generate `.strm` files) or Download mode (fetch and store local media files)
+- Optional media downloads — convert remote streams to local files via ffmpeg, with a download queue, retry, and retention management
 - Per-provider STRM mode: generate everything or only import what you select
 - Multi-user support with JWT-based authentication
 
@@ -47,6 +49,8 @@ VODSTRM is a self-hosted media library manager that ingests M3U and Xtream Codes
 ### Prerequisites
 
 - Docker and Docker Compose
+- A media server that supports `.strm` files (Jellyfin, Plex, Emby, Kodi, etc.)
+- ffmpeg — included in the Docker image. If running outside Docker, install `ffmpeg` and `ffprobe` system-wide (used by the optional Downloads feature)
 
 ### Quick Start
 
@@ -257,6 +261,13 @@ Follow rules tell VODSTRM to automatically add new content to your library as it
 
 Follow rules can be reviewed and deleted from the follows management panel on the Library page.
 
+#### Follow Modes
+
+Each follow rule operates in one of two modes:
+
+- **STRM mode** (default) — Matching content is marked as imported and `.strm` files are generated pointing to the remote stream URL. This is the standard behaviour — your media server reads the URL from the `.strm` file and streams directly from the provider.
+- **Download mode** — Matching content is queued for local download instead. The download processor fetches the stream via ffmpeg and stores the resulting media file in your VOD directory. Once the download completes, the `.strm` file is removed and your media server reads the local file directly. This is useful for content you want available offline or from providers with unreliable streaming.
+
 ---
 
 ### Filters
@@ -301,10 +312,11 @@ The Schedules page controls when VODSTRM automatically fetches and processes you
 
 #### Global Tasks
 
-Two global tasks are available:
+Three global tasks are available:
 
 - **Download All Providers** — Downloads the latest M3U data from all active providers, runs ingestion, applies filters, and syncs `.strm` files. This is the primary task you will want to run on a regular schedule.
 - **Clean STRM Orphans** — Scans the VOD output directory and removes any `.strm` files that no longer have a corresponding database entry. Useful for cleaning up after providers are deleted or content is removed.
+- **Process Download Queue** — Wakes the download processor, which claims pending download rows up to the configured concurrency limit, probes each stream with ffprobe, and downloads via ffmpeg stream-copy remux. Completed downloads trigger a STRM sync so that `.strm` files are cleaned up for entries that now have local files.
 
 Each global task can be:
 - **Run Now** — Triggered immediately, outside of any schedule.
@@ -359,3 +371,55 @@ To enable it:
 2. Open the Integrations page, enter your API key in the TMDB settings block, and enable the integration.
 
 The status widget on the Integrations page shows the current queue depth, the last time the processor ran, and how many items have completed or failed. Failed lookups are retained so you can see what did not resolve — they will not block the rest of the queue.
+
+### Downloads
+
+The Downloads integration converts remote stream URLs into local media files stored in your VOD directory. Instead of generating a `.strm` file that points at a remote URL, VODSTRM downloads the content via ffmpeg and lets your media server read the local file directly. This is useful for offline access, unreliable providers, or content you want to keep permanently.
+
+#### How It Works
+
+1. **Queuing** — Downloads are queued in two ways:
+   - **Manual** — Click the Download button on any individual entry in the Library page.
+   - **Follow rules** — Create a follow rule in Download mode (instead of STRM mode) to automatically queue downloads for matching content as it appears in future ingestion runs.
+
+2. **Processing** — The `Process Download Queue` scheduled task wakes on a configurable interval and claims up to `max_concurrent` pending rows. Each row moves through a state machine:
+
+   ```
+   pending -> probing -> downloading -> completed
+                                     -> failed (retry eligible)
+                                     -> cancelled (terminal, with reason)
+   ```
+
+   - **Probing** — The stream URL is probed with `ffprobe` to verify it is reachable and to capture format metadata.
+   - **Downloading** — The stream is downloaded via `ffmpeg -c copy` (stream-copy remux, no re-encoding) into a staging file.
+   - **Finalizing** — The staging file is moved to its final path in the VOD directory (e.g. `data/vod/movies/Movie Title (Year).mkv`), and a STRM sync is triggered to remove the now-obsolete `.strm` file.
+
+3. **STRM interaction** — When a download completes, the entry's `.strm` file is deleted. Your media server picks up the local media file instead. If a download is cancelled or its file is deleted, the `.strm` file is regenerated on the next sync.
+
+4. **Failure handling** — Failed downloads are retained with a reason (e.g. `probe_failed`, `ffmpeg_failed`, `no_eligible_stream`). They can be retried individually from the Downloads page or in bulk via the Clear Failed button. Failed rows are kept for a configurable retention period (default 90 days).
+
+5. **Orphan protection** — Entries with active or completed downloads are never deleted during orphan cleanup, even if their provider is removed. This ensures downloaded content persists independently of provider state.
+
+#### Configuration
+
+On the Integrations page, the Downloads settings card provides:
+
+- **Enable toggle** — Turn the integration on or off.
+- **Max Concurrent** — Number of simultaneous downloads (1-10). Default is 2.
+- **Container** — Output file format: `mkv` (default), `mp4`, or `ts`.
+- **Retention (days)** — How long failed/cancelled download rows are retained. Default is 90 days.
+
+The status widget shows queue counts (pending, downloading, completed, failed, total) and a **Process Now** button to trigger the processor immediately.
+
+#### Downloads Page
+
+**URL:** `/library/downloads`
+
+The Downloads page provides a full view of the download queue:
+
+- **Status pills** — Each row shows its current state with a colour-coded badge.
+- **Actions** — Cancel active downloads, retry failed ones, delete completed files, or remove failed/cancelled rows.
+- **Clear Failed** — Bulk-remove all failed and cancelled rows from the list (does not delete files).
+- **Auto-refresh** — The list updates every 5 seconds.
+
+The page is also linked from the Downloads section of the Integrations page.
