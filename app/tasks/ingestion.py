@@ -48,7 +48,7 @@ def _delete_m3u(file_path: str, provider_slug: str) -> None:
 def _get_provider_row(provider_slug: str) -> dict | None:
     with get_db() as conn:
         row = conn.execute(
-            "SELECT type, local_file_path FROM providers WHERE slug = ?",
+            "SELECT type, local_file_path, force_vod FROM providers WHERE slug = ?",
             (provider_slug,),
         ).fetchone()
     return dict(row) if row else None
@@ -92,7 +92,14 @@ def ingest_provider_file(provider_slug: str) -> None:
         provider_slug, file_path, is_local,
     )
 
-    parsed = parse_m3u(file_path, provider=provider_slug)
+    if not provider:
+        logger.warning("[INGESTION] Provider '%s' not found, aborting", provider_slug)
+        return
+
+    parsed = parse_m3u(file_path, provider=provider_slug, force_vod=bool(provider["force_vod"]))
+
+    if not parsed:
+        return
 
     parse_stats = parsed["summary"]["stats"]
     logger.info(

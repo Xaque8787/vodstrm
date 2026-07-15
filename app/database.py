@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS providers (
     priority INTEGER NOT NULL DEFAULT 10,
     local_file_path TEXT,
     quality_terms TEXT NOT NULL DEFAULT '[]',
+    force_vod INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
