@@ -178,6 +178,7 @@ async def list_entries(
     type: str = Query(default=""),
     search: str = Query(default=""),
     owned: str = Query(default=""),
+    downloaded: str = Query(default=""),
     current_user: TokenData = Depends(get_current_user),
 ):
     """
@@ -227,6 +228,25 @@ async def list_entries(
         conditions.append(_OWNED_EXISTS)
     elif owned == "false":
         conditions.append(f"NOT {_OWNED_EXISTS}")
+
+    # Downloaded filter — completed downloads (individual entries) or any
+    # completed download within the group (series / tv_vod grouped by title).
+    _DOWNLOADED_EXISTS = """
+        EXISTS (
+            SELECT 1 FROM downloads _d2
+            JOIN entries _e2 ON _e2.entry_id = _d2.entry_id
+            WHERE _d2.status = 'completed'
+              AND (
+                  _e2.entry_id = e.entry_id
+                  OR (e.type IN ('series','tv_vod')
+                      AND lower(_e2.cleaned_title) = lower(e.cleaned_title))
+              )
+        )
+    """
+    if downloaded == "true":
+        conditions.append(_DOWNLOADED_EXISTS)
+    elif downloaded == "false":
+        conditions.append(f"NOT {_DOWNLOADED_EXISTS}")
 
     # Always restrict to import_selected provider content
     conditions.append(_HAS_IMPORT_SELECTED)

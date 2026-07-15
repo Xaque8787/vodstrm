@@ -486,6 +486,11 @@
       <option value="true">Owned</option>
       <option value="false">Not owned</option>
     </select>
+    <select id="downloaded-filter" class="filter-select">
+      <option value="">All</option>
+      <option value="true">Downloaded</option>
+      <option value="false">Not downloaded</option>
+    </select>
   </div>
 
   <!-- Type tabs -->
@@ -597,7 +602,7 @@
     });
   }
 const PER_PAGE = 48;
-let state = { page: 1, type: '', search: '', owned: '', total: 0 };
+let state = { page: 1, type: '', search: '', owned: '', downloaded: '', total: 0 };
 let debounceTimer = null;
 let expandedTitle = null;
 
@@ -757,6 +762,7 @@ async function fetchEntries() {
   if (state.type)   params.set('type', state.type);
   if (state.search) params.set('search', state.search);
   if (state.owned)  params.set('owned', state.owned);
+  if (state.downloaded) params.set('downloaded', state.downloaded);
 
   try {
     // Fetch entries and follows in parallel
@@ -1421,6 +1427,11 @@ document.getElementById('search-input').addEventListener('input', e => {
 
 document.getElementById('owned-filter').addEventListener('change', e => {
   state.owned = e.target.value;
+  state.page = 1;
+  fetchEntries();
+});
+document.getElementById('downloaded-filter').addEventListener('change', e => {
+  state.downloaded = e.target.value;
   state.page = 1;
   fetchEntries();
 });
