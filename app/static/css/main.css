@@ -215,6 +215,28 @@ code {
   color: var(--color-text-muted);
 }
 
+.form-group--checkbox {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 0.5);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing) * 0.75);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+  margin: 0;
+}
+
 .label-optional {
   font-weight: 400;
   color: var(--color-text-muted);

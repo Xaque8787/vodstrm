@@ -164,12 +164,12 @@ def _parse_extinf(line: str) -> dict[str, Any]:
 # CLASSIFICATION
 # ---------------------------------------------------------------------------
 
-def _classify(entry: dict) -> dict:
+def _classify(entry: dict, force_vod: bool = False) -> dict:
     name = entry.get("name", "").strip()
     entry["raw_title"] = name
 
-    # LIVE — duration == -1
-    if entry.get("duration") == "-1":
+    # LIVE — duration == -1 (skipped when force_vod bypasses live classification)
+    if not force_vod and entry.get("duration") == "-1":
         entry["type"] = "live"
         entry["cleaned_title"] = _clean_name(name)
         logger.debug("[PARSER] Classified as LIVE: %s", name[:80])
@@ -225,7 +225,7 @@ def _classify(entry: dict) -> dict:
 # PUBLIC API
 # ---------------------------------------------------------------------------
 
-def parse_m3u(file_path: str, provider: str, ingest_time: str | None = None) -> dict:
+def parse_m3u(file_path: str, provider: str, ingest_time: str | None = None, force_vod: bool = False) -> dict:
     """
     Parse an M3U file and return structured entry lists plus a summary.
 
@@ -287,7 +287,7 @@ def parse_m3u(file_path: str, provider: str, ingest_time: str | None = None) -> 
 
                 if current is not None and not line.startswith("#"):
                     current["stream_url"] = line
-                    final = _classify(current.copy())
+                    final = _classify(current.copy(), force_vod=force_vod)
                     final["entry_id"] = _make_entry_id(final)
                     final["metadata_json"] = _build_metadata_json(final)
                     log.increment("entries_completed")
