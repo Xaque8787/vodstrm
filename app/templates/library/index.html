@@ -625,7 +625,11 @@ async function api(url, method='GET', body=null) {
     opts.body = new URLSearchParams(body).toString();
   }
   const res = await fetch(url, opts);
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+  }
+  return data;
 }
 
 // ── Render helpers ────────────────────────────────────────────────────────────
@@ -711,12 +715,16 @@ function renderCard(e, idx) {
   } else {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
-    const dlBadge = e.download_completed ? `<span class="badge badge-downloaded">Downloaded</span>` : '';
+    const dlBadge = e.download_completed ? `<span class="badge badge-downloaded">Downloaded</span>` : (e.download_pending ? `<span class="badge badge-downloaded" style="background:#fff3cd;color:#664d03;">Queued</span>` : '');
     const displayTitle = e.display_title || e.cleaned_title;
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
     const dlBtn = e.is_downloaded
-      ? `<button class="btn-action btn-download is-downloading" disabled>${e.download_completed ? 'Downloaded' : 'Downloading'}</button>`
-      : `<button class="btn-action btn-download" data-action="download-entry">Download</button>`;
+      ? `<button class="btn-action btn-download is-downloading" disabled>Downloading</button>`
+      : (e.download_completed
+        ? `<button class="btn-action btn-download" disabled>Downloaded</button>`
+        : (e.download_pending
+          ? `<button class="btn-action btn-download" data-action="download-entry" title="Re-queue download">Queued</button>`
+          : `<button class="btn-action btn-download" data-action="download-entry">Download</button>`));
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}">
         ${artEl(e.cover_art, displayTitle, e.type)}
@@ -1105,7 +1113,8 @@ document.addEventListener('click', async function(e) {
       btn.disabled = true;
       try {
         await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/download`, 'POST');
-      } catch (e) { /* ignore */ }
+        btn.textContent = 'Queued';
+      } catch (e) { alert('Download failed: ' + (e.message || e)); }
       btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
@@ -1119,7 +1128,8 @@ document.addEventListener('click', async function(e) {
       btn.disabled = true;
       try {
         await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
-      } catch (e) { /* ignore */ }
+        btn.textContent = 'Queued';
+      } catch (e) { alert('Download failed: ' + (e.message || e)); }
       refreshAfterTvVodAction();
     }
     return;
@@ -1154,7 +1164,8 @@ document.addEventListener('click', async function(e) {
       btn.disabled = true;
       try {
         await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/download`, 'POST');
-      } catch (e) { /* ignore */ }
+        btn.textContent = 'Queued';
+      } catch (e) { alert('Download failed: ' + (e.message || e)); }
       btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
@@ -1168,7 +1179,8 @@ document.addEventListener('click', async function(e) {
       btn.disabled = true;
       try {
         await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
-      } catch (e) { /* ignore */ }
+        btn.textContent = 'Queued';
+      } catch (e) { alert('Download failed: ' + (e.message || e)); }
       refreshAfterAction();
     }
     return;
@@ -1198,7 +1210,8 @@ document.addEventListener('click', async function(e) {
     btn.disabled = true;
     try {
       await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
-    } catch (e) { /* ignore */ }
+      btn.textContent = 'Queued';
+    } catch (e) { alert('Download failed: ' + (e.message || e)); }
     refreshAfterAction();
   } else if (action === 'download-series' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
@@ -1206,7 +1219,8 @@ document.addEventListener('click', async function(e) {
     btn.disabled = true;
     try {
       await api(`/library/series/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
-    } catch (e) { /* ignore */ }
+      btn.textContent = 'Queued';
+    } catch (e) { alert('Download failed: ' + (e.message || e)); }
     btn.disabled = false;
   } else if (action === 'download-tv-vod' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
@@ -1214,7 +1228,8 @@ document.addEventListener('click', async function(e) {
     btn.disabled = true;
     try {
       await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
-    } catch (e) { /* ignore */ }
+      btn.textContent = 'Queued';
+    } catch (e) { alert('Download failed: ' + (e.message || e)); }
     btn.disabled = false;
   } else if (action === 'add-series' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];

@@ -99,6 +99,9 @@ def _ffmpeg_download(url: str, dest_path: str, timeout: int = 3600) -> bool:
     cmd = [
         "ffmpeg", "-y",
         "-err_detect", "ignore_err",
+        "-reconnect", "1",
+        "-reconnect_streamed", "1",
+        "-reconnect_delay_max", "5",
         "-i", url,
         "-c", "copy",
         dest_path,
@@ -108,7 +111,7 @@ def _ffmpeg_download(url: str, dest_path: str, timeout: int = 3600) -> bool:
             cmd, capture_output=True, text=True, timeout=timeout,
         )
         if result.returncode != 0:
-            logger.warning("[DOWNLOADS] ffmpeg failed: %s", result.stderr[:300])
+            logger.warning("[DOWNLOADS] ffmpeg failed (exit %d): %s", result.returncode, result.stderr[-800:])
             return False
         return os.path.exists(dest_path) and os.path.getsize(dest_path) > 0
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
@@ -325,12 +328,17 @@ def process_downloads(force: bool = False) -> None:
 def _kick_processor() -> None:
     """Launch process_downloads in a background thread (fire-and-forget).
 
-    The _active_count guard inside process_downloads prevents duplicate runs,
-    so calling this after every queue_download is safe. Respects the
-    integration's enabled setting — if disabled, the processor will no-op.
+    A short delay gives the caller's transaction time to commit before the
+    processor tries to read pending rows. The _active_count guard inside
+    process_downloads prevents duplicate runs, so calling this after every
+    queue_download is safe. Respects the integration's enabled setting.
     """
     import threading
-    threading.Thread(target=process_downloads, daemon=True).start()
+    def _run():
+        import time
+        time.sleep(0.5)
+        process_downloads()
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def queue_download(entry_id: str, conn=None) -> bool:

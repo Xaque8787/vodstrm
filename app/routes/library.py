@@ -421,8 +421,9 @@ def _format_individual(r) -> dict:
         "can_add": (r["can_add_count"] or 0) > 0,
         "is_series_group": False,
         "download_status": dl_status,
-        "is_downloaded": dl_status in ("pending", "probing", "downloading", "completed"),
+        "is_downloaded": dl_status in ("probing", "downloading"),
         "download_completed": dl_status == "completed",
+        "download_pending": dl_status in ("pending", "failed"),
     }
 
 
