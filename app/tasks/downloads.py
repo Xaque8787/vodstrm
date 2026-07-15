@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import threading
 
-from app.database import get_db
+from app.database import get_connection, get_db
 from app.tasks.base import task
 from app.utils.env import local_now_iso, resolve_path
 
@@ -185,7 +185,7 @@ def _process_one(conn, row, settings) -> bool:
         return False
 
     # Transition to downloading
-    staging = os.path.join(_staging_dir(), f"{entry_id}.part")
+    staging = os.path.join(_staging_dir(), f"{entry_id}.{container}")
     conn.execute(
         "UPDATE downloads SET status='downloading', probe_data=?, "
         "staging_path=?, downloading_at=?, updated_at=? WHERE entry_id=?",
