@@ -712,6 +712,107 @@
 
     </div><!-- /card-body -->
   </div><!-- /card -->
+
+  <!-- ── Downloads Card ── -->
+  <div class="integration-card">
+    <div class="integration-card-header">
+      <span class="integration-card-title">Media Downloads</span>
+      {% if dl_enabled %}
+        <span class="integration-badge badge-enabled">Enabled</span>
+      {% else %}
+        <span class="integration-badge badge-disabled">Disabled</span>
+      {% endif %}
+    </div>
+
+    <div class="integration-card-body">
+      <div>
+        <div class="section-label">Configuration</div>
+        <form class="settings-form" method="post" action="/integrations/downloads/settings">
+
+          <div class="form-row">
+            <label class="form-label" for="dl-enabled">Enable</label>
+            <div class="toggle-row">
+              <label class="toggle-wrap">
+                <input type="checkbox" id="dl-enabled" name="enabled" value="1"
+                  {% if dl_enabled %}checked{% endif %}>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+              <span class="toggle-label-text" id="dl-toggle-label">
+                {% if dl_enabled %}Enabled{% else %}Disabled{% endif %}
+              </span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="dl-concurrent">Max Concurrent</label>
+            <input class="form-input" type="number" id="dl-concurrent" name="max_concurrent"
+              value="{{ dl_max_concurrent }}" min="1" max="10" style="max-width: 80px;">
+            <span class="form-hint">Simultaneous downloads (1–10).</span>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="dl-container">Container</label>
+            <select class="form-input" id="dl-container" name="default_container" style="max-width: 120px;">
+              <option value="mkv" {% if dl_default_container == 'mkv' %}selected{% endif %}>mkv</option>
+              <option value="mp4" {% if dl_default_container == 'mp4' %}selected{% endif %}>mp4</option>
+              <option value="ts"  {% if dl_default_container == 'ts'  %}selected{% endif %}>ts</option>
+            </select>
+            <span class="form-hint">Output file format for downloaded media.</span>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="dl-retention">Retention (days)</label>
+            <input class="form-input" type="number" id="dl-retention" name="retention_days"
+              value="{{ dl_retention_days }}" min="1" style="max-width: 80px;">
+            <span class="form-hint">Failed download rows are retained this long.</span>
+          </div>
+
+          <div style="padding-top: 4px;">
+            <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
+          </div>
+        </form>
+      </div>
+
+      <div>
+        <div class="section-label">Status</div>
+        <div class="status-section">
+          <div class="status-grid">
+            <div class="stat-box">
+              <span class="stat-label">Pending</span>
+              <span class="stat-value">{{ dl_counts.pending }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Downloading</span>
+              <span class="stat-value">{{ dl_counts.probing + dl_counts.downloading }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Completed</span>
+              <span class="stat-value">{{ dl_counts.completed }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Failed</span>
+              <span class="stat-value" style="color: {% if dl_counts.failed %}var(--color-danger){% endif %};">{{ dl_counts.failed }}</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">Total</span>
+              <span class="stat-value muted">{{ dl_counts.total }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-label">Actions</div>
+        <div class="actions-row">
+          <button class="btn btn-primary" onclick="triggerDownloads()" {% if not dl_enabled %}disabled{% endif %}>
+            <span class="btn-spinner" id="dl-run-spinner"></span>
+            Process Now
+          </button>
+          <a href="/library/downloads" class="btn btn-secondary">View Downloads</a>
+        </div>
+      </div>
+    </div><!-- /card-body -->
+  </div><!-- /card -->
 </div>
 
 <!-- Confirm clear modal -->
@@ -882,6 +983,21 @@
     } catch {
       alert("Request failed \u2014 please try again.");
       setRunning(false);
+    }
+  }
+
+  async function triggerDownloads() {
+    const btn = event.target.closest("button");
+    if (btn) btn.disabled = true;
+    try {
+      await fetch("/integrations/downloads/trigger", { method: "POST" });
+      if (btn) {
+        btn.textContent = "Processing…";
+        setTimeout(() => { btn.disabled = false; btn.textContent = "Process Now"; }, 3000);
+      }
+    } catch {
+      alert("Request failed.");
+      if (btn) { btn.disabled = false; btn.textContent = "Process Now"; }
     }
   }
 

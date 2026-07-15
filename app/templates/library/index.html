@@ -165,12 +165,14 @@
 
   .card-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     margin-top: 6px;
   }
 
   .btn-action {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
     padding: 4px 6px;
     font-size: 0.72rem;
     font-weight: 600;
@@ -181,7 +183,11 @@
     text-align: center;
     transition: background 0.12s, border-color 0.12s, opacity 0.12s;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+  .btn-download { flex: 0 0 auto; }
+  .btn-follow, .btn-unfollow { flex: 0 0 auto; }
   .btn-action:disabled { opacity: 0.35; cursor: not-allowed; }
   .btn-add { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
   .btn-add:hover:not(:disabled) { background: var(--color-primary-hover); }
@@ -192,6 +198,10 @@
   .btn-follow.is-following { background: var(--color-secondary); color: #fff; }
   .btn-unfollow { background: transparent; border-color: var(--color-danger); color: var(--color-danger); font-size: 0.68rem; }
   .btn-unfollow:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
+  .btn-download { background: transparent; border-color: #198754; color: #198754; }
+  .btn-download:hover:not(:disabled) { background: #198754; color: #fff; }
+  .btn-download.is-downloading { background: #198754; color: #fff; opacity: 0.7; }
+  .badge-downloaded { background: #d1e7dd; color: #0a3622; }
 
   /* ── Expand panel (series drill-down) ── */
   .expand-panel {
@@ -513,6 +523,17 @@
     <div class="modal-body" id="modal-body">
       Following a series will automatically add all current and future episodes
       from this series to your library whenever new content is ingested.
+      <div class="follow-mode-selector" style="margin-top:16px;">
+        <label style="display:block;font-weight:600;font-size:0.85rem;margin-bottom:8px;">Follow Mode</label>
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;">
+          <input type="radio" name="follow-mode" value="strm" checked>
+          <span><strong>STRM</strong> &mdash; Generate .strm files pointing to the remote stream</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" id="follow-mode-download-label">
+          <input type="radio" name="follow-mode" value="download">
+          <span><strong>Download</strong> &mdash; Download media files locally via ffmpeg</span>
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeFollowModal()">Cancel</button>
@@ -531,6 +552,17 @@
     <div class="modal-body" id="tv-vod-modal-body">
       Following this show will automatically add all current and future episodes
       to your library whenever new content is ingested.
+      <div class="follow-mode-selector" style="margin-top:16px;">
+        <label style="display:block;font-weight:600;font-size:0.85rem;margin-bottom:8px;">Follow Mode</label>
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;">
+          <input type="radio" name="tv-vod-follow-mode" value="strm" checked>
+          <span><strong>STRM</strong> &mdash; Generate .strm files pointing to the remote stream</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" id="tv-vod-follow-mode-download-label">
+          <input type="radio" name="tv-vod-follow-mode" value="download">
+          <span><strong>Download</strong> &mdash; Download media files locally via ffmpeg</span>
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeTvVodFollowModal()">Cancel</button>
@@ -542,6 +574,28 @@
 
 {% block scripts %}
 <script>
+  const dlEnabled = {{ dl_enabled | tojson }};
+  if (!dlEnabled) {
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('input[value="download"]').forEach(function(r) {
+        r.disabled = true;
+        const label = r.closest('label');
+        if (label) { label.style.opacity = '0.4'; label.style.cursor = 'not-allowed'; }
+      });
+      document.querySelectorAll('.btn-download').forEach(function(b) {
+        b.disabled = true;
+        b.title = 'Downloads integration is disabled. Enable it on the Integrations page.';
+        b.style.opacity = '0.35';
+        b.style.cursor = 'not-allowed';
+      });
+      document.querySelectorAll('.ep-btn-download').forEach(function(b) {
+        b.disabled = true;
+        b.title = 'Downloads integration is disabled. Enable it on the Integrations page.';
+        b.style.opacity = '0.35';
+        b.style.cursor = 'not-allowed';
+      });
+    });
+  }
 const PER_PAGE = 48;
 let state = { page: 1, type: '', search: '', owned: '', total: 0 };
 let debounceTimer = null;
@@ -571,7 +625,11 @@ async function api(url, method='GET', body=null) {
     opts.body = new URLSearchParams(body).toString();
   }
   const res = await fetch(url, opts);
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+  }
+  return data;
 }
 
 // ── Render helpers ────────────────────────────────────────────────────────────
@@ -617,7 +675,8 @@ function renderCard(e, idx) {
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-series" ${!e.can_add ? 'disabled' : ''}>Add All</button>
-            <button class="btn-action btn-remove" data-action="remove-series" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-remove" data-action="remove-series" ${!e.is_owned && !e.download_completed ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-download" data-action="download-series">Download</button>
             ${followBtn}
           </div>
         </div>
@@ -647,7 +706,8 @@ function renderCard(e, idx) {
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-tv-vod" ${!e.can_add ? 'disabled' : ''}>Add All</button>
-            <button class="btn-action btn-remove" data-action="remove-tv-vod" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-remove" data-action="remove-tv-vod" ${!e.is_owned && !e.download_completed ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-download" data-action="download-tv-vod">Download</button>
             ${followBtn}
           </div>
         </div>
@@ -655,8 +715,16 @@ function renderCard(e, idx) {
   } else {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
+    const dlBadge = e.download_completed ? `<span class="badge badge-downloaded">Downloaded</span>` : (e.download_pending ? `<span class="badge badge-downloaded" style="background:#fff3cd;color:#664d03;">Queued</span>` : '');
     const displayTitle = e.display_title || e.cleaned_title;
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
+    const dlBtn = e.is_downloaded
+      ? `<button class="btn-action btn-download is-downloading" disabled>Downloading</button>`
+      : (e.download_completed
+        ? `<button class="btn-action btn-download" disabled>Downloaded</button>`
+        : (e.download_pending
+          ? `<button class="btn-action btn-download" data-action="download-entry" title="Re-queue download">Queued</button>`
+          : `<button class="btn-action btn-download" data-action="download-entry">Download</button>`));
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}">
         ${artEl(e.cover_art, displayTitle, e.type)}
@@ -666,10 +734,12 @@ function renderCard(e, idx) {
           <div class="card-badges">
             <span class="${typeBadgeClass(e.type)}">${esc(e.type)}</span>
             ${ownedBadge}
+            ${dlBadge}
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-entry" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}>Add</button>
-            <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned && !e.download_completed ? 'disabled' : ''}>Remove</button>
+            ${dlBtn}
           </div>
         </div>
       </div>`;
@@ -812,7 +882,9 @@ function renderSeasons(data, title) {
             <button class="btn-action btn-add" style="padding:3px 8px;font-size:0.72rem;"
               data-action="add-season" data-season="${seasonNum}" ${!s.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
-              data-action="remove-season" data-season="${seasonNum}" ${!s.is_owned ? 'disabled' : ''}>Remove</button>
+              data-action="remove-season" data-season="${seasonNum}" ${!s.is_owned && !s.download_completed ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-download" style="padding:3px 8px;font-size:0.72rem;"
+              data-action="download-season" data-season="${seasonNum}">Download</button>
             ${followBtn}
           </div>
         </div>
@@ -852,7 +924,8 @@ async function toggleEpisodes(season, seriesTitle) {
           <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
             ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
           <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
-            ${!ep.is_owned ? 'disabled' : ''}>Remove</button>
+            ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
+          <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
         </div>
       </div>`;
     }).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
@@ -934,7 +1007,9 @@ function renderTvVodYears(data, title) {
             <button class="btn-action btn-add" style="padding:3px 8px;font-size:0.72rem;"
               data-action="add-tv-vod-year" data-year="${yr}" ${!y.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
-              data-action="remove-tv-vod-year" data-year="${yr}" ${!y.is_owned ? 'disabled' : ''}>Remove</button>
+              data-action="remove-tv-vod-year" data-year="${yr}" ${!y.is_owned && !y.download_completed ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-download" style="padding:3px 8px;font-size:0.72rem;"
+              data-action="download-tv-vod-year" data-year="${yr}">Download</button>
             ${followBtn}
           </div>
         </div>
@@ -973,7 +1048,8 @@ async function toggleTvVodEpisodes(year, title) {
           <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
             ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
           <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
-            ${!ep.is_owned ? 'disabled' : ''}>Remove</button>
+            ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
+          <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
         </div>
       </div>`;
     }).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
@@ -1033,6 +1109,13 @@ document.addEventListener('click', async function(e) {
       btn.disabled = true;
       await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/unfollow`, 'POST');
       refreshAfterTvVodAction();
+    } else if (action === 'download-tv-vod-year' && title && year) {
+      btn.disabled = true;
+      try {
+        await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/download`, 'POST');
+        btn.textContent = 'Queued';
+      } catch (e) { alert('Download failed: ' + (e.message || e)); }
+      btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
       await api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST');
@@ -1040,6 +1123,13 @@ document.addEventListener('click', async function(e) {
     } else if (action === 'remove-entry' && entryId) {
       btn.disabled = true;
       await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
+      refreshAfterTvVodAction();
+    } else if (action === 'download-entry' && entryId) {
+      btn.disabled = true;
+      try {
+        await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
+        btn.textContent = 'Queued';
+      } catch (e) { alert('Download failed: ' + (e.message || e)); }
       refreshAfterTvVodAction();
     }
     return;
@@ -1070,6 +1160,13 @@ document.addEventListener('click', async function(e) {
       btn.disabled = true;
       await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/unfollow`, 'POST');
       refreshAfterAction();
+    } else if (action === 'download-season' && seriesTitle && seasonNum !== null) {
+      btn.disabled = true;
+      try {
+        await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/download`, 'POST');
+        btn.textContent = 'Queued';
+      } catch (e) { alert('Download failed: ' + (e.message || e)); }
+      btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
       await api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST');
@@ -1077,6 +1174,13 @@ document.addEventListener('click', async function(e) {
     } else if (action === 'remove-entry' && entryId) {
       btn.disabled = true;
       await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
+      refreshAfterAction();
+    } else if (action === 'download-entry' && entryId) {
+      btn.disabled = true;
+      try {
+        await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
+        btn.textContent = 'Queued';
+      } catch (e) { alert('Download failed: ' + (e.message || e)); }
       refreshAfterAction();
     }
     return;
@@ -1099,6 +1203,34 @@ document.addEventListener('click', async function(e) {
     btn.disabled = true;
     await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
     refreshAfterAction();
+  } else if (action === 'download-entry') {
+    const cardEl = btn.closest('[data-entry-id]');
+    const entryId = cardEl ? cardEl.dataset.entryId : (btn.dataset.entryId || null);
+    if (!entryId) return;
+    btn.disabled = true;
+    try {
+      await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
+      btn.textContent = 'Queued';
+    } catch (e) { alert('Download failed: ' + (e.message || e)); }
+    refreshAfterAction();
+  } else if (action === 'download-series' && card) {
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
+    btn.disabled = true;
+    try {
+      await api(`/library/series/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
+      btn.textContent = 'Queued';
+    } catch (e) { alert('Download failed: ' + (e.message || e)); }
+    btn.disabled = false;
+  } else if (action === 'download-tv-vod' && card) {
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
+    btn.disabled = true;
+    try {
+      await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
+      btn.textContent = 'Queued';
+    } catch (e) { alert('Download failed: ' + (e.message || e)); }
+    btn.disabled = false;
   } else if (action === 'add-series' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
     if (!d) return;
@@ -1185,8 +1317,12 @@ let followPendingTitle = null;
 function openFollowModal(title) {
   followPendingTitle = title;
   document.getElementById('modal-title').textContent = `Follow: ${title}`;
-  document.getElementById('modal-body').textContent =
-    `Following "${title}" will automatically add all current and future episodes to your library whenever new content is ingested.`;
+  const body = document.getElementById('modal-body');
+  const selector = body.querySelector('.follow-mode-selector');
+  body.innerHTML = `<p style="margin:0 0 12px;">Following "${esc(title)}" will automatically add all current and future episodes to your library whenever new content is ingested.</p>`;
+  if (selector) body.appendChild(selector);
+  const strmRadio = body.querySelector('input[value="strm"]');
+  if (strmRadio) strmRadio.checked = true;
   document.getElementById('follow-modal').classList.add('open');
 }
 
@@ -1198,12 +1334,19 @@ function closeFollowModal() {
 document.getElementById('modal-confirm-btn').addEventListener('click', async function() {
   if (!followPendingTitle) return;
   this.disabled = true;
-  await api('/library/follows', 'POST', {
-    entry_type: 'series',
-    entry_title: followPendingTitle,
-  });
-  closeFollowModal();
-  refreshAfterAction();
+  try {
+    const modeEl = document.querySelector('input[name="follow-mode"]:checked');
+    const mode = modeEl ? modeEl.value : 'strm';
+    await api('/library/follows', 'POST', {
+      entry_type: 'series',
+      entry_title: followPendingTitle,
+      mode: mode,
+    });
+    closeFollowModal();
+    refreshAfterAction();
+  } catch (e) {
+    alert('Failed to follow: ' + (e.message || e));
+  }
   this.disabled = false;
 });
 
@@ -1218,8 +1361,12 @@ let tvVodFollowPendingTitle = null;
 function openTvVodFollowModal(title) {
   tvVodFollowPendingTitle = title;
   document.getElementById('tv-vod-modal-title').textContent = `Follow: ${title}`;
-  document.getElementById('tv-vod-modal-body').textContent =
-    `Following "${title}" will automatically add all current and future episodes to your library whenever new content is ingested.`;
+  const body = document.getElementById('tv-vod-modal-body');
+  const selector = body.querySelector('.follow-mode-selector');
+  body.innerHTML = `<p style="margin:0 0 12px;">Following "${esc(title)}" will automatically add all current and future episodes to your library whenever new content is ingested.</p>`;
+  if (selector) body.appendChild(selector);
+  const strmRadio = body.querySelector('input[value="strm"]');
+  if (strmRadio) strmRadio.checked = true;
   document.getElementById('tv-vod-follow-modal').classList.add('open');
 }
 
@@ -1231,12 +1378,19 @@ function closeTvVodFollowModal() {
 document.getElementById('tv-vod-modal-confirm-btn').addEventListener('click', async function() {
   if (!tvVodFollowPendingTitle) return;
   this.disabled = true;
-  await api('/library/follows', 'POST', {
-    entry_type: 'tv_vod',
-    entry_title: tvVodFollowPendingTitle,
-  });
-  closeTvVodFollowModal();
-  refreshAfterAction();
+  try {
+    const modeEl = document.querySelector('input[name="tv-vod-follow-mode"]:checked');
+    const mode = modeEl ? modeEl.value : 'strm';
+    await api('/library/follows', 'POST', {
+      entry_type: 'tv_vod',
+      entry_title: tvVodFollowPendingTitle,
+      mode: mode,
+    });
+    closeTvVodFollowModal();
+    refreshAfterAction();
+  } catch (e) {
+    alert('Failed to follow: ' + (e.message || e));
+  }
   this.disabled = false;
 });
 

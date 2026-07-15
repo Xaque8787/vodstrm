@@ -63,6 +63,18 @@ def _delete_strm_file(path: str) -> None:
         logger.warning("[SYNC] Failed to delete strm file %s: %s", path, exc)
 
 
+def _safe_remove(path: str) -> None:
+    """Remove a file if it exists, ignoring errors. Cleans empty parent dirs."""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            parent = os.path.dirname(os.path.abspath(path))
+            if parent and os.path.isdir(parent) and not os.listdir(parent):
+                os.rmdir(parent)
+    except OSError as exc:
+        logger.warning("[SYNC] Failed to remove %s: %s", path, exc)
+
+
 # ---------------------------------------------------------------------------
 # UPSERT HELPERS
 # ---------------------------------------------------------------------------
@@ -329,12 +341,48 @@ def cleanup_stale_streams(conn: sqlite3.Connection, provider: str, current_batch
 
 def cleanup_orphan_entries(conn: sqlite3.Connection) -> int:
     """
-    Delete entries that have no streams remaining.
-    Happens when all providers have dropped a piece of content.
+    Delete entries that have no streams remaining — unless they have an active
+    or completed download. An entry with a local media file is not an orphan,
+    even if all providers have dropped the content.
+
+    For entries that ARE deleted, any associated failed/cancelled download rows
+    and their staging files are cleaned up first.
     Returns the number of rows deleted.
     """
+    # Clean up staging/local files for entries that will be deleted
+    doomed = conn.execute(
+        """
+        SELECT e.entry_id FROM entries e
+        WHERE e.entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)
+          AND e.entry_id NOT IN (
+              SELECT entry_id FROM downloads
+              WHERE status IN ('pending','probing','downloading','completed')
+          )
+        """,
+    ).fetchall()
+
+    for row in doomed:
+        eid = row["entry_id"]
+        dl = conn.execute(
+            "SELECT staging_path, local_path FROM downloads WHERE entry_id = ?",
+            (eid,),
+        ).fetchone()
+        if dl:
+            if dl["staging_path"] and os.path.exists(dl["staging_path"]):
+                _safe_remove(dl["staging_path"])
+            if dl["local_path"] and os.path.exists(dl["local_path"]):
+                _safe_remove(dl["local_path"])
+            conn.execute("DELETE FROM downloads WHERE entry_id = ?", (eid,))
+
     cursor = conn.execute(
-        "DELETE FROM entries WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)"
+        """
+        DELETE FROM entries
+        WHERE entry_id NOT IN (SELECT DISTINCT entry_id FROM streams)
+          AND entry_id NOT IN (
+              SELECT entry_id FROM downloads
+              WHERE status IN ('pending','probing','downloading','completed')
+          )
+        """
     )
     deleted = cursor.rowcount
     if deleted:
@@ -423,27 +471,57 @@ def purge_inactive_and_deleted_providers(conn: sqlite3.Connection) -> tuple[int,
 
 def apply_follow_rules(conn: sqlite3.Connection, provider_slug: str) -> int:
     """
-    Mark streams as imported=1 for any follow rule that matches content from provider_slug.
+    For each follow rule matching content from provider_slug:
+      - strm-mode follows: mark matching streams as imported=1
+      - download-mode follows: queue downloads for matching entries
 
     Rules are global — scoped only by entry_type/entry_title/season, not by which
-    provider they were originally created against. This ensures that a follow created
-    while only Provider A existed will also auto-import matching streams from Provider B
-    when Provider B is first ingested.
+    provider they were originally created against.
 
     Season NULL matches all seasons; an integer season matches only that exact season.
     For tv_vod, the season column stores the year as an integer.
 
     Only sets imported=1 (never clears — removal is a manual action).
-    Returns count of newly marked streams.
+    Returns count of streams marked + downloads queued.
     """
     rules = conn.execute(
-        "SELECT DISTINCT entry_type, entry_title, season FROM follows"
+        "SELECT DISTINCT entry_type, entry_title, season, mode FROM follows"
     ).fetchall()
     if not rules:
         return 0
 
     marked = 0
     for rule in rules:
+        mode = rule["mode"] or "strm"
+        if mode == "download":
+            # Queue downloads for matching entries
+            if rule["season"] is not None and rule["entry_type"] == "tv_vod":
+                entry_rows = conn.execute(
+                    """SELECT entry_id FROM entries
+                       WHERE type='tv_vod' AND substr(air_date,1,4)=?
+                         AND lower(cleaned_title)=lower(?)""",
+                    (str(rule["season"]), rule["entry_title"]),
+                ).fetchall()
+            elif rule["season"] is not None:
+                entry_rows = conn.execute(
+                    """SELECT entry_id FROM entries
+                       WHERE type=? AND season=? AND lower(cleaned_title)=lower(?)""",
+                    (rule["entry_type"], rule["season"], rule["entry_title"]),
+                ).fetchall()
+            else:
+                entry_rows = conn.execute(
+                    """SELECT entry_id FROM entries
+                       WHERE type=? AND lower(cleaned_title)=lower(?)""",
+                    (rule["entry_type"], rule["entry_title"]),
+                ).fetchall()
+
+            from app.tasks.downloads import queue_download
+            for er in entry_rows:
+                queue_download(er["entry_id"], conn=conn)
+                marked += 1
+            continue
+
+        # strm mode — mark imported=1
         if rule["season"] is not None and rule["entry_type"] == "tv_vod":
             conn.execute(
                 """

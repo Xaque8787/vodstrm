@@ -36,6 +36,9 @@ async def lifespan(app: FastAPI):
     from run_migrations import run_all_migrations
     run_all_migrations()
 
+    from app.tasks.downloads import reset_stuck_downloads
+    reset_stuck_downloads()
+
     from app.scheduler import start_scheduler
     start_scheduler()
     logger.info("Scheduler started")
