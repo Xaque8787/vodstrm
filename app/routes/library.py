@@ -1096,12 +1096,15 @@ async def list_follows(current_user: TokenData = Depends(get_current_user)):
 async def add_follow(
     entry_type: str = Form(...),
     entry_title: str = Form(...),
+    mode: str = Form("strm"),
     current_user: TokenData = Depends(get_current_user),
 ):
-    """Create a follow rule for an entire series and immediately import all existing episodes."""
+    """Create a follow rule for an entire series and immediately import or queue all existing episodes."""
     from app.tasks.strm import generate_strm
     if entry_type not in ("movie", "series", "tv_vod"):
         return JSONResponse({"ok": False, "error": "Invalid entry_type"}, status_code=400)
+    if mode not in ("strm", "download"):
+        mode = "strm"
 
     title = entry_title.strip()
     with get_db() as conn:
@@ -1120,17 +1123,30 @@ async def add_follow(
             ).fetchone()
             if not exists:
                 conn.execute(
-                    "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, ?, ?, NULL)",
-                    (p["id"], entry_type, title),
+                    "INSERT INTO follows (provider_id, entry_type, entry_title, season, mode) VALUES (?, ?, ?, NULL, ?)",
+                    (p["id"], entry_type, title, mode),
                 )
                 inserted += 1
 
-        # Immediately import all existing matching episodes
-        marked = _import_entries_for_title(conn, entry_type, title, season=None)
+        if mode == "download":
+            from app.tasks.downloads import queue_download
+            entry_ids = [
+                r["entry_id"] for r in conn.execute(
+                    "SELECT entry_id FROM entries WHERE type=? AND lower(cleaned_title)=lower(?)",
+                    (entry_type, title),
+                ).fetchall()
+            ]
+            marked = 0
+            for eid in entry_ids:
+                if queue_download(eid):
+                    marked += 1
+        else:
+            # Immediately import all existing matching episodes
+            marked = _import_entries_for_title(conn, entry_type, title, season=None)
 
     logger.info(
-        "[LIBRARY] Follow added type=%s title=%r providers=%d marked=%d by=%s",
-        entry_type, title, inserted, marked, current_user.username,
+        "[LIBRARY] Follow added type=%s title=%r mode=%s providers=%d marked=%d by=%s",
+        entry_type, title, mode, inserted, marked, current_user.username,
     )
     try:
         generate_strm()
@@ -1154,10 +1170,13 @@ async def delete_follow(
 async def follow_season(
     title: str,
     season: int,
+    mode: str = "strm",
     current_user: TokenData = Depends(get_current_user),
 ):
-    """Create a season-specific follow rule and immediately import all existing episodes."""
+    """Create a season-specific follow rule and immediately import or queue all existing episodes."""
     from app.tasks.strm import generate_strm
+    if mode not in ("strm", "download"):
+        mode = "strm"
     with get_db() as conn:
         providers = conn.execute(
             "SELECT id FROM providers WHERE strm_mode = 'import_selected' AND is_active = 1"
@@ -1174,14 +1193,27 @@ async def follow_season(
             ).fetchone()
             if not exists:
                 conn.execute(
-                    "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, 'series', ?, ?)",
-                    (p["id"], title, season),
+                    "INSERT INTO follows (provider_id, entry_type, entry_title, season, mode) VALUES (?, 'series', ?, ?, ?)",
+                    (p["id"], title, season, mode),
                 )
                 inserted += 1
 
-        marked = _import_entries_for_title(conn, "series", title, season=season)
+        if mode == "download":
+            from app.tasks.downloads import queue_download
+            entry_ids = [
+                r["entry_id"] for r in conn.execute(
+                    "SELECT entry_id FROM entries WHERE type='series' AND lower(cleaned_title)=lower(?) AND season=?",
+                    (title, season),
+                ).fetchall()
+            ]
+            marked = 0
+            for eid in entry_ids:
+                if queue_download(eid):
+                    marked += 1
+        else:
+            marked = _import_entries_for_title(conn, "series", title, season=season)
 
-    logger.info("[LIBRARY] Follow season title=%r S%02d inserted=%d marked=%d by=%s", title, season, inserted, marked, current_user.username)
+    logger.info("[LIBRARY] Follow season title=%r S%02d mode=%s inserted=%d marked=%d by=%s", title, season, mode, inserted, marked, current_user.username)
     try:
         generate_strm()
     except Exception as exc:
@@ -1283,10 +1315,13 @@ async def unfollow_tv_vod(
 async def follow_tv_vod_year(
     title: str,
     year: str,
+    mode: str = "strm",
     current_user: TokenData = Depends(get_current_user),
 ):
-    """Create a year-specific follow rule for a tv_vod show and import all existing episodes in that year."""
+    """Create a year-specific follow rule for a tv_vod show and import or queue all existing episodes in that year."""
     from app.tasks.strm import generate_strm
+    if mode not in ("strm", "download"):
+        mode = "strm"
     # Store year as integer in the season column to reuse the schema
     try:
         year_int = int(year)
@@ -1308,36 +1343,43 @@ async def follow_tv_vod_year(
             ).fetchone()
             if not exists:
                 conn.execute(
-                    "INSERT INTO follows (provider_id, entry_type, entry_title, season) VALUES (?, 'tv_vod', ?, ?)",
-                    (p["id"], title, year_int),
+                    "INSERT INTO follows (provider_id, entry_type, entry_title, season, mode) VALUES (?, 'tv_vod', ?, ?, ?)",
+                    (p["id"], title, year_int, mode),
                 )
                 inserted += 1
 
-        # Import all existing episodes in this year
+        # Import or queue all existing episodes in this year
         entry_ids = [
             r["entry_id"] for r in conn.execute(
                 "SELECT entry_id FROM entries WHERE type='tv_vod' AND lower(cleaned_title)=lower(?) AND substr(air_date,1,4)=?",
                 (title, year),
             ).fetchall()
         ]
-        marked = 0
-        for eid in entry_ids:
-            stream = conn.execute(
-                """
-                SELECT s.stream_id FROM streams s
-                JOIN providers p ON p.slug = s.provider
-                WHERE s.entry_id = ?
-                  AND p.strm_mode = 'import_selected' AND p.is_active = 1
-                  AND s.exclude = 0 AND s.imported = 0
-                ORDER BY p.priority, p.slug LIMIT 1
-                """,
-                (eid,),
-            ).fetchone()
-            if stream:
-                conn.execute("UPDATE streams SET imported = 1 WHERE stream_id = ?", (stream["stream_id"],))
-                marked += 1
+        if mode == "download":
+            from app.tasks.downloads import queue_download
+            marked = 0
+            for eid in entry_ids:
+                if queue_download(eid):
+                    marked += 1
+        else:
+            marked = 0
+            for eid in entry_ids:
+                stream = conn.execute(
+                    """
+                    SELECT s.stream_id FROM streams s
+                    JOIN providers p ON p.slug = s.provider
+                    WHERE s.entry_id = ?
+                      AND p.strm_mode = 'import_selected' AND p.is_active = 1
+                      AND s.exclude = 0 AND s.imported = 0
+                    ORDER BY p.priority, p.slug LIMIT 1
+                    """,
+                    (eid,),
+                ).fetchone()
+                if stream:
+                    conn.execute("UPDATE streams SET imported = 1 WHERE stream_id = ?", (stream["stream_id"],))
+                    marked += 1
 
-    logger.info("[LIBRARY] Follow tv_vod year title=%r year=%s inserted=%d marked=%d by=%s", title, year, inserted, marked, current_user.username)
+    logger.info("[LIBRARY] Follow tv_vod year title=%r year=%s mode=%s inserted=%d marked=%d by=%s", title, year, mode, inserted, marked, current_user.username)
     try:
         generate_strm()
     except Exception as exc:
@@ -1398,6 +1440,90 @@ async def cancel_entry_download(
     except Exception as exc:
         logger.error("[LIBRARY] generate_strm after cancel failed: %s", exc, exc_info=True)
     return JSONResponse({"ok": True})
+
+
+def _queue_downloads_for_entries(conn, entry_ids: list[str]) -> int:
+    """Queue downloads for multiple entry_ids. Returns count of newly queued."""
+    from app.tasks.downloads import queue_download
+    queued = 0
+    for eid in entry_ids:
+        if queue_download(eid):
+            queued += 1
+    return queued
+
+
+@router.post("/series/{title}/download", response_class=JSONResponse)
+async def download_series(
+    title: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Queue downloads for all episodes of a series."""
+    with get_db() as conn:
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='series' AND lower(cleaned_title)=lower(?)",
+                (title,),
+            ).fetchall()
+        ]
+    queued = _queue_downloads_for_entries(None, entry_ids)
+    logger.info("[LIBRARY] Download series title=%r queued=%d by=%s", title, queued, current_user.username)
+    return JSONResponse({"ok": True, "queued": queued})
+
+
+@router.post("/series/{title}/seasons/{season}/download", response_class=JSONResponse)
+async def download_season(
+    title: str,
+    season: int,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Queue downloads for all episodes in a specific season."""
+    with get_db() as conn:
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='series' AND lower(cleaned_title)=lower(?) AND season=?",
+                (title, season),
+            ).fetchall()
+        ]
+    queued = _queue_downloads_for_entries(None, entry_ids)
+    logger.info("[LIBRARY] Download season title=%r S%02d queued=%d by=%s", title, season, queued, current_user.username)
+    return JSONResponse({"ok": True, "queued": queued})
+
+
+@router.post("/tv_vod/{title}/download", response_class=JSONResponse)
+async def download_tv_vod(
+    title: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Queue downloads for all episodes of a tv_vod show."""
+    with get_db() as conn:
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='tv_vod' AND lower(cleaned_title)=lower(?)",
+                (title,),
+            ).fetchall()
+        ]
+    queued = _queue_downloads_for_entries(None, entry_ids)
+    logger.info("[LIBRARY] Download tv_vod title=%r queued=%d by=%s", title, queued, current_user.username)
+    return JSONResponse({"ok": True, "queued": queued})
+
+
+@router.post("/tv_vod/{title}/years/{year}/download", response_class=JSONResponse)
+async def download_tv_vod_year(
+    title: str,
+    year: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Queue downloads for all episodes of a tv_vod show in a specific year."""
+    with get_db() as conn:
+        entry_ids = [
+            r["entry_id"] for r in conn.execute(
+                "SELECT entry_id FROM entries WHERE type='tv_vod' AND lower(cleaned_title)=lower(?) AND substr(air_date,1,4)=?",
+                (title, year),
+            ).fetchall()
+        ]
+    queued = _queue_downloads_for_entries(None, entry_ids)
+    logger.info("[LIBRARY] Download tv_vod year title=%r year=%s queued=%d by=%s", title, year, queued, current_user.username)
+    return JSONResponse({"ok": True, "queued": queued})
 
 
 @router.get("/downloads", response_class=HTMLResponse)

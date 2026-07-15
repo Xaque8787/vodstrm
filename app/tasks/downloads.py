@@ -233,8 +233,11 @@ def _process_one(conn, row, settings) -> bool:
 
 
 @task("process_downloads")
-def process_downloads() -> None:
-    """Wake up, claim pending download rows up to max_concurrent, process each."""
+def process_downloads(force: bool = False) -> None:
+    """Wake up, claim pending download rows up to max_concurrent, process each.
+
+    When force=True, skip the enabled check (manual trigger from the UI).
+    """
     global _active_count
 
     with _lock:
@@ -245,6 +248,18 @@ def process_downloads() -> None:
     with get_db() as conn:
         settings = _load_settings(conn)
         max_concurrent = settings["max_concurrent"]
+
+        if max_concurrent < 1:
+            logger.warning("[DOWNLOADS] max_concurrent is %d, skipping", max_concurrent)
+            return
+
+        if not force and not settings.get("enabled", False):
+            logger.debug("[DOWNLOADS] Integration is disabled, skipping")
+            return
+
+        # Ensure the staging directory exists
+        staging = _staging_dir()
+        os.makedirs(staging, exist_ok=True)
 
         # Claim pending rows (atomic-ish: mark as probing to prevent double-claim)
         pending = conn.execute(

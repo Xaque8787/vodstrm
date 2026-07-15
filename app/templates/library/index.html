@@ -517,6 +517,17 @@
     <div class="modal-body" id="modal-body">
       Following a series will automatically add all current and future episodes
       from this series to your library whenever new content is ingested.
+      <div class="follow-mode-selector" style="margin-top:16px;">
+        <label style="display:block;font-weight:600;font-size:0.85rem;margin-bottom:8px;">Follow Mode</label>
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;">
+          <input type="radio" name="follow-mode" value="strm" checked>
+          <span><strong>STRM</strong> &mdash; Generate .strm files pointing to the remote stream</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="radio" name="follow-mode" value="download">
+          <span><strong>Download</strong> &mdash; Download media files locally via ffmpeg</span>
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeFollowModal()">Cancel</button>
@@ -535,6 +546,17 @@
     <div class="modal-body" id="tv-vod-modal-body">
       Following this show will automatically add all current and future episodes
       to your library whenever new content is ingested.
+      <div class="follow-mode-selector" style="margin-top:16px;">
+        <label style="display:block;font-weight:600;font-size:0.85rem;margin-bottom:8px;">Follow Mode</label>
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;">
+          <input type="radio" name="tv-vod-follow-mode" value="strm" checked>
+          <span><strong>STRM</strong> &mdash; Generate .strm files pointing to the remote stream</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="radio" name="tv-vod-follow-mode" value="download">
+          <span><strong>Download</strong> &mdash; Download media files locally via ffmpeg</span>
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeTvVodFollowModal()">Cancel</button>
@@ -622,6 +644,7 @@ function renderCard(e, idx) {
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-series" ${!e.can_add ? 'disabled' : ''}>Add All</button>
             <button class="btn-action btn-remove" data-action="remove-series" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-download" data-action="download-series">Download</button>
             ${followBtn}
           </div>
         </div>
@@ -652,6 +675,7 @@ function renderCard(e, idx) {
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-tv-vod" ${!e.can_add ? 'disabled' : ''}>Add All</button>
             <button class="btn-action btn-remove" data-action="remove-tv-vod" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-download" data-action="download-tv-vod">Download</button>
             ${followBtn}
           </div>
         </div>
@@ -823,6 +847,8 @@ function renderSeasons(data, title) {
               data-action="add-season" data-season="${seasonNum}" ${!s.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
               data-action="remove-season" data-season="${seasonNum}" ${!s.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-download" style="padding:3px 8px;font-size:0.72rem;"
+              data-action="download-season" data-season="${seasonNum}">Download</button>
             ${followBtn}
           </div>
         </div>
@@ -863,6 +889,7 @@ async function toggleEpisodes(season, seriesTitle) {
             ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
           <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
             ${!ep.is_owned ? 'disabled' : ''}>Remove</button>
+          <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
         </div>
       </div>`;
     }).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
@@ -945,6 +972,8 @@ function renderTvVodYears(data, title) {
               data-action="add-tv-vod-year" data-year="${yr}" ${!y.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
               data-action="remove-tv-vod-year" data-year="${yr}" ${!y.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-download" style="padding:3px 8px;font-size:0.72rem;"
+              data-action="download-tv-vod-year" data-year="${yr}">Download</button>
             ${followBtn}
           </div>
         </div>
@@ -984,6 +1013,7 @@ async function toggleTvVodEpisodes(year, title) {
             ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
           <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
             ${!ep.is_owned ? 'disabled' : ''}>Remove</button>
+          <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
         </div>
       </div>`;
     }).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
@@ -1111,13 +1141,47 @@ document.addEventListener('click', async function(e) {
     refreshAfterAction();
   } else if (action === 'download-entry') {
     const cardEl = btn.closest('[data-entry-id]');
-    const entryId = cardEl ? cardEl.dataset.entryId : null;
+    const entryId = cardEl ? cardEl.dataset.entryId : (btn.dataset.entryId || null);
     if (!entryId) return;
     btn.disabled = true;
     try {
       await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
     } catch (e) { /* ignore */ }
     refreshAfterAction();
+  } else if (action === 'download-series' && card) {
+    const title = card.dataset.title;
+    if (!title) return;
+    btn.disabled = true;
+    try {
+      await api(`/library/series/${encodeURIComponent(title)}/download`, 'POST');
+    } catch (e) { /* ignore */ }
+    btn.disabled = false;
+  } else if (action === 'download-season') {
+    const title = card ? card.dataset.title : null;
+    const season = btn.dataset.season;
+    if (!title || !season) return;
+    btn.disabled = true;
+    try {
+      await api(`/library/series/${encodeURIComponent(title)}/seasons/${encodeURIComponent(season)}/download`, 'POST');
+    } catch (e) { /* ignore */ }
+    btn.disabled = false;
+  } else if (action === 'download-tv-vod' && card) {
+    const title = card.dataset.title;
+    if (!title) return;
+    btn.disabled = true;
+    try {
+      await api(`/library/tv_vod/${encodeURIComponent(title)}/download`, 'POST');
+    } catch (e) { /* ignore */ }
+    btn.disabled = false;
+  } else if (action === 'download-tv-vod-year') {
+    const title = card ? card.dataset.title : null;
+    const year = btn.dataset.year;
+    if (!title || !year) return;
+    btn.disabled = true;
+    try {
+      await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/download`, 'POST');
+    } catch (e) { /* ignore */ }
+    btn.disabled = false;
   } else if (action === 'add-series' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
     if (!d) return;
@@ -1217,9 +1281,12 @@ function closeFollowModal() {
 document.getElementById('modal-confirm-btn').addEventListener('click', async function() {
   if (!followPendingTitle) return;
   this.disabled = true;
+  const modeEl = document.querySelector('input[name="follow-mode"]:checked');
+  const mode = modeEl ? modeEl.value : 'strm';
   await api('/library/follows', 'POST', {
     entry_type: 'series',
     entry_title: followPendingTitle,
+    mode: mode,
   });
   closeFollowModal();
   refreshAfterAction();
@@ -1250,9 +1317,12 @@ function closeTvVodFollowModal() {
 document.getElementById('tv-vod-modal-confirm-btn').addEventListener('click', async function() {
   if (!tvVodFollowPendingTitle) return;
   this.disabled = true;
+  const modeEl = document.querySelector('input[name="tv-vod-follow-mode"]:checked');
+  const mode = modeEl ? modeEl.value : 'strm';
   await api('/library/follows', 'POST', {
     entry_type: 'tv_vod',
     entry_title: tvVodFollowPendingTitle,
+    mode: mode,
   });
   closeTvVodFollowModal();
   refreshAfterAction();

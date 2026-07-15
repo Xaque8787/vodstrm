@@ -289,7 +289,7 @@ async def save_downloads_settings(
 async def trigger_downloads(current_user: TokenData = Depends(get_current_user)):
     import threading
     from app.tasks.downloads import process_downloads
-    threading.Thread(target=process_downloads, daemon=True).start()
+    threading.Thread(target=lambda: process_downloads(force=True), daemon=True).start()
     logger.info("[INTEGRATIONS] Downloads manually triggered by %s", current_user.username)
     return JSONResponse({"ok": True})
 
