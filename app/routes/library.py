@@ -84,11 +84,15 @@ async def library_page(
     request: Request,
     current_user: TokenData = Depends(get_current_user),
 ):
+    from app.routes.integrations import _load_downloads_settings
+    with get_db() as conn:
+        dl_settings = _load_downloads_settings(conn)
     return templates.TemplateResponse(
         "library/index.html",
         {
             "request": request,
             "current_user": current_user,
+            "dl_enabled": dl_settings.get("enabled", True),
         },
     )
 

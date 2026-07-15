@@ -529,7 +529,7 @@
           <input type="radio" name="follow-mode" value="strm" checked>
           <span><strong>STRM</strong> &mdash; Generate .strm files pointing to the remote stream</span>
         </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" id="follow-mode-download-label">
           <input type="radio" name="follow-mode" value="download">
           <span><strong>Download</strong> &mdash; Download media files locally via ffmpeg</span>
         </label>
@@ -558,7 +558,7 @@
           <input type="radio" name="tv-vod-follow-mode" value="strm" checked>
           <span><strong>STRM</strong> &mdash; Generate .strm files pointing to the remote stream</span>
         </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" id="tv-vod-follow-mode-download-label">
           <input type="radio" name="tv-vod-follow-mode" value="download">
           <span><strong>Download</strong> &mdash; Download media files locally via ffmpeg</span>
         </label>
@@ -574,6 +574,28 @@
 
 {% block scripts %}
 <script>
+  const dlEnabled = {{ dl_enabled | tojson }};
+  if (!dlEnabled) {
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('input[value="download"]').forEach(function(r) {
+        r.disabled = true;
+        const label = r.closest('label');
+        if (label) { label.style.opacity = '0.4'; label.style.cursor = 'not-allowed'; }
+      });
+      document.querySelectorAll('.btn-download').forEach(function(b) {
+        b.disabled = true;
+        b.title = 'Downloads integration is disabled. Enable it on the Integrations page.';
+        b.style.opacity = '0.35';
+        b.style.cursor = 'not-allowed';
+      });
+      document.querySelectorAll('.ep-btn-download').forEach(function(b) {
+        b.disabled = true;
+        b.title = 'Downloads integration is disabled. Enable it on the Integrations page.';
+        b.style.opacity = '0.35';
+        b.style.cursor = 'not-allowed';
+      });
+    });
+  }
 const PER_PAGE = 48;
 let state = { page: 1, type: '', search: '', owned: '', total: 0 };
 let debounceTimer = null;

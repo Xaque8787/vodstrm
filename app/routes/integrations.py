@@ -78,7 +78,7 @@ def _page_ctx(conn, request, current_user):
         "enriched": counts["enriched"],
         "skipped": counts["skipped"],
         "last_run": dict(last_run) if last_run else None,
-        "dl_enabled": dl_cfg.get("enabled", False),
+        "dl_enabled": dl_cfg.get("enabled", True),
         "dl_max_concurrent": dl_cfg.get("max_concurrent", 2),
         "dl_default_container": dl_cfg.get("default_container", "mkv"),
         "dl_retention_days": dl_cfg.get("retention_days", 90),
@@ -93,11 +93,11 @@ def _load_downloads_settings(conn) -> dict:
         "SELECT settings FROM integrations WHERE slug = 'downloads'"
     ).fetchone()
     if not row:
-        return {"enabled": False, "max_concurrent": 2, "default_container": "mkv", "retention_days": 90}
+        return {"enabled": True, "max_concurrent": 2, "default_container": "mkv", "retention_days": 90}
     try:
         return json.loads(row["settings"] or "{}")
     except (ValueError, TypeError):
-        return {"enabled": False, "max_concurrent": 2, "default_container": "mkv", "retention_days": 90}
+        return {"enabled": True, "max_concurrent": 2, "default_container": "mkv", "retention_days": 90}
 
 
 def _save_downloads_settings(conn, settings: dict) -> None:

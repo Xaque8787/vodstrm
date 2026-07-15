@@ -31,6 +31,7 @@ _active_count = 0
 
 # Defaults; overridden by integrations settings at runtime
 _DEFAULTS = {
+    "enabled": True,
     "max_concurrent": 2,
     "default_container": "mkv",
     "retention_days": 90,
@@ -315,8 +316,23 @@ def process_downloads(force: bool = False) -> None:
         logger.error("[DOWNLOADS] generate_strm after processing failed: %s", exc, exc_info=True)
 
 
+def _kick_processor() -> None:
+    """Launch process_downloads in a background thread (fire-and-forget).
+
+    The _active_count guard inside process_downloads prevents duplicate runs,
+    so calling this after every queue_download is safe. Respects the
+    integration's enabled setting — if disabled, the processor will no-op.
+    """
+    import threading
+    threading.Thread(target=process_downloads, daemon=True).start()
+
+
 def queue_download(entry_id: str) -> bool:
-    """Insert a pending download row for an entry. Returns True if newly queued."""
+    """Insert a pending download row for an entry. Returns True if newly queued.
+
+    Automatically kicks the processor so the download starts without manual
+    intervention from the Integrations page.
+    """
     now = local_now_iso()
     with get_db() as conn:
         existing = conn.execute(
@@ -332,6 +348,7 @@ def queue_download(entry_id: str) -> bool:
                 )
                 conn.commit()
                 logger.info("[DOWNLOADS] Re-queued failed download — entry=%s", entry_id[:12])
+                _kick_processor()
                 return True
             return False
 
@@ -342,6 +359,7 @@ def queue_download(entry_id: str) -> bool:
         )
         conn.commit()
         logger.info("[DOWNLOADS] Queued new download — entry=%s", entry_id[:12])
+        _kick_processor()
         return True
 
 
