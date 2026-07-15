@@ -165,12 +165,14 @@
 
   .card-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     margin-top: 6px;
   }
 
   .btn-action {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
     padding: 4px 6px;
     font-size: 0.72rem;
     font-weight: 600;
@@ -181,7 +183,11 @@
     text-align: center;
     transition: background 0.12s, border-color 0.12s, opacity 0.12s;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+  .btn-download { flex: 0 0 auto; }
+  .btn-follow, .btn-unfollow { flex: 0 0 auto; }
   .btn-action:disabled { opacity: 0.35; cursor: not-allowed; }
   .btn-add { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
   .btn-add:hover:not(:disabled) { background: var(--color-primary-hover); }
@@ -192,7 +198,7 @@
   .btn-follow.is-following { background: var(--color-secondary); color: #fff; }
   .btn-unfollow { background: transparent; border-color: var(--color-danger); color: var(--color-danger); font-size: 0.68rem; }
   .btn-unfollow:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
-  .btn-download { background: transparent; border-color: #198754; color: #198754; font-size: 0.72rem; }
+  .btn-download { background: transparent; border-color: #198754; color: #198754; }
   .btn-download:hover:not(:disabled) { background: #198754; color: #fff; }
   .btn-download.is-downloading { background: #198754; color: #fff; opacity: 0.7; }
   .badge-downloaded { background: #d1e7dd; color: #0a3622; }
@@ -1073,6 +1079,12 @@ document.addEventListener('click', async function(e) {
       btn.disabled = true;
       await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/unfollow`, 'POST');
       refreshAfterTvVodAction();
+    } else if (action === 'download-tv-vod-year' && title && year) {
+      btn.disabled = true;
+      try {
+        await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/download`, 'POST');
+      } catch (e) { /* ignore */ }
+      btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
       await api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST');
@@ -1080,6 +1092,12 @@ document.addEventListener('click', async function(e) {
     } else if (action === 'remove-entry' && entryId) {
       btn.disabled = true;
       await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
+      refreshAfterTvVodAction();
+    } else if (action === 'download-entry' && entryId) {
+      btn.disabled = true;
+      try {
+        await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
+      } catch (e) { /* ignore */ }
       refreshAfterTvVodAction();
     }
     return;
@@ -1110,6 +1128,12 @@ document.addEventListener('click', async function(e) {
       btn.disabled = true;
       await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/unfollow`, 'POST');
       refreshAfterAction();
+    } else if (action === 'download-season' && seriesTitle && seasonNum !== null) {
+      btn.disabled = true;
+      try {
+        await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/download`, 'POST');
+      } catch (e) { /* ignore */ }
+      btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
       await api(`/library/entries/${encodeURIComponent(entryId)}/add`, 'POST');
@@ -1117,6 +1141,12 @@ document.addEventListener('click', async function(e) {
     } else if (action === 'remove-entry' && entryId) {
       btn.disabled = true;
       await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
+      refreshAfterAction();
+    } else if (action === 'download-entry' && entryId) {
+      btn.disabled = true;
+      try {
+        await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
+      } catch (e) { /* ignore */ }
       refreshAfterAction();
     }
     return;
@@ -1149,37 +1179,19 @@ document.addEventListener('click', async function(e) {
     } catch (e) { /* ignore */ }
     refreshAfterAction();
   } else if (action === 'download-series' && card) {
-    const title = card.dataset.title;
-    if (!title) return;
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
     btn.disabled = true;
     try {
-      await api(`/library/series/${encodeURIComponent(title)}/download`, 'POST');
-    } catch (e) { /* ignore */ }
-    btn.disabled = false;
-  } else if (action === 'download-season') {
-    const title = card ? card.dataset.title : null;
-    const season = btn.dataset.season;
-    if (!title || !season) return;
-    btn.disabled = true;
-    try {
-      await api(`/library/series/${encodeURIComponent(title)}/seasons/${encodeURIComponent(season)}/download`, 'POST');
+      await api(`/library/series/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
     } catch (e) { /* ignore */ }
     btn.disabled = false;
   } else if (action === 'download-tv-vod' && card) {
-    const title = card.dataset.title;
-    if (!title) return;
+    const d = cardData[parseInt(card.dataset.cardIdx)];
+    if (!d) return;
     btn.disabled = true;
     try {
-      await api(`/library/tv_vod/${encodeURIComponent(title)}/download`, 'POST');
-    } catch (e) { /* ignore */ }
-    btn.disabled = false;
-  } else if (action === 'download-tv-vod-year') {
-    const title = card ? card.dataset.title : null;
-    const year = btn.dataset.year;
-    if (!title || !year) return;
-    btn.disabled = true;
-    try {
-      await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/download`, 'POST');
+      await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
     } catch (e) { /* ignore */ }
     btn.disabled = false;
   } else if (action === 'add-series' && card) {
@@ -1268,8 +1280,12 @@ let followPendingTitle = null;
 function openFollowModal(title) {
   followPendingTitle = title;
   document.getElementById('modal-title').textContent = `Follow: ${title}`;
-  document.getElementById('modal-body').textContent =
-    `Following "${title}" will automatically add all current and future episodes to your library whenever new content is ingested.`;
+  const body = document.getElementById('modal-body');
+  const selector = body.querySelector('.follow-mode-selector');
+  body.innerHTML = `<p style="margin:0 0 12px;">Following "${esc(title)}" will automatically add all current and future episodes to your library whenever new content is ingested.</p>`;
+  if (selector) body.appendChild(selector);
+  const strmRadio = body.querySelector('input[value="strm"]');
+  if (strmRadio) strmRadio.checked = true;
   document.getElementById('follow-modal').classList.add('open');
 }
 
@@ -1304,8 +1320,12 @@ let tvVodFollowPendingTitle = null;
 function openTvVodFollowModal(title) {
   tvVodFollowPendingTitle = title;
   document.getElementById('tv-vod-modal-title').textContent = `Follow: ${title}`;
-  document.getElementById('tv-vod-modal-body').textContent =
-    `Following "${title}" will automatically add all current and future episodes to your library whenever new content is ingested.`;
+  const body = document.getElementById('tv-vod-modal-body');
+  const selector = body.querySelector('.follow-mode-selector');
+  body.innerHTML = `<p style="margin:0 0 12px;">Following "${esc(title)}" will automatically add all current and future episodes to your library whenever new content is ingested.</p>`;
+  if (selector) body.appendChild(selector);
+  const strmRadio = body.querySelector('input[value="strm"]');
+  if (strmRadio) strmRadio.checked = true;
   document.getElementById('tv-vod-follow-modal').classList.add('open');
 }
 

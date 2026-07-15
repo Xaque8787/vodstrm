@@ -110,7 +110,12 @@ def _ffmpeg_download(url: str, dest_path: str, timeout: int = 3600) -> bool:
 
 
 def _winning_stream(conn, entry_id: str) -> tuple[str, str, str] | None:
-    """Return (stream_url, provider_slug, filtered_title) for the highest-priority eligible stream."""
+    """Return (stream_url, provider_slug, filtered_title) for the highest-priority eligible stream.
+
+    Downloads use any active, non-excluded stream regardless of the provider's
+    strm_mode — the user explicitly requested a download, so the STRM import
+    gating does not apply.
+    """
     row = conn.execute(
         """
         SELECT s.stream_url, s.provider, s.filtered_title
@@ -120,8 +125,6 @@ def _winning_stream(conn, entry_id: str) -> tuple[str, str, str] | None:
           AND p.is_active = 1
           AND s.exclude = 0
           AND (s.include_only_active = 0 OR s.include_only = 1)
-          AND (p.strm_mode = 'generate_all'
-               OR (p.strm_mode = 'import_selected' AND s.imported = 1))
         ORDER BY p.priority, p.slug
         LIMIT 1
         """,
