@@ -1142,7 +1142,7 @@ async def add_follow(
             ]
             marked = 0
             for eid in entry_ids:
-                if queue_download(eid):
+                if queue_download(eid, conn=conn):
                     marked += 1
         else:
             # Immediately import all existing matching episodes
@@ -1212,7 +1212,7 @@ async def follow_season(
             ]
             marked = 0
             for eid in entry_ids:
-                if queue_download(eid):
+                if queue_download(eid, conn=conn):
                     marked += 1
         else:
             marked = _import_entries_for_title(conn, "series", title, season=season)
@@ -1363,7 +1363,7 @@ async def follow_tv_vod_year(
             from app.tasks.downloads import queue_download
             marked = 0
             for eid in entry_ids:
-                if queue_download(eid):
+                if queue_download(eid, conn=conn):
                     marked += 1
         else:
             marked = 0
@@ -1451,7 +1451,7 @@ def _queue_downloads_for_entries(conn, entry_ids: list[str]) -> int:
     from app.tasks.downloads import queue_download
     queued = 0
     for eid in entry_ids:
-        if queue_download(eid):
+        if queue_download(eid, conn=conn):
             queued += 1
     return queued
 

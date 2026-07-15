@@ -517,7 +517,7 @@ def apply_follow_rules(conn: sqlite3.Connection, provider_slug: str) -> int:
 
             from app.tasks.downloads import queue_download
             for er in entry_rows:
-                queue_download(er["entry_id"])
+                queue_download(er["entry_id"], conn=conn)
                 marked += 1
             continue
 

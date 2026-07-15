@@ -1319,15 +1319,19 @@ function closeFollowModal() {
 document.getElementById('modal-confirm-btn').addEventListener('click', async function() {
   if (!followPendingTitle) return;
   this.disabled = true;
-  const modeEl = document.querySelector('input[name="follow-mode"]:checked');
-  const mode = modeEl ? modeEl.value : 'strm';
-  await api('/library/follows', 'POST', {
-    entry_type: 'series',
-    entry_title: followPendingTitle,
-    mode: mode,
-  });
-  closeFollowModal();
-  refreshAfterAction();
+  try {
+    const modeEl = document.querySelector('input[name="follow-mode"]:checked');
+    const mode = modeEl ? modeEl.value : 'strm';
+    await api('/library/follows', 'POST', {
+      entry_type: 'series',
+      entry_title: followPendingTitle,
+      mode: mode,
+    });
+    closeFollowModal();
+    refreshAfterAction();
+  } catch (e) {
+    alert('Failed to follow: ' + (e.message || e));
+  }
   this.disabled = false;
 });
 
@@ -1359,15 +1363,19 @@ function closeTvVodFollowModal() {
 document.getElementById('tv-vod-modal-confirm-btn').addEventListener('click', async function() {
   if (!tvVodFollowPendingTitle) return;
   this.disabled = true;
-  const modeEl = document.querySelector('input[name="tv-vod-follow-mode"]:checked');
-  const mode = modeEl ? modeEl.value : 'strm';
-  await api('/library/follows', 'POST', {
-    entry_type: 'tv_vod',
-    entry_title: tvVodFollowPendingTitle,
-    mode: mode,
-  });
-  closeTvVodFollowModal();
-  refreshAfterAction();
+  try {
+    const modeEl = document.querySelector('input[name="tv-vod-follow-mode"]:checked');
+    const mode = modeEl ? modeEl.value : 'strm';
+    await api('/library/follows', 'POST', {
+      entry_type: 'tv_vod',
+      entry_title: tvVodFollowPendingTitle,
+      mode: mode,
+    });
+    closeTvVodFollowModal();
+    refreshAfterAction();
+  } catch (e) {
+    alert('Failed to follow: ' + (e.message || e));
+  }
   this.disabled = false;
 });
 

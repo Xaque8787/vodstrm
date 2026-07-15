@@ -90,11 +90,17 @@ def _ffprobe_stream(url: str, timeout: int = 30) -> dict | None:
 
 
 def _ffmpeg_download(url: str, dest_path: str, timeout: int = 3600) -> bool:
-    """Download via ffmpeg stream-copy remux. Returns True on success."""
+    """Download via ffmpeg stream-copy remux. Returns True on success.
+
+    No hardcoded bitstream filter — ffmpeg auto-detects the codec.
+    h264_mp4toannexb only works for H.264 and fails on HEVC/MPEG-2/AV1
+    streams common in IPTV.
+    """
     cmd = [
-        "ffmpeg", "-y", "-i", url,
+        "ffmpeg", "-y",
+        "-err_detect", "ignore_err",
+        "-i", url,
         "-c", "copy",
-        "-bsf:v", "h264_mp4toannexb",
         dest_path,
     ]
     try:
@@ -327,14 +333,19 @@ def _kick_processor() -> None:
     threading.Thread(target=process_downloads, daemon=True).start()
 
 
-def queue_download(entry_id: str) -> bool:
+def queue_download(entry_id: str, conn=None) -> bool:
     """Insert a pending download row for an entry. Returns True if newly queued.
 
     Automatically kicks the processor so the download starts without manual
-    intervention from the Integrations page.
+    intervention from the Integrations page. Pass an existing connection via
+    `conn` to avoid "database is locked" errors when called from within a
+    transaction.
     """
     now = local_now_iso()
-    with get_db() as conn:
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection()
+    try:
         existing = conn.execute(
             "SELECT status FROM downloads WHERE entry_id=?", (entry_id,)
         ).fetchone()
@@ -346,7 +357,8 @@ def queue_download(entry_id: str) -> bool:
                     "retry_count=0, queued_at=?, updated_at=? WHERE entry_id=?",
                     (now, now, entry_id),
                 )
-                conn.commit()
+                if owns_conn:
+                    conn.commit()
                 logger.info("[DOWNLOADS] Re-queued failed download — entry=%s", entry_id[:12])
                 _kick_processor()
                 return True
@@ -357,10 +369,14 @@ def queue_download(entry_id: str) -> bool:
             "VALUES (?, 'pending', ?, ?)",
             (entry_id, now, now),
         )
-        conn.commit()
+        if owns_conn:
+            conn.commit()
         logger.info("[DOWNLOADS] Queued new download — entry=%s", entry_id[:12])
         _kick_processor()
         return True
+    finally:
+        if owns_conn:
+            conn.close()
 
 
 def cancel_download(entry_id: str, delete_file: bool = False) -> bool:
