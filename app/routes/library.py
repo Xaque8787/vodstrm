@@ -329,7 +329,11 @@ def _series_group_query(extra_where: str) -> str:
             SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
                           AND s2.exclude = 0 AND s2.imported = 0
                           AND (s2.include_only_active = 0 OR s2.include_only = 1)
-                     THEN 1 ELSE 0 END) AS can_add_count
+                     THEN 1 ELSE 0 END) AS can_add_count,
+            (SELECT COUNT(*) FROM downloads _dl2
+             JOIN entries _e2 ON _e2.entry_id = _dl2.entry_id
+             WHERE _e2.type = 'series' AND lower(_e2.cleaned_title) = lower(e.cleaned_title)
+               AND _dl2.status = 'completed') AS download_completed_count
         FROM entries e
         LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
         LEFT JOIN providers _p2 ON _p2.slug = s2.provider
@@ -352,7 +356,11 @@ def _tv_vod_group_query(extra_where: str) -> str:
             SUM(CASE WHEN _p2.strm_mode = 'import_selected' AND _p2.is_active = 1
                           AND s2.exclude = 0 AND s2.imported = 0
                           AND (s2.include_only_active = 0 OR s2.include_only = 1)
-                     THEN 1 ELSE 0 END) AS can_add_count
+                     THEN 1 ELSE 0 END) AS can_add_count,
+            (SELECT COUNT(*) FROM downloads _dl2
+             JOIN entries _e2 ON _e2.entry_id = _dl2.entry_id
+             WHERE _e2.type = 'tv_vod' AND lower(_e2.cleaned_title) = lower(e.cleaned_title)
+               AND _dl2.status = 'completed') AS download_completed_count
         FROM entries e
         LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
         LEFT JOIN providers _p2 ON _p2.slug = s2.provider
@@ -383,6 +391,7 @@ def _format_series_group(r) -> dict:
         "is_owned": (r["owned_count"] or 0) > 0,
         "owned_count": r["owned_count"] or 0,
         "can_add": (r["can_add_count"] or 0) > 0,
+        "download_completed": (r["download_completed_count"] or 0) > 0,
         "is_series_group": True,
     }
 
@@ -399,6 +408,7 @@ def _format_tv_vod_group(r) -> dict:
         "is_owned": (r["owned_count"] or 0) > 0,
         "owned_count": r["owned_count"] or 0,
         "can_add": (r["can_add_count"] or 0) > 0,
+        "download_completed": (r["download_completed_count"] or 0) > 0,
         "is_tv_vod_group": True,
         "is_series_group": False,
     }
@@ -444,7 +454,12 @@ async def list_seasons(
                 SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
                               AND s.exclude = 0 AND s.imported = 0
                               AND (s.include_only_active = 0 OR s.include_only = 1)
-                         THEN 1 ELSE 0 END) AS can_add_count
+                         THEN 1 ELSE 0 END) AS can_add_count,
+                (SELECT COUNT(*) FROM downloads _dl
+                 JOIN entries _e ON _e.entry_id = _dl.entry_id
+                 WHERE _e.type = 'series' AND lower(_e.cleaned_title) = lower(e.cleaned_title)
+                   AND _e.season = e.season
+                   AND _dl.status = 'completed') AS download_completed_count
             FROM entries e
             LEFT JOIN streams s ON s.entry_id = e.entry_id
             LEFT JOIN providers p ON p.slug = s.provider
@@ -477,6 +492,7 @@ async def list_seasons(
             "owned_count": r["owned_count"] or 0,
             "is_owned": (r["owned_count"] or 0) > 0,
             "can_add": (r["can_add_count"] or 0) > 0,
+            "download_completed": (r["download_completed_count"] or 0) > 0,
             "is_following": followed_all or (snum in followed_seasons),
         })
 
@@ -518,7 +534,8 @@ async def list_episodes(
                    AND s2.filtered_title IS NOT NULL AND s2.filtered_title != ''
                  ORDER BY p2.priority, p2.slug
                  LIMIT 1
-                ) AS filtered_title
+                ) AS filtered_title,
+                (SELECT _dl.status FROM downloads _dl WHERE _dl.entry_id = e.entry_id) AS download_status
             FROM entries e
             WHERE e.type = 'series'
               AND lower(e.cleaned_title) = lower(?)
@@ -537,6 +554,7 @@ async def list_episodes(
         "owner_slug": r["owner_slug"],
         "stream_count": r["stream_count"],
         "can_add": (r["can_add_count"] or 0) > 0,
+        "download_completed": r["download_status"] == "completed",
     } for r in rows]
 
     return JSONResponse({"title": title, "season": season, "episodes": episodes})
@@ -559,7 +577,12 @@ async def list_tv_vod_years(
                 SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
                               AND s.exclude = 0 AND s.imported = 0
                               AND (s.include_only_active = 0 OR s.include_only = 1)
-                         THEN 1 ELSE 0 END) AS can_add_count
+                         THEN 1 ELSE 0 END) AS can_add_count,
+                (SELECT COUNT(*) FROM downloads _dl
+                 JOIN entries _e ON _e.entry_id = _dl.entry_id
+                 WHERE _e.type = 'tv_vod' AND lower(_e.cleaned_title) = lower(e.cleaned_title)
+                   AND substr(_e.air_date, 1, 4) = substr(e.air_date, 1, 4)
+                   AND _dl.status = 'completed') AS download_completed_count
             FROM entries e
             LEFT JOIN streams s ON s.entry_id = e.entry_id
             LEFT JOIN providers p ON p.slug = s.provider
@@ -588,6 +611,7 @@ async def list_tv_vod_years(
         "owned_count": r["owned_count"] or 0,
         "is_owned": (r["owned_count"] or 0) > 0,
         "can_add": (r["can_add_count"] or 0) > 0,
+        "download_completed": (r["download_completed_count"] or 0) > 0,
         "is_following": followed_all or (r["year"] in followed_years),
     } for r in rows]
 
@@ -615,7 +639,8 @@ async def list_tv_vod_episodes(
                    AND p2.strm_mode = 'import_selected' AND p2.is_active = 1
                    AND s2.exclude = 0 AND s2.imported = 0
                    AND (s2.include_only_active = 0 OR s2.include_only = 1)
-                ) AS can_add_count
+                ) AS can_add_count,
+                (SELECT _dl.status FROM downloads _dl WHERE _dl.entry_id = e.entry_id) AS download_status
             FROM entries e
             WHERE e.type = 'tv_vod'
               AND lower(e.cleaned_title) = lower(?)
@@ -633,6 +658,7 @@ async def list_tv_vod_episodes(
         "owner_slug": r["owner_slug"],
         "stream_count": r["stream_count"],
         "can_add": (r["can_add_count"] or 0) > 0,
+        "download_completed": r["download_status"] == "completed",
     } for r in rows]
 
     return JSONResponse({"title": title, "year": year, "episodes": episodes})
@@ -683,6 +709,7 @@ async def remove_tv_vod_year(
     current_user: TokenData = Depends(get_current_user),
 ):
     from app.tasks.strm import generate_strm
+    from app.tasks.downloads import cancel_download
     with get_db() as conn:
         entry_ids = [
             r["entry_id"] for r in conn.execute(
@@ -709,6 +736,8 @@ async def remove_tv_vod_year(
                 )
                 cleared += 1
         logger.info("[LIBRARY] Remove tv_vod title=%r year=%s cleared=%d by=%s", title, year, cleared, current_user.username)
+    for eid in entry_ids:
+        cancel_download(eid, delete_file=True)
     try:
         generate_strm()
     except Exception as exc:
@@ -759,6 +788,7 @@ async def remove_tv_vod_all(
     current_user: TokenData = Depends(get_current_user),
 ):
     from app.tasks.strm import generate_strm
+    from app.tasks.downloads import cancel_download
     with get_db() as conn:
         entry_ids = [
             r["entry_id"] for r in conn.execute(
@@ -785,6 +815,8 @@ async def remove_tv_vod_all(
                 )
                 cleared += 1
         logger.info("[LIBRARY] Remove tv_vod all title=%r cleared=%d by=%s", title, cleared, current_user.username)
+    for eid in entry_ids:
+        cancel_download(eid, delete_file=True)
     try:
         generate_strm()
     except Exception as exc:
@@ -847,6 +879,7 @@ async def remove_entry(
     current_user: TokenData = Depends(get_current_user),
 ):
     from app.tasks.strm import generate_strm
+    from app.tasks.downloads import cancel_download
     with get_db() as conn:
         etype = _entry_type(conn, entry_id)
         owned = conn.execute(
@@ -865,6 +898,7 @@ async def remove_entry(
                 (row["stream_id"],),
             )
         logger.info("[LIBRARY] Remove entry=%s cleared=%d by=%s", entry_id[:12], len(owned), current_user.username)
+    cancel_download(entry_id, delete_file=True)
     try:
         generate_strm()
     except Exception as exc:
@@ -922,6 +956,7 @@ async def remove_season(
     current_user: TokenData = Depends(get_current_user),
 ):
     from app.tasks.strm import generate_strm
+    from app.tasks.downloads import cancel_download
     with get_db() as conn:
         entry_ids = [
             r["entry_id"] for r in conn.execute(
@@ -948,6 +983,8 @@ async def remove_season(
                 )
                 cleared += 1
         logger.info("[LIBRARY] Remove season title=%r S%02d cleared=%d by=%s", title, season, cleared, current_user.username)
+    for eid in entry_ids:
+        cancel_download(eid, delete_file=True)
     try:
         generate_strm()
     except Exception as exc:
@@ -1002,6 +1039,7 @@ async def remove_series(
     current_user: TokenData = Depends(get_current_user),
 ):
     from app.tasks.strm import generate_strm
+    from app.tasks.downloads import cancel_download
     with get_db() as conn:
         entry_ids = [
             r["entry_id"] for r in conn.execute(
@@ -1028,6 +1066,8 @@ async def remove_series(
                 )
                 cleared += 1
         logger.info("[LIBRARY] Remove series title=%r cleared=%d by=%s", title, cleared, current_user.username)
+    for eid in entry_ids:
+        cancel_download(eid, delete_file=True)
     try:
         generate_strm()
     except Exception as exc:

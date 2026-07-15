@@ -675,7 +675,7 @@ function renderCard(e, idx) {
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-series" ${!e.can_add ? 'disabled' : ''}>Add All</button>
-            <button class="btn-action btn-remove" data-action="remove-series" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-remove" data-action="remove-series" ${!e.is_owned && !e.download_completed ? 'disabled' : ''}>Remove</button>
             <button class="btn-action btn-download" data-action="download-series">Download</button>
             ${followBtn}
           </div>
@@ -706,7 +706,7 @@ function renderCard(e, idx) {
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-tv-vod" ${!e.can_add ? 'disabled' : ''}>Add All</button>
-            <button class="btn-action btn-remove" data-action="remove-tv-vod" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-remove" data-action="remove-tv-vod" ${!e.is_owned && !e.download_completed ? 'disabled' : ''}>Remove</button>
             <button class="btn-action btn-download" data-action="download-tv-vod">Download</button>
             ${followBtn}
           </div>
@@ -738,7 +738,7 @@ function renderCard(e, idx) {
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-entry" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}>Add</button>
-            <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned && !e.download_completed ? 'disabled' : ''}>Remove</button>
             ${dlBtn}
           </div>
         </div>
@@ -882,7 +882,7 @@ function renderSeasons(data, title) {
             <button class="btn-action btn-add" style="padding:3px 8px;font-size:0.72rem;"
               data-action="add-season" data-season="${seasonNum}" ${!s.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
-              data-action="remove-season" data-season="${seasonNum}" ${!s.is_owned ? 'disabled' : ''}>Remove</button>
+              data-action="remove-season" data-season="${seasonNum}" ${!s.is_owned && !s.download_completed ? 'disabled' : ''}>Remove</button>
             <button class="btn-action btn-download" style="padding:3px 8px;font-size:0.72rem;"
               data-action="download-season" data-season="${seasonNum}">Download</button>
             ${followBtn}
@@ -924,7 +924,7 @@ async function toggleEpisodes(season, seriesTitle) {
           <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
             ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
           <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
-            ${!ep.is_owned ? 'disabled' : ''}>Remove</button>
+            ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
           <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
         </div>
       </div>`;
@@ -1007,7 +1007,7 @@ function renderTvVodYears(data, title) {
             <button class="btn-action btn-add" style="padding:3px 8px;font-size:0.72rem;"
               data-action="add-tv-vod-year" data-year="${yr}" ${!y.can_add ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" style="padding:3px 8px;font-size:0.72rem;"
-              data-action="remove-tv-vod-year" data-year="${yr}" ${!y.is_owned ? 'disabled' : ''}>Remove</button>
+              data-action="remove-tv-vod-year" data-year="${yr}" ${!y.is_owned && !y.download_completed ? 'disabled' : ''}>Remove</button>
             <button class="btn-action btn-download" style="padding:3px 8px;font-size:0.72rem;"
               data-action="download-tv-vod-year" data-year="${yr}">Download</button>
             ${followBtn}
@@ -1048,7 +1048,7 @@ async function toggleTvVodEpisodes(year, title) {
           <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
             ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
           <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
-            ${!ep.is_owned ? 'disabled' : ''}>Remove</button>
+            ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
           <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
         </div>
       </div>`;

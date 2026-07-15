@@ -64,6 +64,21 @@ def _vod_root() -> str:
     return resolve_path(_VOD_ROOT_RELATIVE)
 
 
+def _remove_empty_dirs(directory: str) -> None:
+    """Walk upward from directory, removing empty folders until vod_root."""
+    vod = _vod_root()
+    current = directory
+    while current and os.path.abspath(current) != os.path.abspath(vod):
+        try:
+            if not os.listdir(current):
+                os.rmdir(current)
+                current = os.path.dirname(current)
+            else:
+                break
+        except OSError:
+            break
+
+
 def _derive_media_path(entry_type, title, year, season, episode,
                        container, air_date=None):
     """Import the path derivation from strm to keep paths in sync."""
@@ -402,6 +417,7 @@ def cancel_download(entry_id: str, delete_file: bool = False) -> bool:
             if row["local_path"] and os.path.exists(row["local_path"]):
                 try:
                     os.remove(row["local_path"])
+                    _remove_empty_dirs(os.path.dirname(row["local_path"]))
                 except OSError:
                     pass
             if row["staging_path"] and os.path.exists(row["staging_path"]):
