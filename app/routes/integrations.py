@@ -64,6 +64,8 @@ def _page_ctx(conn, request, current_user):
     last_run = conn.execute(
         "SELECT * FROM tmdb_run_log ORDER BY id DESC LIMIT 1"
     ).fetchone()
+    dl_cfg = _load_downloads_settings(conn)
+    dl_counts = _downloads_counts(conn)
 
     return {
         "request": request,
@@ -76,8 +78,51 @@ def _page_ctx(conn, request, current_user):
         "enriched": counts["enriched"],
         "skipped": counts["skipped"],
         "last_run": dict(last_run) if last_run else None,
+        "dl_enabled": dl_cfg.get("enabled", False),
+        "dl_max_concurrent": dl_cfg.get("max_concurrent", 2),
+        "dl_default_container": dl_cfg.get("default_container", "mkv"),
+        "dl_retention_days": dl_cfg.get("retention_days", 90),
+        "dl_counts": dl_counts,
         "flash": None,
         "error": None,
+    }
+
+
+def _load_downloads_settings(conn) -> dict:
+    row = conn.execute(
+        "SELECT settings FROM integrations WHERE slug = 'downloads'"
+    ).fetchone()
+    if not row:
+        return {"enabled": False, "max_concurrent": 2, "default_container": "mkv", "retention_days": 90}
+    try:
+        return json.loads(row["settings"] or "{}")
+    except (ValueError, TypeError):
+        return {"enabled": False, "max_concurrent": 2, "default_container": "mkv", "retention_days": 90}
+
+
+def _save_downloads_settings(conn, settings: dict) -> None:
+    conn.execute("""
+        INSERT INTO integrations (slug, settings, updated_at)
+        VALUES ('downloads', ?, ?)
+        ON CONFLICT(slug) DO UPDATE SET
+            settings   = excluded.settings,
+            updated_at = excluded.updated_at
+    """, (json.dumps(settings), local_now_iso()))
+
+
+def _downloads_counts(conn) -> dict:
+    rows = conn.execute(
+        "SELECT status, COUNT(*) AS cnt FROM downloads GROUP BY status"
+    ).fetchall()
+    counts = {r["status"]: r["cnt"] for r in rows}
+    return {
+        "pending": counts.get("pending", 0),
+        "probing": counts.get("probing", 0),
+        "downloading": counts.get("downloading", 0),
+        "completed": counts.get("completed", 0),
+        "failed": counts.get("failed", 0),
+        "cancelled": counts.get("cancelled", 0),
+        "total": sum(counts.values()),
     }
 
 
@@ -199,3 +244,58 @@ async def tmdb_clear(current_user: TokenData = Depends(get_current_user)):
 
     logger.info("[INTEGRATIONS] TMDB metadata cleared by %s", current_user.username)
     return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Downloads settings
+# ---------------------------------------------------------------------------
+
+@router.post("/downloads/settings", response_class=HTMLResponse)
+async def save_downloads_settings(
+    request: Request,
+    enabled: str = Form("off"),
+    max_concurrent: str = Form("2"),
+    default_container: str = Form("mkv"),
+    retention_days: str = Form("90"),
+    current_user: TokenData = Depends(get_current_user),
+):
+    is_enabled = enabled.lower() in ("on", "true", "1", "yes")
+    try:
+        mc = max(1, min(10, int(max_concurrent)))
+    except ValueError:
+        mc = 2
+    container = default_container if default_container in ("mkv", "mp4", "ts") else "mkv"
+    try:
+        rd = max(1, int(retention_days))
+    except ValueError:
+        rd = 90
+
+    with get_db() as conn:
+        _save_downloads_settings(conn, {
+            "enabled": is_enabled,
+            "max_concurrent": mc,
+            "default_container": container,
+            "retention_days": rd,
+        })
+
+    logger.info(
+        "[INTEGRATIONS] Downloads settings saved: enabled=%s max_concurrent=%d container=%s retention=%dd by=%s",
+        is_enabled, mc, container, rd, current_user.username,
+    )
+    return RedirectResponse("/integrations", status_code=302)
+
+
+@router.post("/downloads/trigger", response_class=JSONResponse)
+async def trigger_downloads(current_user: TokenData = Depends(get_current_user)):
+    import threading
+    from app.tasks.downloads import process_downloads
+    threading.Thread(target=process_downloads, daemon=True).start()
+    logger.info("[INTEGRATIONS] Downloads manually triggered by %s", current_user.username)
+    return JSONResponse({"ok": True})
+
+
+@router.get("/downloads/status", response_class=JSONResponse)
+async def downloads_status(current_user: TokenData = Depends(get_current_user)):
+    with get_db() as conn:
+        counts = _downloads_counts(conn)
+    return JSONResponse(counts)

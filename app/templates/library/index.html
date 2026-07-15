@@ -192,6 +192,10 @@
   .btn-follow.is-following { background: var(--color-secondary); color: #fff; }
   .btn-unfollow { background: transparent; border-color: var(--color-danger); color: var(--color-danger); font-size: 0.68rem; }
   .btn-unfollow:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
+  .btn-download { background: transparent; border-color: #198754; color: #198754; font-size: 0.72rem; }
+  .btn-download:hover:not(:disabled) { background: #198754; color: #fff; }
+  .btn-download.is-downloading { background: #198754; color: #fff; opacity: 0.7; }
+  .badge-downloaded { background: #d1e7dd; color: #0a3622; }
 
   /* ── Expand panel (series drill-down) ── */
   .expand-panel {
@@ -655,8 +659,12 @@ function renderCard(e, idx) {
   } else {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
+    const dlBadge = e.download_completed ? `<span class="badge badge-downloaded">Downloaded</span>` : '';
     const displayTitle = e.display_title || e.cleaned_title;
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
+    const dlBtn = e.is_downloaded
+      ? `<button class="btn-action btn-download is-downloading" disabled>${e.download_completed ? 'Downloaded' : 'Downloading'}</button>`
+      : `<button class="btn-action btn-download" data-action="download-entry">Download</button>`;
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}">
         ${artEl(e.cover_art, displayTitle, e.type)}
@@ -666,10 +674,12 @@ function renderCard(e, idx) {
           <div class="card-badges">
             <span class="${typeBadgeClass(e.type)}">${esc(e.type)}</span>
             ${ownedBadge}
+            ${dlBadge}
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-entry" ${(!e.can_add || e.is_owned) ? 'disabled' : ''}>Add</button>
             <button class="btn-action btn-remove" data-action="remove-entry" ${!e.is_owned ? 'disabled' : ''}>Remove</button>
+            ${dlBtn}
           </div>
         </div>
       </div>`;
@@ -1098,6 +1108,15 @@ document.addEventListener('click', async function(e) {
     if (!entryId) return;
     btn.disabled = true;
     await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
+    refreshAfterAction();
+  } else if (action === 'download-entry') {
+    const cardEl = btn.closest('[data-entry-id]');
+    const entryId = cardEl ? cardEl.dataset.entryId : null;
+    if (!entryId) return;
+    btn.disabled = true;
+    try {
+      await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
+    } catch (e) { /* ignore */ }
     refreshAfterAction();
   } else if (action === 'add-series' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];

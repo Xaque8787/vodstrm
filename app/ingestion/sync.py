@@ -471,27 +471,57 @@ def purge_inactive_and_deleted_providers(conn: sqlite3.Connection) -> tuple[int,
 
 def apply_follow_rules(conn: sqlite3.Connection, provider_slug: str) -> int:
     """
-    Mark streams as imported=1 for any follow rule that matches content from provider_slug.
+    For each follow rule matching content from provider_slug:
+      - strm-mode follows: mark matching streams as imported=1
+      - download-mode follows: queue downloads for matching entries
 
     Rules are global — scoped only by entry_type/entry_title/season, not by which
-    provider they were originally created against. This ensures that a follow created
-    while only Provider A existed will also auto-import matching streams from Provider B
-    when Provider B is first ingested.
+    provider they were originally created against.
 
     Season NULL matches all seasons; an integer season matches only that exact season.
     For tv_vod, the season column stores the year as an integer.
 
     Only sets imported=1 (never clears — removal is a manual action).
-    Returns count of newly marked streams.
+    Returns count of streams marked + downloads queued.
     """
     rules = conn.execute(
-        "SELECT DISTINCT entry_type, entry_title, season FROM follows"
+        "SELECT DISTINCT entry_type, entry_title, season, mode FROM follows"
     ).fetchall()
     if not rules:
         return 0
 
     marked = 0
     for rule in rules:
+        mode = rule["mode"] or "strm"
+        if mode == "download":
+            # Queue downloads for matching entries
+            if rule["season"] is not None and rule["entry_type"] == "tv_vod":
+                entry_rows = conn.execute(
+                    """SELECT entry_id FROM entries
+                       WHERE type='tv_vod' AND substr(air_date,1,4)=?
+                         AND lower(cleaned_title)=lower(?)""",
+                    (str(rule["season"]), rule["entry_title"]),
+                ).fetchall()
+            elif rule["season"] is not None:
+                entry_rows = conn.execute(
+                    """SELECT entry_id FROM entries
+                       WHERE type=? AND season=? AND lower(cleaned_title)=lower(?)""",
+                    (rule["entry_type"], rule["season"], rule["entry_title"]),
+                ).fetchall()
+            else:
+                entry_rows = conn.execute(
+                    """SELECT entry_id FROM entries
+                       WHERE type=? AND lower(cleaned_title)=lower(?)""",
+                    (rule["entry_type"], rule["entry_title"]),
+                ).fetchall()
+
+            from app.tasks.downloads import queue_download
+            for er in entry_rows:
+                queue_download(er["entry_id"])
+                marked += 1
+            continue
+
+        # strm mode — mark imported=1
         if rule["season"] is not None and rule["entry_type"] == "tv_vod":
             conn.execute(
                 """

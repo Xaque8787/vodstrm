@@ -120,6 +120,11 @@ _CAN_ADD_SUBQUERY = """
        AND (_s2.include_only_active = 0 OR _s2.include_only = 1))
 """
 
+# Subquery: download status for this entry (NULL if no download row)
+_DOWNLOAD_STATUS_SUBQUERY = """
+    (SELECT _dl.status FROM downloads _dl WHERE _dl.entry_id = e.entry_id)
+"""
+
 # Subquery: filtered_title from the highest-priority eligible import_selected stream.
 # This mirrors the STRM engine's priority resolution so the displayed title matches
 # what will be written to disk.
@@ -249,7 +254,8 @@ async def list_entries(
                     {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
                     {_OWNER_SLUG_SUBQUERY} AS owner_slug,
                     (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
-                    {_CAN_ADD_SUBQUERY} AS can_add_count
+                    {_CAN_ADD_SUBQUERY} AS can_add_count,
+                    {_DOWNLOAD_STATUS_SUBQUERY} AS download_status
                 FROM entries e
                 WHERE e.type NOT IN ('series', 'tv_vod') {extra_where}
                 ORDER BY e.cleaned_title
@@ -287,7 +293,8 @@ async def list_entries(
                     {_FILTERED_TITLE_SUBQUERY} AS filtered_title,
                     {_OWNER_SLUG_SUBQUERY} AS owner_slug,
                     (SELECT COUNT(*) FROM streams s3 WHERE s3.entry_id = e.entry_id) AS stream_count,
-                    {_CAN_ADD_SUBQUERY} AS can_add_count
+                    {_CAN_ADD_SUBQUERY} AS can_add_count,
+                    {_DOWNLOAD_STATUS_SUBQUERY} AS download_status
                 FROM entries e
                 WHERE {base_condition} {extra_where}
                 ORDER BY e.cleaned_title
@@ -394,10 +401,11 @@ def _format_tv_vod_group(r) -> dict:
 
 
 def _format_individual(r) -> dict:
+    dl_status = r["download_status"] if "download_status" in r.keys() else None
     return {
         "entry_id": r["entry_id"],
         "type": r["type"],
-        "cleaned_title": r["cleaned_title"],   # kept for API lookups
+        "cleaned_title": r["cleaned_title"],
         "display_title": _display_title(r),
         "year": r["year"],
         "season": r["season"],
@@ -408,6 +416,9 @@ def _format_individual(r) -> dict:
         "stream_count": r["stream_count"],
         "can_add": (r["can_add_count"] or 0) > 0,
         "is_series_group": False,
+        "download_status": dl_status,
+        "is_downloaded": dl_status in ("pending", "probing", "downloading", "completed"),
+        "download_completed": dl_status == "completed",
     }
 
 
@@ -1354,3 +1365,145 @@ async def unfollow_tv_vod_year(
         deleted = result.rowcount
     logger.info("[LIBRARY] Unfollow tv_vod year title=%r year=%s deleted=%d by=%s", title, year, deleted, current_user.username)
     return JSONResponse({"ok": True, "deleted": deleted})
+
+
+# ---------------------------------------------------------------------------
+# Downloads — one-off download, queue list, cancel/delete
+# ---------------------------------------------------------------------------
+
+@router.post("/entries/{entry_id}/download", response_class=JSONResponse)
+async def download_entry(
+    entry_id: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Queue a single entry for download."""
+    from app.tasks.downloads import queue_download
+    queued = queue_download(entry_id)
+    logger.info("[LIBRARY] Download queued entry=%s by=%s", entry_id[:12], current_user.username)
+    return JSONResponse({"ok": True, "queued": queued})
+
+
+@router.post("/entries/{entry_id}/cancel-download", response_class=JSONResponse)
+async def cancel_entry_download(
+    entry_id: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Cancel a download for an entry, optionally deleting the local file."""
+    from app.tasks.downloads import cancel_download
+    cancel_download(entry_id, delete_file=True)
+    logger.info("[LIBRARY] Download cancelled entry=%s by=%s", entry_id[:12], current_user.username)
+    try:
+        from app.tasks.strm import generate_strm
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after cancel failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True})
+
+
+@router.get("/downloads", response_class=HTMLResponse)
+async def downloads_page(
+    request: Request,
+    current_user: TokenData = Depends(get_current_user),
+):
+    return templates.TemplateResponse(
+        "library/downloads.html",
+        {"request": request, "current_user": current_user},
+    )
+
+
+@router.get("/downloads/list", response_class=JSONResponse)
+async def list_downloads(current_user: TokenData = Depends(get_current_user)):
+    """Return all download rows with entry metadata for the downloads page."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT d.entry_id, d.status, d.provider, d.container,
+                   d.file_size, d.fail_reason, d.retry_count,
+                   d.queued_at, d.completed_at, d.failed_at,
+                   d.local_path,
+                   e.type, e.cleaned_title, e.year, e.season, e.episode, e.air_date
+            FROM downloads d
+            LEFT JOIN entries e ON e.entry_id = d.entry_id
+            ORDER BY
+                CASE d.status
+                    WHEN 'pending' THEN 0
+                    WHEN 'probing' THEN 1
+                    WHEN 'downloading' THEN 2
+                    WHEN 'failed' THEN 3
+                    WHEN 'cancelled' THEN 4
+                    WHEN 'completed' THEN 5
+                END,
+                d.queued_at DESC
+            """,
+        ).fetchall()
+
+    items = []
+    for r in rows:
+        title = r["cleaned_title"] or r["entry_id"]
+        if r["season"] and r["episode"]:
+            title = f"{title} S{r['season']:02d}E{r['episode']:02d}"
+        elif r["air_date"]:
+            title = f"{title} ({r['air_date'][:10]})"
+        items.append({
+            "entry_id": r["entry_id"],
+            "status": r["status"],
+            "provider": r["provider"],
+            "container": r["container"],
+            "file_size": r["file_size"],
+            "fail_reason": r["fail_reason"],
+            "retry_count": r["retry_count"],
+            "queued_at": (r["queued_at"] or "")[:19].replace("T", " "),
+            "completed_at": (r["completed_at"] or "")[:19].replace("T", " "),
+            "failed_at": (r["failed_at"] or "")[:19].replace("T", " "),
+            "title": title,
+            "type": r["type"],
+            "is_completed": r["status"] == "completed",
+            "is_active": r["status"] in ("pending", "probing", "downloading"),
+            "is_failed": r["status"] == "failed",
+        })
+
+    return JSONResponse({"downloads": items})
+
+
+@router.post("/downloads/{entry_id}/retry", response_class=JSONResponse)
+async def retry_download(
+    entry_id: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Re-queue a failed or cancelled download."""
+    from app.tasks.downloads import queue_download
+    queued = queue_download(entry_id)
+    logger.info("[LIBRARY] Download retried entry=%s by=%s", entry_id[:12], current_user.username)
+    return JSONResponse({"ok": True, "queued": queued})
+
+
+@router.post("/downloads/{entry_id}/delete", response_class=JSONResponse)
+async def delete_download(
+    entry_id: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Delete a completed download and its local file."""
+    from app.tasks.downloads import cancel_download
+    cancel_download(entry_id, delete_file=True)
+    logger.info("[LIBRARY] Download deleted entry=%s by=%s", entry_id[:12], current_user.username)
+    try:
+        from app.tasks.strm import generate_strm
+        generate_strm()
+    except Exception as exc:
+        logger.error("[LIBRARY] generate_strm after delete failed: %s", exc, exc_info=True)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/downloads/clear-failed", response_class=JSONResponse)
+async def clear_failed_downloads(
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Delete all failed and cancelled download rows."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            "DELETE FROM downloads WHERE status IN ('failed', 'cancelled')"
+        )
+        count = cursor.rowcount
+        conn.commit()
+    logger.info("[LIBRARY] Cleared %d failed/cancelled downloads by=%s", count, current_user.username)
+    return JSONResponse({"ok": True, "cleared": count})

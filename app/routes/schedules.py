@@ -119,6 +119,7 @@ def _apply_schedule_to_scheduler(schedule: dict) -> None:
 
 def _resolve_task_fn(task_type: str, provider_slug: str | None):
     from app.tasks.downloader import download_all_providers
+    from app.tasks.downloads import process_downloads
     from app.tasks.strm import clean_strm_orphans, generate_strm
 
     if task_type == "download_all_providers":
@@ -129,6 +130,9 @@ def _resolve_task_fn(task_type: str, provider_slug: str | None):
 
     if task_type == "generate_strm":
         return generate_strm
+
+    if task_type == "process_downloads":
+        return process_downloads
 
     return None
 
@@ -151,6 +155,7 @@ async def schedules_page(
     _GLOBAL_TASKS = [
         {"task_type": "download_all_providers", "label": "Download All Active Providers"},
         {"task_type": "clean_strm_orphans",     "label": "Clean Orphaned STRM Files"},
+        {"task_type": "process_downloads",      "label": "Process Download Queue"},
     ]
 
     all_schedules = _list_schedules()
@@ -202,6 +207,7 @@ async def save_global_schedule(
     _GLOBAL_LABELS = {
         "download_all_providers": "Download All Active Providers",
         "clean_strm_orphans":     "Clean Orphaned STRM Files",
+        "process_downloads":      "Process Download Queue",
     }
     if task_type not in _GLOBAL_LABELS:
         return RedirectResponse("/schedules", status_code=302)
