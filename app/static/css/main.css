@@ -1924,3 +1924,34 @@ code {
   color: var(--color-text-muted);
   font-style: italic;
 }
+
+/* ===========================
+   VERSION DISPLAY
+   =========================== */
+
+.version-info {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing));
+  margin-top: calc(var(--spacing) * 0.75);
+}
+
+.version {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.update-badge {
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}

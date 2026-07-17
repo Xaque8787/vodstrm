@@ -16,6 +16,7 @@ from app.routes import providers as providers_router
 from app.routes import integrations as integrations_router
 from app.routes import schedules as schedules_router
 from app.utils.logging_config import configure_logging
+from app.utils.version import check_version
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +78,15 @@ def create_app() -> FastAPI:
         from app.routes.auth import _admin_exists
         if not _admin_exists():
             return RedirectResponse("/setup", status_code=302)
+        version, update_available = check_version()
         return templates.TemplateResponse(
-            "index.html", {"request": request, "current_user": current_user}
+            "index.html",
+            {
+                "request": request,
+                "current_user": current_user,
+                "version": version,
+                "update_available": update_available,
+            },
         )
 
     @app.exception_handler(Exception)
