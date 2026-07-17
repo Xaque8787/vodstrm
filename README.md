@@ -107,30 +107,34 @@ VODSTRM uses two separate configuration files. Only `.env` is required to get st
 This file controls the Docker container itself — ports, paths, timezone, and secrets. Docker Compose reads it automatically when it exists in the same directory as `docker-compose.yml`.
 
 ```env
-# A strong random string used to sign authentication tokens.
-# Change this before deploying — any change will invalidate all active sessions.
-SECRET_KEY=change-me-to-something-random
+# Change key in production
+# Generate a random key with: openssl rand -hex 32
+SECRET_KEY=change-me-to-a-random-key
 
-# Port the web UI is served on
 APP_PORT=2112
 
-# User and group ID the container process runs as.
-# This controls file ownership for .strm output and data files.
-# Run `id -u && id -g` on your host to find your values.
+# User/group ID the container runs as (avoids volume permission issues)
+# Find yours with: id -u && id -g
 PUID=1000
 PGID=1000
 
-# Timezone used for the scheduler and displayed timestamps.
-# Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+# Timezone for the scheduler and timestamps
+# https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 TZ=America/Los_Angeles
 
-# Host path where app data is stored (SQLite databases, logs, downloaded M3U files).
+# Host path for app data (SQLite DBs, logs, downloaded M3U files)
 DATA_PATH=./data
 
-# Host path where .strm files are written.
-# Point this at a directory your media server monitors (e.g. a Jellyfin library path or NAS mount).
+# Host path for STRM/VOD output — point this at your media server or NAS
 # VOD_PATH=/mnt/nas/media
 VOD_PATH=./data/vod
+
+# Set to "true" to enable debug mode (enables /docs, verbose logging)
+#DEBUG=true
+# JWT token expiry in minutes (default: 60)
+#ACCESS_TOKEN_EXPIRE_MINUTES=60
+# Set to "true" when running behind HTTPS to mark cookies as Secure
+#SECURE_COOKIES=true
 ```
 
 **Local M3U files:** If you have `.m3u` files on your host, you can either mount a directory into the container (uncomment the volume in `docker-compose.yml` and set the host path), or simply drop the files into `DATA_PATH/m3u` and add them as a Local File provider through the UI.
