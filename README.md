@@ -21,6 +21,7 @@ VODSTRM is a self-hosted media library manager that ingests M3U and Xtream Codes
   - [First Run & Setup](#first-run--setup)
   - [Providers](#providers)
   - [Library](#library)
+  - [Live TV](#live-tv)
   - [Filters](#filters)
   - [Schedules](#schedules)
   - [Admin](#admin)
@@ -202,6 +203,7 @@ Each provider has the following options available after creation:
   Terms are matched as whole words and are case-insensitive, so `hd` will not match `uhd` or `hdr`. The order of the list does not affect scoring — each term that appears in the title counts as one point regardless of position in the list.
 
   **Example:** With quality terms `["4k", "2160p", "1080p", "hd"]`, a stream titled `Movie Title 4K HDR` scores 2 (`4k` and `hd`) while one titled `Movie Title HD` scores 1. The 4K stream wins and its URL is written to the `.strm` file. On the next run, if the 4K version disappears from the provider's playlist entirely, the incoming lower-quality stream automatically wins because the existing row is from a previous run — stale rows never block a live incoming stream.
+- **Force VOD content** — Skips live-TV detection during ingestion and classifies every entry from this provider as VOD (series, TV VOD, movie, or unsorted). Useful for providers that tag VOD content with live-style duration values. Enabling or disabling this only takes effect on the next ingest run.
 - **Active toggle** — Shows the current state. Active providers show a green toggle; inactive providers show a grey toggle that you can click to re-enable them.
 - **Disable** — Clicking the active toggle on a live provider opens a confirmation modal before proceeding. Confirming will mark the provider inactive, immediately remove all of its streams and entries from the database, and hand its owned `.strm` files over to the next eligible provider (or delete them if no alternative exists). This is a destructive operation — data can only be restored by re-enabling the provider and running a fresh ingest.
 - **Edit** — Update connection details (URL, credentials, format, file path) at any time.
@@ -221,6 +223,8 @@ Each provider operates in one of two modes, configurable from the Schedules page
 ### Library
 
 **URL:** `/library`
+
+The Library page is where you browse all ingested content and manage what ends up in your `.strm` output directory.
 
 The Library page is where you browse all ingested content and manage what ends up in your `.strm` output directory.
 
@@ -271,6 +275,31 @@ Each follow rule operates in one of two modes:
 
 - **STRM mode** (default) — Matching content is marked as imported and `.strm` files are generated pointing to the remote stream URL. This is the standard behaviour — your media server reads the URL from the `.strm` file and streams directly from the provider.
 - **Download mode** — Matching content is queued for local download instead. The download processor fetches the stream via ffmpeg and stores the resulting media file in your VOD directory. Once the download completes, the `.strm` file is removed and your media server reads the local file directly. This is useful for content you want available offline or from providers with unreliable streaming.
+
+---
+
+### Live TV
+
+VODSTRM generates M3U playlist files for your live TV channels alongside the `.strm` library. These are written to the `livetv/` subdirectory inside your VOD output path (e.g. `data/vod/livetv/`).
+
+#### Per-Provider M3U
+
+Each active provider gets its own `.m3u` file named after the provider slug (e.g. `myprovider.m3u`). The contents depend on the provider's STRM mode:
+
+- **Generate All** — All non-excluded live streams from that provider are written.
+- **Import Selected** — Only live streams you have manually added through the Library page are written. This lets you curate a trimmed live-TV playlist from a large provider.
+
+#### Combined M3U
+
+A `all_providers.m3u` file is also generated as the union of eligible live streams across every active provider (both modes, respecting imported status for Import Selected). Streams from multiple providers for the same channel are all included — deduplication is left to your IPTV player.
+
+#### Adding Live Channels
+
+To add live channels to an Import Selected provider's M3U, go to the Library page, filter by the **Live** content type, and add the channels you want. The M3U files are regenerated on the next sync and will include your selections.
+
+#### Automatic Maintenance
+
+The M3U files are rewritten at the end of every ingestion run. When a provider is deactivated or deleted, its per-provider `.m3u` file is removed and the combined file is regenerated to reflect the change.
 
 ---
 
