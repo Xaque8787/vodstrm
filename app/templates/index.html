@@ -6,6 +6,12 @@
 <div class="page-header">
   <h1>Dashboard</h1>
   <p class="page-subtitle">Welcome back, <strong>{{ current_user.username }}</strong>.</p>
+  <div class="version-info">
+    <span class="version">v{{ version }}</span>
+    {% if update_available %}
+    <span class="update-badge">Update Available</span>
+    {% endif %}
+  </div>
 </div>
 
 <div class="card-grid">
