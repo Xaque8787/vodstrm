@@ -1,20 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Filters — VODSTRM{% endblock %}
+{% block page_heading %}Filters{% endblock %}
+{% block page_description %}Control title cleanup and content inclusion rules.{% endblock %}
+{% block page_actions %}
+<div class="filter-header-actions">
+  <form method="post" action="/filters/reapply">
+    <button type="submit" class="btn btn-secondary">Reapply All Filters</button>
+  </form>
+  <button class="btn btn-primary" id="open-add-btn">+ Add Filter</button>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="page-header page-header--actions">
-  <div>
-    <h1>Filters</h1>
-    <p class="page-subtitle">Control how titles are cleaned and which entries are included.</p>
-  </div>
-  <div class="filter-header-actions">
-    <form method="post" action="/filters/reapply">
-      <button type="submit" class="btn btn-secondary">Reapply All Filters</button>
-    </form>
-    <button class="btn btn-primary" id="open-add-btn">+ Add Filter</button>
-  </div>
-</div>
-
 {% if flash == 'created' %}<div class="alert alert-success">Filter created.</div>
 {% elif flash == 'updated' %}<div class="alert alert-success">Filter updated.</div>
 {% elif flash == 'deleted' %}<div class="alert alert-success">Filter deleted.</div>

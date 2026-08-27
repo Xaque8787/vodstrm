@@ -315,21 +315,6 @@ code {
   border: 1px solid #f1aeb5;
 }
 
-/* PAGE HEADER */
-.page-header {
-  margin-bottom: calc(var(--spacing) * 4);
-}
-
-.page-header h1 {
-  font-size: 1.75rem;
-  font-weight: 700;
-}
-
-.page-subtitle {
-  color: var(--color-text-muted);
-  margin-top: calc(var(--spacing) * 0.5);
-}
-
 /* CARDS */
 .card-grid {
   display: grid;
@@ -392,14 +377,6 @@ code {
 
 .text-muted {
   color: var(--color-text-muted);
-}
-
-/* PAGE HEADER WITH ACTIONS */
-.page-header--actions {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: calc(var(--spacing) * 2);
 }
 
 /* PROVIDER PANEL */
@@ -838,7 +815,7 @@ code {
 }
 
 /* ===========================
-   LIBRARY INSPECTOR
+  DATABASE INSPECTOR
    =========================== */
 
 .lib-danger-zone {
@@ -1928,18 +1905,6 @@ code {
 /* ===========================
    VERSION DISPLAY
    =========================== */
-
-.version-info {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--spacing));
-  margin-top: calc(var(--spacing) * 0.75);
-}
-
-.version {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-}
 
 .update-badge {
   background: var(--color-danger);

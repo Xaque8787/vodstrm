@@ -13,18 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-ENV TZ=America/Los_Angeles
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN mkdir -p /app/data/logs && \
     mkdir -p /app/data/m3u && \
-    mkdir -p /app/data/vod/movies && \
-    mkdir -p /app/data/vod/series && \
-    mkdir -p /app/data/vod/unsorted && \
-    mkdir -p /app/data/vod/livetv && \
-    mkdir -p /app/data/downloads
+    mkdir -p /app/data/vod && \
+    mkdir -p /app/data/vod-offline
 
 COPY . .
 

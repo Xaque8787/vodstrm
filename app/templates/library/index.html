@@ -1,18 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Library — VODSTRM{% endblock %}
+{% block page_heading %}Library{% endblock %}
+{% block page_description %}Browse provider catalogues and manage local media.{% endblock %}
 
 {% block head %}
 <style>
   /* ── Layout ── */
   .library-wrap {
-    padding: calc(var(--spacing) * 3);
+    padding: 0;
     max-width: 1400px;
-  }
-
-  .library-heading {
-    font-size: 1.4rem;
-    font-weight: 700;
-    margin-bottom: calc(var(--spacing) * 3);
   }
 
   /* ── Toolbar ── */
@@ -50,28 +46,78 @@
     cursor: pointer;
   }
 
-  /* ── Type tabs ── */
-  .type-tabs {
-    display: flex;
-    gap: 4px;
+  /* ── Content navigator ── */
+  .content-nav {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     margin-bottom: calc(var(--spacing) * 2.5);
-    flex-wrap: wrap;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    box-shadow: var(--shadow);
   }
 
-  .type-tab {
-    padding: 5px 14px;
-    border-radius: 20px;
-    font-size: 0.82rem;
-    font-weight: 500;
-    border: 1px solid var(--color-border);
+  .content-nav__item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    min-height: 58px;
+    padding: 9px 12px;
+    border: 0;
+    border-right: 1px solid var(--color-border);
     background: transparent;
     color: var(--color-text-muted);
+    font-family: var(--font);
+    text-align: left;
     cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    transition: background 0.15s, color 0.15s;
   }
-  .type-tab:hover { background: var(--color-bg); color: var(--color-text); }
-  .type-tab.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+
+  .content-nav__item:last-child { border-right: 0; }
+  .content-nav__item:hover { background: var(--color-surface-hover); color: var(--color-text); }
+  .content-nav__item.active { background: var(--color-primary-soft); color: var(--color-text); }
+  .content-nav__item.active::after {
+    content: "";
+    position: absolute;
+    inset: auto 8px 0;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: var(--color-primary);
+  }
+
+  .content-nav__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: var(--color-primary);
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .content-nav__copy { min-width: 0; }
+  .content-nav__label {
+    display: block;
+    overflow: hidden;
+    color: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .content-nav__count {
+    display: block;
+    margin-top: 3px;
+    color: var(--color-text-muted);
+    font-size: 0.67rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
 
   /* ── Card grid ── */
   .card-grid {
@@ -92,20 +138,20 @@
     transition: box-shadow 0.15s, transform 0.15s;
   }
   .content-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-  .content-card.is-owned { border-color: #198754; }
+  .content-card.is-owned { border-color: var(--color-success); }
 
   .card-art {
     width: 100%;
     aspect-ratio: 2/3;
     object-fit: cover;
-    background: #e9ecef;
+    background: var(--color-neutral-bg);
     display: block;
     flex-shrink: 0;
   }
   .card-art-placeholder {
     width: 100%;
     aspect-ratio: 2/3;
-    background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+    background: linear-gradient(135deg, var(--color-neutral-bg) 0%, var(--color-primary-soft) 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -155,13 +201,16 @@
     letter-spacing: 0.03em;
     text-transform: uppercase;
   }
-  .badge-movie   { background: #cfe2ff; color: #084298; }
-  .badge-series  { background: #d1e7dd; color: #0a3622; }
-  .badge-live    { background: #fff3cd; color: #664d03; }
-  .badge-tv_vod  { background: #e2d9f3; color: #3d1a78; }
-  .badge-unsorted{ background: #e9ecef; color: #495057; }
-  .badge-owned   { background: #198754; color: #fff; }
-  .badge-following { background: #0d6efd; color: #fff; }
+  .badge-movie   { background: var(--color-info-bg); color: var(--color-info-text); }
+  .badge-series  { background: var(--color-success-bg); color: var(--color-success-text); }
+  .badge-live    { background: var(--color-warning-bg); color: var(--color-warning-text); }
+  .badge-tv_vod  { background: var(--color-error-bg); color: var(--color-error-text); }
+  .badge-unsorted{ background: var(--color-neutral-bg); color: var(--color-neutral-text); }
+  .badge-owned   { background: var(--color-success); color: var(--color-on-primary); }
+  .badge-following { background: var(--color-primary); color: var(--color-on-primary); }
+  .badge-downloaded { background: var(--color-success-bg); color: var(--color-success-text); }
+  .badge-queued { background: var(--color-warning-bg); color: var(--color-warning-text); }
+  .badge-on-demand { background: var(--color-info-bg); color: var(--color-info-text); }
 
   .card-actions {
     display: flex;
@@ -189,7 +238,7 @@
   .btn-download { flex: 0 0 auto; }
   .btn-follow, .btn-unfollow { flex: 0 0 auto; }
   .btn-action:disabled { opacity: 0.35; cursor: not-allowed; }
-  .btn-add { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .btn-add { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
   .btn-add:hover:not(:disabled) { background: var(--color-primary-hover); }
   .btn-remove { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
   .btn-remove:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
@@ -198,17 +247,57 @@
   .btn-follow.is-following { background: var(--color-secondary); color: #fff; }
   .btn-unfollow { background: transparent; border-color: var(--color-danger); color: var(--color-danger); font-size: 0.68rem; }
   .btn-unfollow:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
-  .btn-download { background: transparent; border-color: #198754; color: #198754; }
-  .btn-download:hover:not(:disabled) { background: #198754; color: #fff; }
-  .btn-download.is-downloading { background: #198754; color: #fff; opacity: 0.7; }
-  .badge-downloaded { background: #d1e7dd; color: #0a3622; }
+  .btn-download { background: transparent; border-color: var(--color-success); color: var(--color-success); }
+  .btn-download:hover:not(:disabled) { background: var(--color-success); color: var(--color-on-primary); }
+  .btn-download.is-downloading { background: var(--color-success); color: var(--color-on-primary); opacity: 0.7; }
 
-  /* ── Expand panel (series drill-down) ── */
-  .expand-panel {
-    grid-column: 1 / -1;
-    background: var(--color-bg);
+  /* ── Series / TV VOD detail overlay ── */
+  body.library-detail-open { overflow: hidden; }
+
+  .library-detail-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(12px, 3vw, 40px);
+  }
+  .library-detail-overlay.open { display: flex; }
+
+  .library-detail-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.68);
+    backdrop-filter: blur(5px);
+  }
+
+  .library-detail-dialog {
+    position: relative;
+    width: min(960px, 100%);
+    max-height: min(860px, calc(100dvh - 80px));
+    overflow: hidden;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
+    background: var(--color-bg);
+    box-shadow: var(--shadow-md);
+    animation: library-detail-in 0.18s ease-out both;
+  }
+
+  .library-detail-content {
+    max-height: inherit;
+  }
+
+  @keyframes library-detail-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .expand-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: min(860px, calc(100dvh - 80px));
+    background: var(--color-bg);
     overflow: hidden;
   }
 
@@ -221,6 +310,16 @@
     border-bottom: 1px solid var(--color-border);
     font-weight: 600;
     font-size: 0.95rem;
+    flex-shrink: 0;
+  }
+
+  .expand-panel-header h2 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1rem;
+    letter-spacing: 0;
   }
 
   .expand-close {
@@ -239,6 +338,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .season-row {
@@ -337,11 +438,113 @@
     transition: background 0.12s, opacity 0.12s;
   }
   .ep-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-  .ep-btn-add { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .ep-btn-add { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
   .ep-btn-add:hover:not(:disabled) { background: var(--color-primary-hover); }
   .ep-btn-remove { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
   .ep-btn-remove:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
-  .ep-owned-badge { font-size: 0.65rem; color: #198754; font-weight: 700; }
+  .ep-owned-badge { font-size: 0.65rem; color: var(--color-success); font-weight: 700; }
+
+  .entry-detail-body {
+    display: grid;
+    grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+    gap: calc(var(--spacing) * 3);
+    padding: calc(var(--spacing) * 2);
+    overflow-y: auto;
+  }
+  .entry-detail-art,
+  .entry-detail-art-placeholder {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    border-radius: var(--radius);
+    object-fit: cover;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+  }
+  .entry-detail-art-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+  }
+  .entry-detail-info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 2);
+  }
+  .entry-detail-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing);
+    margin: 0;
+  }
+  .entry-detail-fact {
+    padding: var(--spacing);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .entry-detail-fact dt {
+    color: var(--color-text-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+  }
+  .entry-detail-fact dd {
+    margin: 3px 0 0;
+    color: var(--color-text);
+    font-size: 0.88rem;
+    overflow-wrap: anywhere;
+  }
+  .stream-link-panel {
+    min-width: 0;
+    padding: calc(var(--spacing) * 1.5);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+  }
+  .stream-link-title { font-weight: 700; font-size: 0.82rem; }
+  .stream-link-note {
+    margin: 4px 0 var(--spacing);
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+  }
+  .stream-link-row { display: flex; gap: 6px; min-width: 0; }
+  .stream-link-input {
+    min-width: 0;
+    flex: 1;
+    padding: 7px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font: 0.75rem var(--font-mono, monospace);
+  }
+  .stream-link-copy {
+    flex: 0 0 auto;
+    padding-inline: 8px;
+  }
+  .stream-link-modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.58);
+  }
+  .stream-link-modal-backdrop.open { display: flex; }
+  .stream-link-modal {
+    width: min(680px, 100%);
+    max-height: calc(100dvh - 32px);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    box-shadow: var(--shadow-md);
+  }
+  .stream-link-modal-body {
+    padding: calc(var(--spacing) * 2);
+    overflow-y: auto;
+  }
 
   /* ── Follow confirmation modal ── */
   .modal-backdrop {
@@ -349,7 +552,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.45);
-    z-index: 100;
+    z-index: 1300;
     align-items: center;
     justify-content: center;
   }
@@ -403,7 +606,7 @@
     background: var(--color-primary);
     border: 1px solid var(--color-primary);
     border-radius: var(--radius);
-    color: #fff;
+    color: var(--color-on-primary);
     font-size: 0.875rem;
     font-family: var(--font);
     font-weight: 500;
@@ -470,14 +673,43 @@
   @media (max-width: 600px) {
     .card-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
     .library-wrap { padding: var(--spacing); }
+    .content-nav {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x proximity;
+      scrollbar-width: thin;
+    }
+    .content-nav__item {
+      flex: 0 0 132px;
+      scroll-snap-align: start;
+    }
+    .library-detail-overlay { padding: 0; align-items: stretch; }
+    .library-detail-dialog,
+    .expand-panel {
+      width: 100%;
+      max-height: 100dvh;
+      border: 0;
+      border-radius: 0;
+    }
+    .expand-panel-header { padding: 14px 16px; }
+    .season-list { padding: 10px; }
+    .season-header { flex-wrap: wrap; padding: 10px 12px; }
+    .season-expand-area { min-width: 180px; }
+    .season-actions { width: 100%; flex-wrap: wrap; padding-left: 20px; }
+    .episode-row { flex-wrap: wrap; padding: 10px 12px 10px 24px; }
+    .episode-label { min-width: calc(100% - 56px); }
+    .episode-actions { width: 100%; padding-left: 48px; flex-wrap: wrap; }
+    .entry-detail-body { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 14px; }
+    .entry-detail-facts { grid-template-columns: 1fr; }
+    .stream-link-row { flex-wrap: wrap; }
+    .stream-link-input { flex-basis: 100%; }
+    .stream-link-modal-backdrop { padding: 10px; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="library-wrap">
-  <h1 class="library-heading">Library</h1>
-
   <!-- Toolbar -->
   <div class="library-toolbar">
     <input id="search-input" class="search-input" type="search" placeholder="Search titles…" autocomplete="off" />
@@ -493,15 +725,33 @@
     </select>
   </div>
 
-  <!-- Type tabs -->
-  <div class="type-tabs">
-    <button class="type-tab active" data-type="">All</button>
-    <button class="type-tab" data-type="movie">Movies</button>
-    <button class="type-tab" data-type="series">Series</button>
-    <button class="type-tab" data-type="live">Live</button>
-    <button class="type-tab" data-type="tv_vod">TV VOD</button>
-    <button class="type-tab" data-type="unsorted">Unsorted</button>
-  </div>
+  <!-- Content type navigator -->
+  <nav class="content-nav" aria-label="Library content types">
+    <button class="content-nav__item active" type="button" data-type="" aria-pressed="true">
+      <span class="content-nav__icon" aria-hidden="true">&#9638;</span>
+      <span class="content-nav__copy"><span class="content-nav__label">All</span><span class="content-nav__count" data-count="all">&mdash;</span></span>
+    </button>
+    <button class="content-nav__item" type="button" data-type="movie" aria-pressed="false">
+      <span class="content-nav__icon" aria-hidden="true">&#9654;</span>
+      <span class="content-nav__copy"><span class="content-nav__label">Movies</span><span class="content-nav__count" data-count="movie">&mdash;</span></span>
+    </button>
+    <button class="content-nav__item" type="button" data-type="series" aria-pressed="false">
+      <span class="content-nav__icon" aria-hidden="true">&#9636;</span>
+      <span class="content-nav__copy"><span class="content-nav__label">TV Shows</span><span class="content-nav__count" data-count="series">&mdash;</span></span>
+    </button>
+    <button class="content-nav__item" type="button" data-type="live" aria-pressed="false">
+      <span class="content-nav__icon" aria-hidden="true">&#9679;</span>
+      <span class="content-nav__copy"><span class="content-nav__label">Live TV</span><span class="content-nav__count" data-count="live">&mdash;</span></span>
+    </button>
+    <button class="content-nav__item" type="button" data-type="tv_vod" aria-pressed="false" title="Television programs organized by air date">
+      <span class="content-nav__icon" aria-hidden="true">&#9635;</span>
+      <span class="content-nav__copy"><span class="content-nav__label">Dated TV</span><span class="content-nav__count" data-count="tv_vod">&mdash;</span></span>
+    </button>
+    <button class="content-nav__item" type="button" data-type="unsorted" aria-pressed="false">
+      <span class="content-nav__icon" aria-hidden="true">&#8943;</span>
+      <span class="content-nav__copy"><span class="content-nav__label">Other</span><span class="content-nav__count" data-count="unsorted">&mdash;</span></span>
+    </button>
+  </nav>
 
   <!-- Card grid -->
   <div class="card-grid" id="card-grid">
@@ -516,6 +766,26 @@
       <button class="btn-page" id="btn-next" disabled>Next &#8594;</button>
     </div>
   </div>
+</div>
+
+<!-- Series / TV VOD detail overlay -->
+<div class="library-detail-overlay" id="library-detail-overlay" aria-hidden="true">
+  <div class="library-detail-backdrop" data-library-detail-close></div>
+  <section class="library-detail-dialog" role="dialog" aria-modal="true"
+    aria-labelledby="library-detail-title">
+    <div class="library-detail-content" id="library-detail-content"></div>
+  </section>
+</div>
+
+<!-- Episode stream link modal -->
+<div class="stream-link-modal-backdrop" id="stream-link-modal" aria-hidden="true">
+  <section class="stream-link-modal" role="dialog" aria-modal="true" aria-labelledby="stream-link-modal-title">
+    <div class="expand-panel-header">
+      <h2 id="stream-link-modal-title">Episode stream link</h2>
+      <button class="expand-close" type="button" onclick="closeEpisodeStreamLink()" aria-label="Close stream link">&#215;</button>
+    </div>
+    <div class="stream-link-modal-body" id="stream-link-modal-body"></div>
+  </section>
 </div>
 
 <!-- Follow confirmation modal (series) -->
@@ -601,10 +871,11 @@
       });
     });
   }
-const PER_PAGE = 48;
+const PER_PAGE = 50;
 let state = { page: 1, type: '', search: '', owned: '', downloaded: '', total: 0 };
 let debounceTimer = null;
 let expandedTitle = null;
+let detailReturnFocus = null;
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -656,11 +927,16 @@ function renderCard(e, idx) {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
     const followBadge = e.is_following ? `<span class="badge badge-following">Following</span>` : '';
-    const meta = [
-      e.year || null,
-      `${e.season_count} season${e.season_count !== 1 ? 's' : ''}`,
-      `${e.episode_count} ep`,
-    ].filter(Boolean).join(' · ');
+    const meta = e.episodes_loaded
+      ? [
+          e.year || null,
+          `${e.season_count} season${e.season_count !== 1 ? 's' : ''}`,
+          `${e.episode_count} ep`,
+        ].filter(Boolean).join(' · ')
+      : 'Episodes load when opened';
+    const onDemandBadge = e.episodes_loaded
+      ? ''
+      : `<span class="badge badge-on-demand">On demand</span>`;
 
     const followBtn = e.is_following
       ? `<button class="btn-action btn-unfollow" data-action="unfollow-series">Unfollow</button>`
@@ -668,20 +944,22 @@ function renderCard(e, idx) {
 
     const displayTitle = e.display_title || e.cleaned_title;
     return `
-      <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="series">
+       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="series"
+         role="button" tabindex="0" aria-label="Open ${esc(displayTitle)} details">
         ${artEl(e.cover_art, displayTitle, 'series')}
         <div class="card-body">
           <div class="card-title">${esc(displayTitle)}</div>
           <div class="card-meta">${esc(meta)}</div>
           <div class="card-badges">
             <span class="${typeBadgeClass('series')}">Series</span>
+            ${onDemandBadge}
             ${ownedBadge}
             ${followBadge}
           </div>
           <div class="card-actions">
             <button class="btn-action btn-add" data-action="add-series" ${!e.can_add ? 'disabled' : ''}>Add All</button>
             <button class="btn-action btn-remove" data-action="remove-series" ${!e.is_owned && !e.download_completed ? 'disabled' : ''}>Remove</button>
-            <button class="btn-action btn-download" data-action="download-series">Download</button>
+            <button class="btn-action btn-download" data-action="download-series" ${!e.episodes_loaded ? 'disabled' : ''}>Download</button>
             ${followBtn}
           </div>
         </div>
@@ -699,7 +977,8 @@ function renderCard(e, idx) {
       ? `<button class="btn-action btn-unfollow" data-action="unfollow-tv-vod" style="font-size:0.68rem;">Unfollow</button>`
       : `<button class="btn-action btn-follow" data-action="open-tv-vod-follow" style="font-size:0.68rem;">Follow</button>`;
     return `
-      <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="tv_vod_group">
+       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="tv_vod_group"
+         role="button" tabindex="0" aria-label="Open ${esc(displayTitle)} details">
         ${artEl(e.cover_art, displayTitle, 'tv_vod')}
         <div class="card-body">
           <div class="card-title">${esc(displayTitle)}</div>
@@ -720,7 +999,7 @@ function renderCard(e, idx) {
   } else {
     const ownedClass = e.is_owned ? ' is-owned' : '';
     const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
-    const dlBadge = e.download_completed ? `<span class="badge badge-downloaded">Downloaded</span>` : (e.download_pending ? `<span class="badge badge-downloaded" style="background:#fff3cd;color:#664d03;">Queued</span>` : '');
+    const dlBadge = e.download_completed ? `<span class="badge badge-downloaded">Downloaded</span>` : (e.download_pending ? `<span class="badge badge-queued">Queued</span>` : '');
     const displayTitle = e.display_title || e.cleaned_title;
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
     const dlBtn = e.is_downloaded
@@ -731,7 +1010,8 @@ function renderCard(e, idx) {
           ? `<button class="btn-action btn-download" data-action="download-entry" title="Re-queue download">Queued</button>`
           : `<button class="btn-action btn-download" data-action="download-entry">Download</button>`));
     return `
-      <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}">
+      <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}"
+        role="button" tabindex="0" aria-label="Open ${esc(displayTitle)} details">
         ${artEl(e.cover_art, displayTitle, e.type)}
         <div class="card-body">
           <div class="card-title">${esc(displayTitle)}</div>
@@ -767,7 +1047,7 @@ async function fetchEntries() {
   try {
     // Fetch entries and follows in parallel
     const [data, follows] = await Promise.all([
-      fetch('/library/entries?' + params).then(r => r.json()),
+      fetch('/library/entries?' + params, { cache: 'no-store' }).then(r => r.json()),
       fetch('/library/follows').then(r => r.json()),
     ]);
     state.total = data.total;
@@ -817,11 +1097,155 @@ function renderPagination(total) {
 
 // ── Series expand / drill-down ────────────────────────────────────────────────
 
-function closeExpand() {
-  const existing = document.getElementById('expand-panel');
-  if (existing) existing.remove();
+function openDetailOverlay(panel, trigger) {
+  const overlay = document.getElementById('library-detail-overlay');
+  const content = document.getElementById('library-detail-content');
+  if (!overlay || !content) return;
+  if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
+  content.replaceChildren(panel);
+  detailReturnFocus = trigger || document.activeElement;
+  overlay.classList.add('open');
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('library-detail-open');
+  panel.querySelector('.expand-close')?.focus();
+}
+
+function closeDetailOverlay({ restoreFocus = true } = {}) {
+  closeEpisodeStreamLink({ restoreFocus: false });
+  const overlay = document.getElementById('library-detail-overlay');
+  const content = document.getElementById('library-detail-content');
+  overlay?.classList.remove('open');
+  overlay?.setAttribute('aria-hidden', 'true');
+  if (content) content.innerHTML = '';
+  document.body.classList.remove('library-detail-open');
   expandedTitle = null;
-  closeTvVodExpand();
+  expandedTvVodTitle = null;
+  if (restoreFocus && detailReturnFocus?.isConnected) detailReturnFocus.focus();
+  detailReturnFocus = null;
+}
+
+function closeExpand() {
+  closeDetailOverlay();
+}
+
+function streamLinkMarkup(data) {
+  if (!data.stream_url) {
+    return `<div class="stream-link-panel">
+      <div class="stream-link-title">Stream link unavailable</div>
+      <div class="stream-link-note">No active eligible provider stream was found.</div>
+    </div>`;
+  }
+  const source = data.strm_generated ? 'Current STRM URL' : 'Available provider stream';
+  return `<div class="stream-link-panel">
+    <div class="stream-link-title">${source}${data.provider ? ` · ${esc(data.provider)}` : ''}</div>
+    <div class="stream-link-note">This URL may contain provider credentials. Reveal or copy it only in a private environment.</div>
+    <div class="stream-link-row">
+      <input class="stream-link-input" type="password" readonly value="${esc(data.stream_url)}" aria-label="Stream URL">
+      <button type="button" class="btn-action btn-follow" onclick="toggleStreamLink(this)">Reveal</button>
+      <button type="button" class="btn-action btn-follow stream-link-copy" onclick="copyStreamLink(this)">Copy</button>
+    </div>
+  </div>`;
+}
+
+function toggleStreamLink(button) {
+  const input = button.closest('.stream-link-row')?.querySelector('.stream-link-input');
+  if (!input) return;
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  button.textContent = reveal ? 'Hide' : 'Reveal';
+}
+
+async function copyStreamLink(button) {
+  const input = button.closest('.stream-link-row')?.querySelector('.stream-link-input');
+  if (!input) return;
+  try {
+    await navigator.clipboard.writeText(input.value);
+    const original = button.textContent;
+    button.textContent = 'Copied';
+    setTimeout(() => { button.textContent = original; }, 1200);
+  } catch {
+    input.type = 'text';
+    input.select();
+    document.execCommand('copy');
+    input.type = 'password';
+  }
+}
+
+async function openEntryDetails(cardEl, entryId) {
+  closeExpand();
+  const panel = document.createElement('div');
+  panel.className = 'expand-panel';
+  panel.innerHTML = `
+    <div class="expand-panel-header">
+      <h2 id="library-detail-title">Entry details</h2>
+      <button class="expand-close" type="button" onclick="closeExpand()" aria-label="Close details">&#215;</button>
+    </div>
+    <div class="loading-state">Loading details...</div>`;
+  openDetailOverlay(panel, cardEl);
+
+  try {
+    const data = await api(`/library/entries/${encodeURIComponent(entryId)}/details`);
+    const title = data.title || data.raw_title || 'Entry details';
+    const episodeLabel = data.season != null && data.episode != null
+      ? `S${String(data.season).padStart(2, '0')}E${String(data.episode).padStart(2, '0')}`
+      : null;
+    const art = data.cover_art
+      ? `<img class="entry-detail-art" src="${esc(data.cover_art)}" alt="${esc(title)}">`
+      : `<div class="entry-detail-art-placeholder">${typeIcon(data.type)}</div>`;
+    panel.innerHTML = `
+      <div class="expand-panel-header">
+        <h2 id="library-detail-title">${esc(title)}</h2>
+        <button class="expand-close" type="button" onclick="closeExpand()" aria-label="Close details">&#215;</button>
+      </div>
+      <div class="entry-detail-body">
+        <div>${art}</div>
+        <div class="entry-detail-info">
+          <dl class="entry-detail-facts">
+            <div class="entry-detail-fact"><dt>Year</dt><dd>${esc(data.air_date || data.year || 'Unknown')}</dd></div>
+            ${episodeLabel ? `<div class="entry-detail-fact"><dt>Episode</dt><dd>${episodeLabel}</dd></div>` : ''}
+            <div class="entry-detail-fact"><dt>Provider</dt><dd>${esc(data.provider || 'Unavailable')}</dd></div>
+          </dl>
+          ${streamLinkMarkup(data)}
+        </div>
+      </div>`;
+    panel.querySelector('.expand-close')?.focus();
+  } catch (error) {
+    panel.querySelector('.loading-state').textContent = error.message || 'Failed to load details.';
+  }
+}
+
+let streamLinkReturnFocus = null;
+
+async function toggleEpisodeStreamLink(button, entryId) {
+  const modal = document.getElementById('stream-link-modal');
+  const body = document.getElementById('stream-link-modal-body');
+  const title = document.getElementById('stream-link-modal-title');
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
+  const episodeRow = button.closest('.episode-row');
+  const episodeLabel = episodeRow?.querySelector('.episode-label')?.textContent.trim();
+  streamLinkReturnFocus = button;
+  title.textContent = episodeLabel ? `${episodeLabel} stream link` : 'Episode stream link';
+  body.innerHTML = '<div class="stream-link-note">Loading stream link...</div>';
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  modal.querySelector('.expand-close')?.focus();
+  try {
+    const data = await api(`/library/entries/${encodeURIComponent(entryId)}/details`);
+    if (!modal.classList.contains('open')) return;
+    body.innerHTML = streamLinkMarkup(data);
+  } catch (error) {
+    body.innerHTML = `<div class="stream-link-note">${esc(error.message || 'Failed to load stream link.')}</div>`;
+  }
+}
+
+function closeEpisodeStreamLink({ restoreFocus = true } = {}) {
+  const modal = document.getElementById('stream-link-modal');
+  if (!modal?.classList.contains('open')) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  document.getElementById('stream-link-modal-body').innerHTML = '';
+  if (restoreFocus && streamLinkReturnFocus?.isConnected) streamLinkReturnFocus.focus();
+  streamLinkReturnFocus = null;
 }
 
 async function toggleSeriesExpand(cardEl, title) {
@@ -834,17 +1258,12 @@ async function toggleSeriesExpand(cardEl, title) {
   panel.className = 'expand-panel';
   panel.innerHTML = `
     <div class="expand-panel-header">
-      <span>${esc(title)}</span>
-      <button class="expand-close" onclick="closeExpand()">&#215;</button>
+      <h2 id="library-detail-title">${esc(title)}</h2>
+      <button class="expand-close" type="button" onclick="closeExpand()" aria-label="Close details">&#215;</button>
     </div>
     <div class="season-list" id="season-list"><div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">Loading seasons…</div></div>
   `;
-
-  if (cardEl.nextSibling) {
-    cardEl.parentNode.insertBefore(panel, cardEl.nextSibling);
-  } else {
-    cardEl.parentNode.appendChild(panel);
-  }
+  openDetailOverlay(panel, cardEl);
 
   try {
     const data = await fetch(`/library/series/${encodeURIComponent(title)}/seasons`).then(r => r.json());
@@ -857,17 +1276,22 @@ async function toggleSeriesExpand(cardEl, title) {
 
 function renderSeasons(data, title) {
   const list = document.getElementById('season-list');
+  const facts = `
+    <dl class="entry-detail-facts series-detail-facts">
+      <div class="entry-detail-fact"><dt>Year</dt><dd>${esc(data.year || 'Unknown')}</dd></div>
+      <div class="entry-detail-fact"><dt>Provider</dt><dd>${esc(data.provider || 'Unavailable')}</dd></div>
+    </dl>`;
   if (!data.seasons || !data.seasons.length) {
-    list.innerHTML = '<div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">No seasons found.</div>';
+    list.innerHTML = facts + '<div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">No seasons found.</div>';
     return;
   }
 
   list._seriesTitle = title;
 
-  list.innerHTML = data.seasons.map(s => {
+  list.innerHTML = facts + data.seasons.map(s => {
     const seasonNum = s.season;
     const ownedInfo = s.owned_count > 0
-      ? `<span style="font-size:0.72rem;color:#198754;font-weight:600;">${s.owned_count} owned</span>`
+      ? `<span style="font-size:0.72rem;color:var(--color-success);font-weight:600;">${s.owned_count} owned</span>`
       : '';
     const followBtn = s.is_following
       ? `<button class="btn-action btn-unfollow" style="padding:3px 8px;font-size:0.68rem;"
@@ -921,17 +1345,18 @@ async function toggleEpisodes(season, seriesTitle) {
     const data = await fetch(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${season}/episodes`).then(r => r.json());
     epList.dataset.loaded = '1';
     epList.innerHTML = data.episodes.map(ep => {
-      const epLabel = ep.display_title || `Episode ${ep.episode || '?'}`;
+      const epLabel = ep.episode_name || `Episode ${ep.episode || '?'}`;
       return `
       <div class="episode-row" data-entry-id="${esc(ep.entry_id)}">
-        <span class="episode-num">E${String(ep.episode || '?').padStart(2,'0')}</span>
-        <span class="episode-label">${ep.is_owned ? `<span class="ep-owned-badge">&#10003;</span> ` : ''}${esc(epLabel)}</span>
-        <div class="episode-actions">
-          <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
-            ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
-          <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
-            ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
-          <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
+          <span class="episode-num">E${String(ep.episode || '?').padStart(2,'0')}</span>
+          <span class="episode-label">${ep.is_owned ? `<span class="ep-owned-badge">&#10003;</span> ` : ''}${esc(epLabel)}</span>
+          <div class="episode-actions">
+            <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
+              ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
+            <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
+              ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
+            <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
+            <button class="ep-btn ep-btn-add" data-action="show-stream-link" data-entry-id="${esc(ep.entry_id)}">Stream Link</button>
         </div>
       </div>`;
     }).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
@@ -945,9 +1370,7 @@ async function toggleEpisodes(season, seriesTitle) {
 let expandedTvVodTitle = null;
 
 function closeTvVodExpand() {
-  const existing = document.getElementById('tv-vod-expand-panel');
-  if (existing) existing.remove();
-  expandedTvVodTitle = null;
+  closeDetailOverlay();
 }
 
 async function toggleTvVodExpand(cardEl, title) {
@@ -960,17 +1383,12 @@ async function toggleTvVodExpand(cardEl, title) {
   panel.className = 'expand-panel';
   panel.innerHTML = `
     <div class="expand-panel-header">
-      <span>${esc(title)}</span>
-      <button class="expand-close" onclick="closeTvVodExpand()">&#215;</button>
+      <h2 id="library-detail-title">${esc(title)}</h2>
+      <button class="expand-close" type="button" onclick="closeTvVodExpand()" aria-label="Close details">&#215;</button>
     </div>
     <div class="season-list" id="tv-vod-year-list"><div style="padding:16px;color:var(--color-text-muted);font-size:0.85rem;">Loading years…</div></div>
   `;
-
-  if (cardEl.nextSibling) {
-    cardEl.parentNode.insertBefore(panel, cardEl.nextSibling);
-  } else {
-    cardEl.parentNode.appendChild(panel);
-  }
+  openDetailOverlay(panel, cardEl);
 
   try {
     const data = await fetch(`/library/tv_vod/${encodeURIComponent(title)}/years`).then(r => r.json());
@@ -993,7 +1411,7 @@ function renderTvVodYears(data, title) {
   list.innerHTML = data.years.map(y => {
     const yr = y.year;
     const ownedInfo = y.owned_count > 0
-      ? `<span style="font-size:0.72rem;color:#198754;font-weight:600;">${y.owned_count} owned</span>`
+      ? `<span style="font-size:0.72rem;color:var(--color-success);font-weight:600;">${y.owned_count} owned</span>`
       : '';
     const followBtn = y.is_following
       ? `<button class="btn-action btn-unfollow" style="padding:3px 8px;font-size:0.68rem;"
@@ -1048,14 +1466,15 @@ async function toggleTvVodEpisodes(year, title) {
     epList.innerHTML = data.episodes.map(ep => {
       return `
       <div class="episode-row" data-entry-id="${esc(ep.entry_id)}">
-        <span class="episode-num" style="min-width:90px;">${esc(ep.air_date || '?')}</span>
-        <span class="episode-label">${ep.is_owned ? `<span class="ep-owned-badge">&#10003;</span> ` : ''}${esc(ep.air_date || '?')}</span>
-        <div class="episode-actions">
-          <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
-            ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
-          <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
-            ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
-          <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
+          <span class="episode-num" style="min-width:90px;">${esc(ep.air_date || '?')}</span>
+          <span class="episode-label">${ep.is_owned ? `<span class="ep-owned-badge">&#10003;</span> ` : ''}${esc(ep.air_date || '?')}</span>
+          <div class="episode-actions">
+            <button class="ep-btn ep-btn-add" data-action="add-entry" data-entry-id="${esc(ep.entry_id)}"
+              ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
+            <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
+              ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
+            <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
+            <button class="ep-btn ep-btn-add" data-action="show-stream-link" data-entry-id="${esc(ep.entry_id)}">Stream Link</button>
         </div>
       </div>`;
     }).join('') || '<div style="padding:12px 32px;color:var(--color-text-muted);font-size:0.82rem;">No episodes found.</div>';
@@ -1065,8 +1484,8 @@ async function toggleTvVodEpisodes(year, title) {
 }
 
 // ── Single event delegation handler for all library actions ──────────────────
-// Using document-level listener to avoid stopPropagation conflicts between
-// the card grid and the expand panel (which lives inside the grid).
+// Using document-level listener keeps dynamically rendered card/detail actions
+// on one event path.
 
 document.addEventListener('click', async function(e) {
   // ── Series card expand: click on card body (not a button) ──
@@ -1082,6 +1501,13 @@ document.addEventListener('click', async function(e) {
   if (tvVodCard && !e.target.closest('[data-action]')) {
     const d = cardData[parseInt(tvVodCard.dataset.cardIdx)];
     if (d) toggleTvVodExpand(tvVodCard, d.cleaned_title);
+    return;
+  }
+
+  // ── Movie / single-entry card details ──
+  const entryCard = e.target.closest('[data-card-idx][data-entry-id]');
+  if (entryCard && !e.target.closest('[data-action]')) {
+    openEntryDetails(entryCard, entryCard.dataset.entryId);
     return;
   }
 
@@ -1137,6 +1563,8 @@ document.addEventListener('click', async function(e) {
         btn.textContent = 'Queued';
       } catch (e) { alert('Download failed: ' + (e.message || e)); }
       refreshAfterTvVodAction();
+    } else if (action === 'show-stream-link' && entryId) {
+      await toggleEpisodeStreamLink(btn, entryId);
     }
     return;
   }
@@ -1188,6 +1616,8 @@ document.addEventListener('click', async function(e) {
         btn.textContent = 'Queued';
       } catch (e) { alert('Download failed: ' + (e.message || e)); }
       refreshAfterAction();
+    } else if (action === 'show-stream-link' && entryId) {
+      await toggleEpisodeStreamLink(btn, entryId);
     }
     return;
   }
@@ -1284,6 +1714,80 @@ document.addEventListener('click', async function(e) {
   }
 });
 
+document.querySelector('[data-library-detail-close]')?.addEventListener('click', () => {
+  closeDetailOverlay();
+});
+
+document.getElementById('stream-link-modal')?.addEventListener('click', event => {
+  if (event.target === event.currentTarget) closeEpisodeStreamLink();
+});
+
+document.addEventListener('keydown', event => {
+  const overlay = document.getElementById('library-detail-overlay');
+  const overlayOpen = overlay?.classList.contains('open');
+  const streamModal = document.getElementById('stream-link-modal');
+  const streamModalOpen = streamModal?.classList.contains('open');
+
+  if (event.key === 'Escape' && streamModalOpen) {
+    closeEpisodeStreamLink();
+    return;
+  }
+
+  if (event.key === 'Tab' && streamModalOpen) {
+    const focusable = Array.from(streamModal.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter(element => element.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+    return;
+  }
+
+  if (event.key === 'Escape' && overlayOpen) {
+    if (document.querySelector('.modal-backdrop.open')) return;
+    closeDetailOverlay();
+    return;
+  }
+
+  if (event.key === 'Tab' && overlayOpen && !document.querySelector('.modal-backdrop.open')) {
+    const focusable = Array.from(overlay.querySelectorAll(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter(element => element.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+    return;
+  }
+
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const card = event.target.closest('[data-card-idx][role="button"]');
+  if (!card || event.target.closest('[data-action]')) return;
+  event.preventDefault();
+  const data = cardData[parseInt(card.dataset.cardIdx)];
+  if (!data) return;
+  if (card.dataset.type === 'series') {
+    toggleSeriesExpand(card, data.cleaned_title);
+  } else if (card.dataset.type === 'tv_vod_group') {
+    toggleTvVodExpand(card, data.cleaned_title);
+  } else if (card.dataset.entryId) {
+    openEntryDetails(card, card.dataset.entryId);
+  }
+});
+
 function refreshAfterAction() {
   const savedTitle = expandedTitle;
   fetchEntries().then(() => {
@@ -1329,7 +1833,9 @@ function openFollowModal(title) {
   if (selector) body.appendChild(selector);
   const strmRadio = body.querySelector('input[value="strm"]');
   if (strmRadio) strmRadio.checked = true;
-  document.getElementById('follow-modal').classList.add('open');
+  const modal = document.getElementById('follow-modal');
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
+  modal.classList.add('open');
 }
 
 function closeFollowModal() {
@@ -1373,7 +1879,9 @@ function openTvVodFollowModal(title) {
   if (selector) body.appendChild(selector);
   const strmRadio = body.querySelector('input[value="strm"]');
   if (strmRadio) strmRadio.checked = true;
-  document.getElementById('tv-vod-follow-modal').classList.add('open');
+  const modal = document.getElementById('tv-vod-follow-modal');
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
+  modal.classList.add('open');
 }
 
 function closeTvVodFollowModal() {
@@ -1406,15 +1914,33 @@ document.getElementById('tv-vod-follow-modal').addEventListener('click', functio
 
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
-document.querySelectorAll('.type-tab').forEach(tab => {
+document.querySelectorAll('.content-nav__item').forEach(tab => {
   tab.addEventListener('click', () => {
-    document.querySelectorAll('.type-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.content-nav__item').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-pressed', 'false');
+    });
     tab.classList.add('active');
+    tab.setAttribute('aria-pressed', 'true');
     state.type = tab.dataset.type;
     state.page = 1;
     fetchEntries();
   });
 });
+
+async function fetchTypeCounts() {
+  try {
+    const response = await fetch('/library/counts', { cache: 'no-store' });
+    if (!response.ok) return;
+    const counts = await response.json();
+    document.querySelectorAll('[data-count]').forEach(element => {
+      const value = counts[element.dataset.count];
+      if (Number.isFinite(value)) element.textContent = Number(value).toLocaleString();
+    });
+  } catch (_error) {
+    // Counts are supplementary; browsing remains available if they fail.
+  }
+}
 
 document.getElementById('search-input').addEventListener('input', e => {
   clearTimeout(debounceTimer);
@@ -1446,5 +1972,6 @@ document.getElementById('btn-next').addEventListener('click', () => {
 
 // Initial load
 fetchEntries();
+fetchTypeCounts();
 </script>
 {% endblock %}

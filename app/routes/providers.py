@@ -4,21 +4,22 @@ import os
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
 from app.auth.jwt_handler import TokenData, get_current_user
+from app.config import settings
 from app.database import get_db
 from app.models import (
     ProviderLocalFileCreate, ProviderLocalFileUpdate,
     ProviderM3UCreate, ProviderM3UUpdate,
     ProviderXtreamCreate, ProviderXtreamUpdate,
 )
+from app.template_engine import create_templates
 from app.utils.slugify import slugify
 
 logger = logging.getLogger(__name__)
 
-_M3U_DIR = os.getenv("M3U_DIR", "data/m3u")
+_M3U_DIR = settings.m3u_dir
 
 
 def _checkbox_to_int(value: str | None) -> int:
@@ -51,9 +52,7 @@ def _default_browse_root() -> str:
     return resolve_path(_M3U_DIR)
 
 router = APIRouter(prefix="/providers")
-templates = Jinja2Templates(
-    directory=os.path.join(os.path.dirname(__file__), "..", "templates")
-)
+templates = create_templates()
 
 
 @router.get("/browse", response_class=JSONResponse)

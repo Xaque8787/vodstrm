@@ -61,11 +61,18 @@ class ProviderXtreamCreate(BaseModel):
     port: Optional[str] = None
     stream_format: Literal["ts", "hls"] = "ts"
 
-    @field_validator("name", "server_url", "username", "password")
+    @field_validator("name", "server_url")
     @classmethod
     def fields_not_empty(cls, v: str) -> str:
         v = v.strip()
         if not v:
+            raise ValueError("This field is required")
+        return v
+
+    @field_validator("username", "password")
+    @classmethod
+    def credentials_not_empty(cls, v: str) -> str:
+        if not v.strip():
             raise ValueError("This field is required")
         return v
 
@@ -181,11 +188,18 @@ class ProviderXtreamUpdate(BaseModel):
     port: Optional[str] = None
     stream_format: Literal["ts", "hls"] = "ts"
 
-    @field_validator("name", "server_url", "username", "password")
+    @field_validator("name", "server_url")
     @classmethod
     def fields_not_empty(cls, v: str) -> str:
         v = v.strip()
         if not v:
+            raise ValueError("This field is required")
+        return v
+
+    @field_validator("username", "password")
+    @classmethod
+    def credentials_not_empty(cls, v: str) -> str:
+        if not v.strip():
             raise ValueError("This field is required")
         return v
 

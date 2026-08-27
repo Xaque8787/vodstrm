@@ -1,5 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
 
+  // Theme and shared navigation
+  initThemeControls();
+  initPasswordToggles();
+
   // ── Confirm destructive forms ────────────────────────────────────────
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (e) => {
@@ -13,10 +17,60 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Filters page ─────────────────────────────────────────────────────
   if (document.getElementById("open-add-btn")) initFiltersPage();
 
-  // ── Library inspector ────────────────────────────────────────────────
-  if (document.getElementById("lib-table")) initLibrary();
+  // ── Database inspector ───────────────────────────────────────────────
+  if (document.getElementById("lib-table")) initDatabase();
 
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// THEME + NAVIGATION
+// ─────────────────────────────────────────────────────────────────────────
+function initThemeControls() {
+  const toggles = document.querySelectorAll("[data-theme-toggle]");
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+
+  function applyTheme(theme, persist = false) {
+    const isDark = theme === "dark";
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    toggles.forEach((toggle) => {
+      toggle.checked = isDark;
+      toggle.setAttribute("aria-checked", String(isDark));
+    });
+    if (themeColor) themeColor.content = isDark ? "#0b1215" : "#edf3f4";
+    if (persist) {
+      try {
+        localStorage.setItem("vodstrm-theme", theme);
+      } catch (_) {
+        // Keep the in-page theme even when storage is unavailable.
+      }
+    }
+  }
+
+  applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+  toggles.forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      applyTheme(toggle.checked ? "dark" : "light", true);
+    });
+  });
+}
+
+function initPasswordToggles() {
+  document.addEventListener("click", (event) => {
+    const toggle = event.target.closest("[data-password-toggle]");
+    if (!toggle) return;
+
+    const input = toggle.closest(".password-field")?.querySelector("input");
+    if (!input) return;
+
+    const showPassword = input.type === "password";
+    input.type = showPassword ? "text" : "password";
+    toggle.classList.toggle("password-toggle--visible", showPassword);
+    toggle.setAttribute("aria-pressed", String(showPassword));
+    toggle.setAttribute("aria-label", showPassword ? "Hide password" : "Show password");
+    toggle.title = showPassword ? "Hide password" : "Show password";
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // FILE BROWSER
@@ -244,9 +298,9 @@ function addPatternRow(list, ftype) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// LIBRARY INSPECTOR — expand/collapse + debounced search submit
+// DATABASE INSPECTOR — expand/collapse + debounced search submit
 // ─────────────────────────────────────────────────────────────────────────
-function initLibrary() {
+function initDatabase() {
   // ── Expand/collapse detail rows (streams only) ────────────────────
   const tbody = document.getElementById("lib-tbody");
   if (tbody) {

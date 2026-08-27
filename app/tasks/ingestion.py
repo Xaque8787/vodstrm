@@ -18,6 +18,7 @@ Flow per local_file provider:
 import logging
 import os
 
+from app.config import settings
 from app.database import get_db
 from app.ingestion.parser import parse_m3u
 from app.ingestion.sync import purge_inactive_and_deleted_providers, run_sync
@@ -26,7 +27,7 @@ from app.utils.env import resolve_path
 
 logger = logging.getLogger("app.tasks.ingestion")
 
-_M3U_DIR_RELATIVE = os.getenv("M3U_DIR", "data/m3u")
+_M3U_DIR_RELATIVE = settings.m3u_dir
 
 
 def _m3u_path(provider_slug: str) -> str:

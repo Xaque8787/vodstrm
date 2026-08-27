@@ -10,6 +10,8 @@ import os
 import sqlite3
 import sys
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 _DOCKER_ROOT = "/app"
@@ -31,13 +33,7 @@ MIGRATIONS_DIR = _resolve("migrations")
 
 
 def _get_connection() -> sqlite3.Connection:
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_resolve(".env"))
-    except ImportError:
-        pass
-
-    db_path = _resolve(os.getenv("DATABASE_PATH", "data/app.db"))
+    db_path = _resolve(settings.database_path)
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

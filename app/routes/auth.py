@@ -5,7 +5,6 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 
 from app.auth.jwt_handler import (
     COOKIE_NAME,
@@ -13,12 +12,14 @@ from app.auth.jwt_handler import (
     create_access_token,
     decode_access_token,
 )
+from app.config import settings
 from app.database import get_db
+from app.template_engine import create_templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "templates"))
+templates = create_templates()
 
 
 def _hash_password(password: str) -> str:
@@ -76,7 +77,7 @@ async def login_submit(
         value=token,
         httponly=True,
         samesite="lax",
-        secure=os.getenv("SECURE_COOKIES", "false").lower() == "true",
+        secure=settings.secure_cookies,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
     logger.info("User '%s' logged in", username)

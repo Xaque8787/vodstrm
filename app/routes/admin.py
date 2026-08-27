@@ -2,18 +2,19 @@ import hashlib
 import logging
 import os
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.auth.jwt_handler import TokenData, get_current_admin
 from app.database import get_db
+from app.template_engine import create_templates
 from app.tasks.strm import _remove_empty_dirs, _vod_root
+from app.utils.log_reader import LOG_LEVELS, available_log_files, read_log_entries
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin")
-templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "templates"))
+templates = create_templates()
 
 _LIBRARY_PAGE_SIZE = 100
 
@@ -65,11 +66,55 @@ async def delete_user(user_id: int, current_user: TokenData = Depends(get_curren
 
 
 # ---------------------------------------------------------------------------
+# LOG VIEWER
+# ---------------------------------------------------------------------------
+
+@router.get("/logs", response_class=HTMLResponse)
+async def logs_page(
+    request: Request,
+    current_user: TokenData = Depends(get_current_admin),
+):
+    return templates.TemplateResponse(
+        "admin/logs.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "log_files": available_log_files(),
+            "log_levels": LOG_LEVELS,
+        },
+    )
+
+
+@router.get("/logs/data", response_class=JSONResponse)
+async def logs_data(
+    file: str = Query(default="app.log"),
+    level: str = Query(default="ALL"),
+    search: str = Query(default=""),
+    limit: int = Query(default=250, ge=50, le=2000),
+    current_user: TokenData = Depends(get_current_admin),
+):
+    try:
+        entries = read_log_entries(file, level, search, limit)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(
+        {
+            "entries": entries,
+            "files": available_log_files(),
+            "selected_file": file,
+            "level": level.upper(),
+            "limit": limit,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # LIBRARY INSPECTION / DEBUG
 # ---------------------------------------------------------------------------
 
-@router.get("/library", response_class=HTMLResponse)
-async def library_page(
+@router.get("/database", response_class=HTMLResponse)
+async def database_page(
     request: Request,
     tab: str = "entries",
     page: int = 1,
@@ -190,6 +235,17 @@ async def library_page(
     )
 
 
+@router.get("/library", include_in_schema=False)
+async def legacy_library_page(
+    request: Request,
+    current_user: TokenData = Depends(get_current_admin),
+):
+    target = "/admin/database"
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(target, status_code=308)
+
+
 def _delete_strm_files(conn) -> int:
     """Delete all .strm files referenced in streams.strm_path. Returns count deleted."""
     paths = conn.execute(
@@ -210,26 +266,39 @@ def _delete_strm_files(conn) -> int:
     return deleted
 
 
-@router.post("/library/clear/entries")
+def _clear_xtream_series_data(conn) -> tuple[int, int]:
+    """Clear summary and episode caches that independently feed Library TV cards."""
+    catalog = conn.execute("DELETE FROM xtream_series_catalog").rowcount
+    cache = conn.execute("DELETE FROM xtream_series_cache").rowcount
+    return catalog, cache
+
+
+@router.post("/library/clear/entries", include_in_schema=False)
+@router.post("/database/clear/entries")
 async def clear_entries(current_user: TokenData = Depends(get_current_admin)):
     with get_db() as conn:
         deleted = _delete_strm_files(conn)
+        catalog, cache = _clear_xtream_series_data(conn)
         conn.execute("DELETE FROM streams")
         conn.execute("DELETE FROM entries")
     logger.warning(
-        "[ADMIN] entries + streams tables cleared by '%s' (strm files deleted=%d)",
-        current_user.username, deleted,
+        "[ADMIN] library data cleared by '%s' "
+        "(strm files=%d series_catalog=%d series_cache=%d)",
+        current_user.username, deleted, catalog, cache,
     )
-    return RedirectResponse("/admin/library?flash=cleared&tab=entries", status_code=302)
+    return RedirectResponse("/admin/database?flash=cleared&tab=entries", status_code=302)
 
 
-@router.post("/library/clear/streams")
+@router.post("/library/clear/streams", include_in_schema=False)
+@router.post("/database/clear/streams")
 async def clear_streams(current_user: TokenData = Depends(get_current_admin)):
     with get_db() as conn:
         deleted = _delete_strm_files(conn)
+        catalog, cache = _clear_xtream_series_data(conn)
         conn.execute("DELETE FROM streams")
     logger.warning(
-        "[ADMIN] streams table cleared by '%s' (strm files deleted=%d)",
-        current_user.username, deleted,
+        "[ADMIN] streams and native series data cleared by '%s' "
+        "(strm files=%d series_catalog=%d series_cache=%d)",
+        current_user.username, deleted, catalog, cache,
     )
-    return RedirectResponse("/admin/library?flash=streams_cleared&tab=streams", status_code=302)
+    return RedirectResponse("/admin/database?flash=streams_cleared&tab=streams", status_code=302)

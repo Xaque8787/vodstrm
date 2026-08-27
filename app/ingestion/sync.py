@@ -15,13 +15,14 @@ import logging
 import os
 import re
 import sqlite3
-from typing import Iterable
+from typing import Callable, Iterable
 
+from app.config import settings
 from app.utils.env import local_now_iso, resolve_path
 
 logger = logging.getLogger("app.ingestion.sync")
 
-_VOD_ROOT_RELATIVE = os.getenv("VOD_DIR", "data/vod")
+_VOD_ROOT_RELATIVE = settings.vod_path
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +169,12 @@ def _stamp_stream_batch_id(conn: sqlite3.Connection, entry_id: str, provider: st
 # BATCH WRITE
 # ---------------------------------------------------------------------------
 
-def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict], quality_terms: list[str] | None = None) -> dict:
+def persist_entries(
+    conn: sqlite3.Connection,
+    entries: Iterable[dict],
+    quality_terms: list[str] | None = None,
+    progress_callback: Callable[..., None] | None = None,
+) -> dict:
     """
     Upsert a collection of parsed entries into entries + streams tables.
 
@@ -189,7 +195,9 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict], quality_t
     updated_streams = 0
     quality_kept = 0
 
-    for entry in entries:
+    entries = list(entries)
+    total_entries = len(entries)
+    for index, entry in enumerate(entries, start=1):
         entry_id = entry.get("entry_id")
         if not entry_id:
             logger.warning("[SYNC] Entry missing entry_id, skipping: %s", entry.get("raw_title", "?"))
@@ -233,9 +241,8 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict], quality_t
             _upsert_stream(conn, entry)
             inserted_streams += 1
             logger.debug(
-                "[SYNC] Stream INSERTED entry=%s  provider=%s  url=%s",
+                "[SYNC] Stream INSERTED entry=%s  provider=%s",
                 entry_id[:12], provider or "?",
-                (entry.get("stream_url") or "")[:80],
             )
         elif use_quality:
             existing_raw = existing_stream["raw_title"] or ""
@@ -286,6 +293,14 @@ def persist_entries(conn: sqlite3.Connection, entries: Iterable[dict], quality_t
             logger.debug(
                 "[SYNC] Stream UPDATED  entry=%s  provider=%s",
                 entry_id[:12], provider or "?",
+            )
+
+        if progress_callback and (index % 1000 == 0 or index == total_entries):
+            progress_callback(
+                phase="database",
+                message=f"Saving catalogue to database ({index:,}/{total_entries:,})",
+                current=index,
+                total=total_entries,
             )
 
     summary = {
@@ -364,7 +379,7 @@ def cleanup_orphan_entries(conn: sqlite3.Connection) -> int:
     for row in doomed:
         eid = row["entry_id"]
         dl = conn.execute(
-            "SELECT staging_path, local_path FROM downloads WHERE entry_id = ?",
+            "SELECT staging_path, local_path, offline_path FROM downloads WHERE entry_id = ?",
             (eid,),
         ).fetchone()
         if dl:
@@ -372,6 +387,8 @@ def cleanup_orphan_entries(conn: sqlite3.Connection) -> int:
                 _safe_remove(dl["staging_path"])
             if dl["local_path"] and os.path.exists(dl["local_path"]):
                 _safe_remove(dl["local_path"])
+            if dl["offline_path"] and os.path.exists(dl["offline_path"]):
+                _safe_remove(dl["offline_path"])
             conn.execute("DELETE FROM downloads WHERE entry_id = ?", (eid,))
 
     cursor = conn.execute(
@@ -571,7 +588,11 @@ def apply_follow_rules(conn: sqlite3.Connection, provider_slug: str) -> int:
 # FULL SYNC PIPELINE
 # ---------------------------------------------------------------------------
 
-def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
+def run_sync(
+    conn: sqlite3.Connection,
+    parsed_result: dict,
+    progress_callback: Callable[..., None] | None = None,
+) -> dict:
     """
     Full ingest pipeline for a single provider's parse result.
 
@@ -583,7 +604,7 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
 
     Returns a combined summary dict.
     """
-    provider = None
+    provider = parsed_result.get("provider")
     batch_id = parsed_result.get("batch_id", "")
 
     all_entries: list[dict] = (
@@ -594,7 +615,7 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
         + parsed_result.get("unsorted", [])
     )
 
-    if all_entries:
+    if all_entries and not provider:
         provider = all_entries[0].get("provider")
 
     logger.info(
@@ -613,7 +634,19 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
             except (json.JSONDecodeError, TypeError):
                 quality_terms = []
 
-    persist_summary = persist_entries(conn, all_entries, quality_terms=quality_terms)
+    if progress_callback:
+        progress_callback(
+            phase="database",
+            message=f"Saving {len(all_entries):,} catalogue entries to database",
+            current=0,
+            total=len(all_entries),
+        )
+    persist_summary = persist_entries(
+        conn,
+        all_entries,
+        quality_terms=quality_terms,
+        progress_callback=progress_callback,
+    )
 
     stale_removed = 0
     orphans_removed = 0
@@ -638,6 +671,13 @@ def run_sync(conn: sqlite3.Connection, parsed_result: dict) -> dict:
     )
 
     try:
+        if progress_callback:
+            progress_callback(
+                phase="filters",
+                message="Applying provider filters",
+                current=None,
+                total=None,
+            )
         from app.filters.engine import load_filters, run_filters_for_provider
         filters = load_filters(conn)
         summary["filter_streams_updated"] = run_filters_for_provider(conn, filters, provider=provider)

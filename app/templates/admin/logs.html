@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Logs{% endblock %}
+{% block page_heading %}Logs{% endblock %}
+{% block page_description %}Inspect persistent application logs and rotated archives.{% endblock %}
+{% block page_actions %}
+<button class="btn btn-secondary btn-sm" id="log-refresh" type="button">Refresh</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .log-toolbar {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(120px, 0.7fr) minmax(200px, 1.5fr) minmax(90px, 0.5fr) auto;
+    gap: var(--spacing);
+    align-items: end;
+    margin-bottom: calc(var(--spacing) * 2);
+  }
+  .log-control { display: grid; gap: 4px; min-width: 0; }
+  .log-control label {
+    color: var(--color-text-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .log-control select,
+  .log-control input {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 0.82rem;
+  }
+  .log-auto-refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 36px;
+    color: var(--color-text-muted);
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+  .log-summary {
+    min-height: 24px;
+    margin-bottom: var(--spacing);
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+  }
+  .log-viewer {
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+  }
+  .log-header,
+  .log-row {
+    display: grid;
+    grid-template-columns: 146px 78px minmax(150px, 210px) minmax(280px, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+  .log-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface-alt);
+    color: var(--color-text-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .log-list {
+    max-height: calc(100vh - 300px);
+    min-height: 260px;
+    overflow: auto;
+  }
+  .log-row {
+    position: relative;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--color-border);
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.74rem;
+    line-height: 1.45;
+  }
+  .log-row:last-child { border-bottom: 0; }
+  .log-row::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--log-level-color, var(--color-border));
+  }
+  .log-row--debug { --log-level-color: var(--color-secondary); background: color-mix(in srgb, var(--color-neutral-bg) 42%, transparent); }
+  .log-row--info { --log-level-color: var(--color-primary); }
+  .log-row--warning { --log-level-color: var(--color-warning); background: color-mix(in srgb, var(--color-warning-bg) 36%, transparent); }
+  .log-row--error { --log-level-color: var(--color-danger); background: color-mix(in srgb, var(--color-error-bg) 42%, transparent); }
+  .log-row--critical { --log-level-color: var(--color-danger); background: var(--color-error-bg); }
+  .log-timestamp, .log-logger { color: var(--color-text-muted); overflow-wrap: anywhere; }
+  .log-level { color: var(--log-level-color); font-weight: 800; }
+  .log-message { color: var(--color-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .log-empty {
+    display: grid;
+    min-height: 260px;
+    place-items: center;
+    padding: 30px;
+    color: var(--color-text-muted);
+    font-size: 0.84rem;
+  }
+  @media (max-width: 800px) {
+    .log-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .log-control--search { grid-column: 1 / -1; }
+    .log-header { display: none; }
+    .log-list { max-height: none; }
+    .log-row {
+      grid-template-columns: auto 1fr;
+      gap: 4px 10px;
+      padding: 10px 12px 12px 15px;
+    }
+    .log-level { grid-column: 1; grid-row: 1; }
+    .log-timestamp { grid-column: 2; grid-row: 1; text-align: right; }
+    .log-logger { grid-column: 1 / -1; grid-row: 2; }
+    .log-message { grid-column: 1 / -1; grid-row: 3; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section aria-label="Log filters">
+  <div class="log-toolbar">
+    <div class="log-control">
+      <label for="log-file">File</label>
+      <select id="log-file">
+        {% for file in log_files %}
+        <option value="{{ file.name }}">{{ file.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="log-control">
+      <label for="log-level">Severity</label>
+      <select id="log-level">
+        <option value="ALL">All levels</option>
+        {% for level in log_levels %}<option value="{{ level }}">{{ level }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="log-control log-control--search">
+      <label for="log-search">Search</label>
+      <input id="log-search" type="search" placeholder="Logger or message" autocomplete="off">
+    </div>
+    <div class="log-control">
+      <label for="log-limit">Entries</label>
+      <select id="log-limit">
+        <option value="100">100</option>
+        <option value="250" selected>250</option>
+        <option value="500">500</option>
+        <option value="1000">1,000</option>
+        <option value="2000">2,000</option>
+      </select>
+    </div>
+    <label class="log-auto-refresh">
+      <input id="log-auto-refresh" type="checkbox" checked>
+      Auto refresh
+    </label>
+  </div>
+  <div class="log-summary" id="log-summary" aria-live="polite">Loading logs...</div>
+</section>
+
+<section class="log-viewer" aria-label="Application logs">
+  <div class="log-header" aria-hidden="true">
+    <span>Timestamp</span><span>Level</span><span>Logger</span><span>Message</span>
+  </div>
+  <div class="log-list" id="log-list">
+    <div class="log-empty">Loading logs...</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const logFile = document.getElementById('log-file');
+  const logLevel = document.getElementById('log-level');
+  const logSearch = document.getElementById('log-search');
+  const logLimit = document.getElementById('log-limit');
+  const autoRefresh = document.getElementById('log-auto-refresh');
+  const logList = document.getElementById('log-list');
+  const logSummary = document.getElementById('log-summary');
+  const refreshButton = document.getElementById('log-refresh');
+  let requestRunning = false;
+  let searchTimer;
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  }
+
+  function syncFileOptions(files, selected) {
+    const current = new Set(Array.from(logFile.options).map(option => option.value));
+    for (const file of files) {
+      if (!current.has(file.name)) logFile.add(new Option(file.name, file.name));
+    }
+    for (const option of Array.from(logFile.options)) {
+      if (!files.some(file => file.name === option.value)) option.remove();
+    }
+    if (files.some(file => file.name === selected)) logFile.value = selected;
+  }
+
+  function renderEntries(entries) {
+    logList.replaceChildren();
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'log-empty';
+      empty.textContent = 'No log entries match these filters.';
+      logList.appendChild(empty);
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    for (const entry of entries) {
+      const row = document.createElement('article');
+      row.className = `log-row log-row--${entry.level.toLowerCase()}`;
+      for (const [className, value] of [
+        ['log-timestamp', entry.timestamp],
+        ['log-level', entry.level],
+        ['log-logger', entry.logger],
+        ['log-message', entry.message],
+      ]) {
+        const cell = document.createElement('span');
+        cell.className = className;
+        cell.textContent = value;
+        row.appendChild(cell);
+      }
+      fragment.appendChild(row);
+    }
+    logList.appendChild(fragment);
+  }
+
+  async function loadLogs() {
+    if (requestRunning || !logFile.value) return;
+    requestRunning = true;
+    refreshButton.disabled = true;
+    const params = new URLSearchParams({
+      file: logFile.value,
+      level: logLevel.value,
+      search: logSearch.value,
+      limit: logLimit.value,
+    });
+    try {
+      const response = await fetch(`/admin/logs/data?${params}`, { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      syncFileOptions(data.files, data.selected_file);
+      renderEntries(data.entries);
+      const selected = data.files.find(file => file.name === data.selected_file);
+      const size = selected ? ` · ${formatBytes(selected.size)}` : '';
+      logSummary.textContent = `${data.entries.length.toLocaleString()} entries · ${data.selected_file}${size} · newest first`;
+    } catch (error) {
+      logSummary.textContent = `Could not load logs: ${error.message}`;
+    } finally {
+      requestRunning = false;
+      refreshButton.disabled = false;
+    }
+  }
+
+  refreshButton.addEventListener('click', loadLogs);
+  logFile.addEventListener('change', loadLogs);
+  logLevel.addEventListener('change', loadLogs);
+  logLimit.addEventListener('change', loadLogs);
+  logSearch.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadLogs, 300);
+  });
+  setInterval(() => { if (autoRefresh.checked) loadLogs(); }, 5000);
+  loadLogs();
+</script>
+{% endblock %}

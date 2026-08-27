@@ -1,26 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Integrations — VODSTRM{% endblock %}
+{% block page_heading %}Integrations{% endblock %}
+{% block page_description %}Configure metadata and offline-download services.{% endblock %}
 
 {% block head %}
 <style>
   .integrations-wrap {
-    padding: calc(var(--spacing) * 3);
+    padding: 0;
     max-width: 860px;
-  }
-
-  .integrations-heading {
-    font-size: 1.4rem;
-    font-weight: 700;
-    margin-bottom: calc(var(--spacing) * 3);
   }
 
   .flash-banner {
     background: var(--color-success-bg);
-    border: 1px solid #a3cfbb;
+    border: 1px solid var(--color-success);
     border-radius: var(--radius);
     padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);
     font-size: 0.875rem;
-    color: #0a3622;
+    color: var(--color-success-text);
     margin-bottom: calc(var(--spacing) * 2);
   }
 
@@ -68,9 +64,9 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
-  .badge-enabled  { background: #d1e7dd; color: #0a3622; }
-  .badge-disabled { background: #e9ecef; color: #495057; }
-  .badge-running  { background: #fff3cd; color: #664d03; }
+  .badge-enabled  { background: var(--color-success-bg); color: var(--color-success-text); }
+  .badge-disabled { background: var(--color-neutral-bg); color: var(--color-neutral-text); }
+  .badge-running  { background: var(--color-warning-bg); color: var(--color-warning-text); }
 
   .integration-card-body {
     padding: calc(var(--spacing) * 2.5);
@@ -235,7 +231,7 @@
 
   .progress-bar-skipped {
     height: 100%;
-    background: #dee2e6;
+    background: var(--color-neutral-bg);
     transition: width 0.4s ease;
   }
 
@@ -262,8 +258,8 @@
   }
 
   .dot-enriched { background: var(--color-primary); }
-  .dot-skipped  { background: #adb5bd; }
-  .dot-pending  { background: var(--color-border); border: 1px solid #adb5bd; }
+  .dot-skipped  { background: var(--color-secondary); }
+  .dot-pending  { background: var(--color-border); border: 1px solid var(--color-secondary); }
 
   .no-run-note {
     font-size: 0.82rem;
@@ -273,12 +269,12 @@
   }
 
   .warn-banner {
-    background: #fff3cd;
-    border: 1px solid #ffc107;
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning);
     border-radius: var(--radius);
     padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);
     font-size: 0.82rem;
-    color: #664d03;
+    color: var(--color-warning-text);
     display: flex;
     gap: var(--spacing);
     align-items: flex-start;
@@ -317,8 +313,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: #e9ecef;
-    color: #495057;
+    background: var(--color-neutral-bg);
+    color: var(--color-neutral-text);
     font-size: 0.72rem;
     font-weight: 700;
     padding: 1px 8px;
@@ -385,8 +381,8 @@
     letter-spacing: 0.04em;
   }
 
-  .type-series { background: #cfe2ff; color: #084298; }
-  .type-movie  { background: #d1e7dd; color: #0a3622; }
+  .type-series { background: var(--color-info-bg); color: var(--color-info-text); }
+  .type-movie  { background: var(--color-success-bg); color: var(--color-success-text); }
 
   .not-found-empty {
     padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2);
@@ -412,7 +408,7 @@
   }
   .btn:disabled, .btn.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
-  .btn-primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .btn-primary { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
   .btn-primary:hover:not(:disabled):not(.disabled) { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
 
   .btn-secondary { background: transparent; border-color: var(--color-border); color: var(--color-text); }
@@ -477,8 +473,6 @@
 
 {% block content %}
 <div class="integrations-wrap">
-  <h1 class="integrations-heading">Integrations</h1>
-
   {% if flash %}
   <div class="flash-banner">{{ flash }}</div>
   {% endif %}

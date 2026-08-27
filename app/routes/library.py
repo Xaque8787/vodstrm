@@ -6,11 +6,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 
 from app.auth.jwt_handler import TokenData, get_current_user
 from app.database import get_db
 from app.ingestion.sync import _delete_strm_file
+from app.template_engine import create_templates
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ _COVER_ART_GROUP_SUBQUERY = """
          FROM entries _eg
          JOIN tmdb_shows ts ON ts.tmdb_id = _eg.tmdb_id
          WHERE _eg.cleaned_title = e.cleaned_title
+                     AND _eg.type = e.type
            AND _eg.tmdb_type = 'show'
            AND ts.poster_path IS NOT NULL
          LIMIT 1),
@@ -56,6 +57,7 @@ _COVER_ART_GROUP_SUBQUERY = """
          FROM entries _em
          JOIN tmdb_movies tm ON tm.tmdb_id = _em.tmdb_id
          WHERE _em.cleaned_title = e.cleaned_title
+                     AND _em.type = e.type
            AND _em.tmdb_type = 'movie'
            AND tm.poster_path IS NOT NULL
          LIMIT 1),
@@ -63,6 +65,7 @@ _COVER_ART_GROUP_SUBQUERY = """
          FROM streams _sg
          JOIN entries _esg ON _esg.entry_id = _sg.entry_id
          WHERE _esg.cleaned_title = e.cleaned_title
+                     AND _esg.type = e.type
            AND json_extract(_sg.metadata_json, '$.tvg-logo') IS NOT NULL
            AND json_extract(_sg.metadata_json, '$.tvg-logo') != ''
          LIMIT 1)
@@ -70,9 +73,7 @@ _COVER_ART_GROUP_SUBQUERY = """
 """
 
 router = APIRouter(prefix="/library")
-templates = Jinja2Templates(
-    directory=os.path.join(os.path.dirname(__file__), "..", "templates")
-)
+templates = create_templates()
 
 
 # ---------------------------------------------------------------------------
@@ -101,13 +102,15 @@ async def library_page(
 # Content browse endpoints (JSON)
 # ---------------------------------------------------------------------------
 
-# Subquery: entry has at least one stream from an active import_selected provider
-_HAS_IMPORT_SELECTED = """
+# Subquery: entry has at least one browsable stream from an active provider.
+# Import actions remain restricted to import_selected providers by the
+# dedicated can-add/remove queries below; this predicate only controls whether
+# content appears in the Library browser.
+_HAS_ACTIVE_STREAM = """
     EXISTS (
         SELECT 1 FROM streams _s
         JOIN providers _p ON _p.slug = _s.provider
         WHERE _s.entry_id = e.entry_id
-          AND _p.strm_mode = 'import_selected'
           AND _p.is_active = 1
           AND (_s.include_only_active = 0 OR _s.include_only = 1)
     )
@@ -182,7 +185,7 @@ async def list_entries(
     current_user: TokenData = Depends(get_current_user),
 ):
     """
-    Return content from import_selected providers only.
+    Return browsable content from all active providers.
 
     Series are grouped by cleaned_title so one card represents the entire show.
     """
@@ -248,28 +251,32 @@ async def list_entries(
     elif downloaded == "false":
         conditions.append(f"NOT {_DOWNLOADED_EXISTS}")
 
-    # Always restrict to import_selected provider content
-    conditions.append(_HAS_IMPORT_SELECTED)
+    # Only show content supplied by an active, include-only-eligible provider.
+    conditions.append(_HAS_ACTIVE_STREAM)
 
     extra_where = (" AND " + " AND ".join(conditions)) if conditions else ""
 
     with get_db() as conn:
         if type_filter == "series":
-            series_query = _series_group_query(extra_where)
-            total = conn.execute(f"SELECT COUNT(*) FROM ({series_query})", params).fetchone()[0]
-            rows = conn.execute(series_query + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
+            total = _series_card_count(conn, search, owned, downloaded)
+            rows = _series_card_rows(
+                conn, search, owned, downloaded, per_page, offset
+            )
             entries = [_format_series_group(r) for r in rows]
 
         elif type_filter == "tv_vod":
-            tv_query = _tv_vod_group_query(extra_where)
-            total = conn.execute(f"SELECT COUNT(*) FROM ({tv_query})", params).fetchone()[0]
-            rows = conn.execute(tv_query + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
+            tv_query = _tv_vod_group_query(extra_where, paginated=True)
+            total = conn.execute(
+                _group_count_query("tv_vod", extra_where), params
+            ).fetchone()[0]
+            rows = conn.execute(
+                tv_query, params + [per_page, offset]
+            ).fetchall()
             entries = [_format_tv_vod_group(r) for r in rows]
 
         elif type_filter == "":
             # All types: series groups + tv_vod groups + individual items
-            series_query = _series_group_query(extra_where)
-            tv_query = _tv_vod_group_query(extra_where)
+            tv_query = _tv_vod_group_query(extra_where, paginated=True)
             individual_query = f"""
                 SELECT
                     e.entry_id, e.type, e.cleaned_title, e.year,
@@ -284,18 +291,30 @@ async def list_entries(
                 WHERE e.type NOT IN ('series', 'tv_vod') {extra_where}
                 ORDER BY e.cleaned_title
             """
-            series_count = conn.execute(f"SELECT COUNT(*) FROM ({series_query})", params).fetchone()[0]
-            tv_count = conn.execute(f"SELECT COUNT(*) FROM ({tv_query})", params).fetchone()[0]
-            individual_count = conn.execute(f"SELECT COUNT(*) FROM ({individual_query})", params).fetchone()[0]
+            series_count = _series_card_count(conn, search, owned, downloaded)
+            tv_count = conn.execute(
+                _group_count_query("tv_vod", extra_where), params
+            ).fetchone()[0]
+            individual_count = conn.execute(
+                f"""
+                SELECT COUNT(*) FROM entries e
+                WHERE e.type NOT IN ('series', 'tv_vod') {extra_where}
+                """,
+                params,
+            ).fetchone()[0]
             total = series_count + tv_count + individual_count
 
             # Paginate across the three result sets in order
-            series_rows = conn.execute(series_query + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
+            series_rows = _series_card_rows(
+                conn, search, owned, downloaded, per_page, offset
+            )
             remaining = per_page - len(series_rows)
             tv_offset = max(0, offset - series_count)
             tv_rows = []
             if remaining > 0:
-                tv_rows = conn.execute(tv_query + " LIMIT ? OFFSET ?", params + [remaining, tv_offset]).fetchall()
+                tv_rows = conn.execute(
+                    tv_query, params + [remaining, tv_offset]
+                ).fetchall()
             remaining -= len(tv_rows)
             indiv_offset = max(0, offset - series_count - tv_count)
             indiv_rows = []
@@ -323,20 +342,228 @@ async def list_entries(
                 WHERE {base_condition} {extra_where}
                 ORDER BY e.cleaned_title
             """
-            total = conn.execute(f"SELECT COUNT(*) FROM ({q})", params).fetchone()[0]
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM entries e WHERE {base_condition} {extra_where}",
+                params,
+            ).fetchone()[0]
             rows = conn.execute(q + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
             entries = [_format_individual(r) for r in rows]
 
-    return JSONResponse({
-        "entries": entries,
-        "total": total,
-        "page": page,
-        "per_page": per_page,
-    })
+    return JSONResponse(
+        {
+            "entries": entries,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
-def _series_group_query(extra_where: str) -> str:
+@router.get("/counts", response_class=JSONResponse)
+async def library_counts(
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Return card counts for the Library content navigator."""
+    extra_where = " AND " + _HAS_ACTIVE_STREAM
+    with get_db() as conn:
+        series = _series_card_count(conn, "", "", "")
+        tv_vod = conn.execute(
+            _group_count_query("tv_vod", extra_where)
+        ).fetchone()[0]
+        counts = {"series": series, "tv_vod": tv_vod}
+        for entry_type in ("movie", "live", "unsorted"):
+            counts[entry_type] = conn.execute(
+                f"""
+                SELECT COUNT(*) FROM entries e
+                WHERE e.type = ? {extra_where}
+                """,
+                (entry_type,),
+            ).fetchone()[0]
+    counts["all"] = sum(counts.values())
+    return JSONResponse(counts)
+
+
+def _group_count_query(entry_type: str, extra_where: str) -> str:
+    """Count Library cards without evaluating cover/ownership card decoration."""
     return f"""
+        SELECT COUNT(*) FROM (
+            SELECT e.cleaned_title
+            FROM entries e
+            WHERE e.type = '{entry_type}' {extra_where}
+            GROUP BY e.cleaned_title
+        )
+    """
+
+
+def _series_title_source(search: str) -> tuple[str, list[str]]:
+    catalog_search = ""
+    entry_search = ""
+    params: list[str] = []
+    if search:
+        pattern = f"%{search}%"
+        catalog_search = "AND c.title_key LIKE lower(?)"
+        entry_search = "AND lower(e.cleaned_title) LIKE lower(?)"
+        params.extend((pattern, pattern))
+
+    return f"""
+        WITH known_series AS (
+                 SELECT c.title_key,
+                     MIN(c.series_name) AS cleaned_title,
+                   NULLIF(MAX(c.cover), '') AS catalog_cover
+            FROM xtream_series_catalog c
+            JOIN providers p ON p.slug = c.provider_slug
+            WHERE p.is_active = 1 {catalog_search}
+            GROUP BY c.title_key
+
+            UNION ALL
+
+                 SELECT lower(e.cleaned_title) AS title_key,
+                     MIN(e.cleaned_title) AS cleaned_title,
+                     NULL AS catalog_cover
+            FROM entries e
+            WHERE e.type = 'series'
+              AND {_HAS_ACTIVE_STREAM}
+              {entry_search}
+            GROUP BY lower(e.cleaned_title)
+        ),
+        series_titles AS (
+                 SELECT title_key,
+                   MIN(cleaned_title) AS cleaned_title,
+                   MAX(catalog_cover) AS catalog_cover
+            FROM known_series
+            WHERE cleaned_title IS NOT NULL AND trim(cleaned_title) != ''
+            GROUP BY title_key
+        )
+    """, params
+
+
+def _series_title_filters(owned: str, downloaded: str) -> str:
+    filters: list[str] = []
+    owned_exists = """
+        EXISTS (
+            SELECT 1 FROM entries e
+            JOIN streams s ON s.entry_id = e.entry_id
+            JOIN providers p ON p.slug = s.provider
+            WHERE e.type = 'series'
+              AND lower(e.cleaned_title) = st.title_key
+              AND p.is_active = 1
+              AND s.strm_path IS NOT NULL
+        )
+    """
+    if owned == "true":
+        filters.append(owned_exists)
+    elif owned == "false":
+        filters.append(f"NOT {owned_exists}")
+
+    downloaded_exists = """
+        EXISTS (
+            SELECT 1 FROM entries e
+            JOIN downloads d ON d.entry_id = e.entry_id
+            WHERE e.type = 'series'
+              AND lower(e.cleaned_title) = st.title_key
+              AND d.status = 'completed'
+        )
+    """
+    if downloaded == "true":
+        filters.append(downloaded_exists)
+    elif downloaded == "false":
+        filters.append(f"NOT {downloaded_exists}")
+    return ("WHERE " + " AND ".join(filters)) if filters else ""
+
+
+def _series_card_count(
+    conn, search: str, owned: str, downloaded: str
+) -> int:
+    source, params = _series_title_source(search)
+    filters = _series_title_filters(owned, downloaded)
+    return conn.execute(
+        f"{source} SELECT COUNT(*) FROM series_titles st {filters}", params
+    ).fetchone()[0]
+
+
+def _series_card_rows(
+    conn,
+    search: str,
+    owned: str,
+    downloaded: str,
+    limit: int,
+    offset: int,
+):
+    source, params = _series_title_source(search)
+    filters = _series_title_filters(owned, downloaded)
+    return conn.execute(
+        f"""
+        {source},
+        selected_titles AS MATERIALIZED (
+            SELECT st.* FROM series_titles st
+            {filters}
+            ORDER BY st.cleaned_title
+            LIMIT ? OFFSET ?
+        )
+        SELECT
+            st.cleaned_title,
+            NULL AS filtered_title,
+            'series' AS type,
+            (SELECT MIN(e.year) FROM entries e
+             WHERE e.type='series' AND lower(e.cleaned_title)=st.title_key) AS year,
+            (SELECT COUNT(DISTINCT e.season) FROM entries e
+             WHERE e.type='series' AND lower(e.cleaned_title)=st.title_key) AS season_count,
+            (SELECT COUNT(*) FROM entries e
+             WHERE e.type='series' AND lower(e.cleaned_title)=st.title_key) AS episode_count,
+            COALESCE(
+                (SELECT 'https://image.tmdb.org/t/p/w500' || tm.poster_path
+                 FROM entries e JOIN tmdb_shows tm ON tm.tmdb_id=e.tmdb_id
+                 WHERE e.type='series' AND lower(e.cleaned_title)=st.title_key
+                   AND e.tmdb_type='show' AND tm.poster_path IS NOT NULL LIMIT 1),
+                st.catalog_cover,
+                (SELECT json_extract(s.metadata_json, '$.tvg-logo')
+                 FROM entries e JOIN streams s ON s.entry_id=e.entry_id
+                 WHERE e.type='series' AND lower(e.cleaned_title)=st.title_key
+                   AND json_valid(s.metadata_json)
+                   AND COALESCE(json_extract(s.metadata_json, '$.tvg-logo'),'') != ''
+                 LIMIT 1)
+            ) AS cover_art,
+            (SELECT COUNT(*) FROM entries e
+             WHERE e.type='series' AND lower(e.cleaned_title)=st.title_key
+               AND EXISTS (SELECT 1 FROM streams s
+                           WHERE s.entry_id=e.entry_id AND s.strm_path IS NOT NULL)) AS owned_count,
+            (SELECT COUNT(*) FROM entries e
+             WHERE e.type='series' AND lower(e.cleaned_title)=st.title_key
+               AND {_CAN_ADD_SUBQUERY} > 0) AS can_add_count,
+            (SELECT COUNT(*) FROM entries e JOIN downloads d ON d.entry_id=e.entry_id
+             WHERE e.type='series' AND lower(e.cleaned_title)=st.title_key
+               AND d.status='completed') AS download_completed_count
+        FROM selected_titles st
+        ORDER BY st.cleaned_title
+        """,
+        params + [limit, offset],
+    ).fetchall()
+
+
+def _series_group_query(extra_where: str, paginated: bool = False) -> str:
+    prefix = ""
+    source = "entries e"
+    if paginated:
+        prefix = f"""
+        WITH eligible_entries AS MATERIALIZED (
+            SELECT e.* FROM entries e
+            WHERE e.type = 'series' {extra_where}
+        ),
+        selected_titles AS MATERIALIZED (
+            SELECT e.cleaned_title
+            FROM eligible_entries e
+            GROUP BY e.cleaned_title
+            ORDER BY e.cleaned_title
+            LIMIT ? OFFSET ?
+        )
+        """
+        source = "eligible_entries e JOIN selected_titles _selected ON _selected.cleaned_title = e.cleaned_title"
+        where = ""
+    else:
+        where = f"WHERE e.type = 'series' {extra_where}"
+    return f"""
+        {prefix}
         SELECT
             e.cleaned_title,
             MIN({_FILTERED_TITLE_SUBQUERY}) AS filtered_title,
@@ -354,17 +581,38 @@ def _series_group_query(extra_where: str) -> str:
              JOIN entries _e2 ON _e2.entry_id = _dl2.entry_id
              WHERE _e2.type = 'series' AND lower(_e2.cleaned_title) = lower(e.cleaned_title)
                AND _dl2.status = 'completed') AS download_completed_count
-        FROM entries e
+        FROM {source}
         LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
         LEFT JOIN providers _p2 ON _p2.slug = s2.provider
-        WHERE e.type = 'series' {extra_where}
+        {where}
         GROUP BY e.cleaned_title
         ORDER BY e.cleaned_title
     """
 
 
-def _tv_vod_group_query(extra_where: str) -> str:
+def _tv_vod_group_query(extra_where: str, paginated: bool = False) -> str:
+    prefix = ""
+    source = "entries e"
+    if paginated:
+        prefix = f"""
+        WITH eligible_entries AS MATERIALIZED (
+            SELECT e.* FROM entries e
+            WHERE e.type = 'tv_vod' {extra_where}
+        ),
+        selected_titles AS MATERIALIZED (
+            SELECT e.cleaned_title
+            FROM eligible_entries e
+            GROUP BY e.cleaned_title
+            ORDER BY e.cleaned_title
+            LIMIT ? OFFSET ?
+        )
+        """
+        source = "eligible_entries e JOIN selected_titles _selected ON _selected.cleaned_title = e.cleaned_title"
+        where = ""
+    else:
+        where = f"WHERE e.type = 'tv_vod' {extra_where}"
     return f"""
+        {prefix}
         SELECT
             e.cleaned_title,
             MIN({_FILTERED_TITLE_SUBQUERY}) AS filtered_title,
@@ -381,10 +629,10 @@ def _tv_vod_group_query(extra_where: str) -> str:
              JOIN entries _e2 ON _e2.entry_id = _dl2.entry_id
              WHERE _e2.type = 'tv_vod' AND lower(_e2.cleaned_title) = lower(e.cleaned_title)
                AND _dl2.status = 'completed') AS download_completed_count
-        FROM entries e
+        FROM {source}
         LEFT JOIN streams s2 ON s2.entry_id = e.entry_id
         LEFT JOIN providers _p2 ON _p2.slug = s2.provider
-        WHERE e.type = 'tv_vod' {extra_where}
+        {where}
         GROUP BY e.cleaned_title
         ORDER BY e.cleaned_title
     """
@@ -399,6 +647,7 @@ def _display_title(r) -> str:
 
 
 def _format_series_group(r) -> dict:
+    episode_count = r["episode_count"] or 0
     return {
         "entry_id": None,
         "type": "series",
@@ -406,7 +655,8 @@ def _format_series_group(r) -> dict:
         "display_title": _display_title(r),
         "year": r["year"],
         "season_count": r["season_count"],
-        "episode_count": r["episode_count"],
+        "episode_count": episode_count,
+        "episodes_loaded": episode_count > 0,
         "cover_art": r["cover_art"],
         "is_owned": (r["owned_count"] or 0) > 0,
         "owned_count": r["owned_count"] or 0,
@@ -414,6 +664,41 @@ def _format_series_group(r) -> dict:
         "download_completed": (r["download_completed_count"] or 0) > 0,
         "is_series_group": True,
     }
+
+
+def _series_detail_metadata(conn, title: str):
+    return conn.execute(
+        """
+        SELECT
+            COALESCE(
+                (SELECT MIN(e.year) FROM entries e
+                 WHERE e.type='series' AND lower(e.cleaned_title)=lower(?)),
+                (SELECT NULLIF(CAST(substr(COALESCE(
+                            json_extract(c.metadata_json, '$.releaseDate'),
+                            json_extract(c.metadata_json, '$.release_date'),
+                            json_extract(c.metadata_json, '$.year'), ''
+                        ), 1, 4) AS INTEGER), 0)
+                 FROM xtream_series_catalog c
+                 JOIN providers p ON p.slug=c.provider_slug
+                 WHERE p.is_active=1 AND lower(c.series_name)=lower(?)
+                 ORDER BY p.priority, p.slug LIMIT 1)
+            ) AS year,
+            COALESCE(
+                (SELECT p.name FROM entries e
+                 JOIN streams s ON s.entry_id=e.entry_id
+                 JOIN providers p ON p.slug=s.provider
+                 WHERE e.type='series' AND lower(e.cleaned_title)=lower(?)
+                   AND p.is_active=1 AND s.exclude=0
+                   AND (s.include_only_active=0 OR s.include_only=1)
+                 ORDER BY p.priority, p.slug LIMIT 1),
+                (SELECT p.name FROM xtream_series_catalog c
+                 JOIN providers p ON p.slug=c.provider_slug
+                 WHERE p.is_active=1 AND lower(c.series_name)=lower(?)
+                 ORDER BY p.priority, p.slug LIMIT 1)
+            ) AS provider_name
+        """,
+        (title, title, title, title),
+    ).fetchone()
 
 
 def _format_tv_vod_group(r) -> dict:
@@ -457,12 +742,97 @@ def _format_individual(r) -> dict:
     }
 
 
+@router.get("/entries/{entry_id}/details", response_class=JSONResponse)
+async def entry_details(
+    entry_id: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Return entry metadata and its highest-priority playable stream URL."""
+    with get_db() as conn:
+        entry = conn.execute(
+            f"""
+            SELECT e.entry_id, e.type, e.cleaned_title, e.raw_title, e.year,
+                   e.season, e.episode, e.air_date,
+                   {_COVER_ART_SUBQUERY} AS cover_art
+            FROM entries e
+            WHERE e.entry_id = ?
+            """,
+            (entry_id,),
+        ).fetchone()
+        if not entry:
+            return JSONResponse({"error": "Entry not found"}, status_code=404)
+
+        stream = conn.execute(
+            """
+            SELECT COALESCE(NULLIF(s.last_written_url, ''), s.stream_url) AS stream_url,
+                   p.name AS provider_name, s.provider AS provider_slug,
+                   s.strm_path
+            FROM streams s
+            JOIN providers p ON p.slug = s.provider
+            WHERE s.entry_id = ?
+              AND p.is_active = 1
+              AND s.exclude = 0
+              AND (s.include_only_active = 0 OR s.include_only = 1)
+            ORDER BY
+                CASE WHEN s.strm_path IS NOT NULL THEN 0 ELSE 1 END,
+                p.priority,
+                p.slug
+            LIMIT 1
+            """,
+            (entry_id,),
+        ).fetchone()
+
+    return JSONResponse(
+        {
+            "entry_id": entry["entry_id"],
+            "type": entry["type"],
+            "title": entry["cleaned_title"],
+            "raw_title": entry["raw_title"],
+            "year": entry["year"],
+            "season": entry["season"],
+            "episode": entry["episode"],
+            "air_date": entry["air_date"],
+            "cover_art": entry["cover_art"],
+            "stream_url": stream["stream_url"] if stream else None,
+            "provider": stream["provider_name"] if stream else None,
+            "provider_slug": stream["provider_slug"] if stream else None,
+            "strm_generated": bool(stream and stream["strm_path"]),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.get("/series/{title}/seasons", response_class=JSONResponse)
 async def list_seasons(
     title: str,
     current_user: TokenData = Depends(get_current_user),
 ):
     """Return seasons for a series title with per-season ownership info."""
+    with get_db() as conn:
+        existing = conn.execute(
+            """
+            SELECT 1 FROM entries
+            WHERE type='series' AND lower(cleaned_title)=lower(?)
+            LIMIT 1
+            """,
+            (title,),
+        ).fetchone()
+
+    try:
+        from app.ingestion.xtream_native import ensure_series_loaded
+
+        ensure_series_loaded(title)
+    except Exception as exc:
+        logger.error(
+            "[LIBRARY] Lazy series load failed for title=%r (%s)",
+            title,
+            type(exc).__name__,
+        )
+        if existing is None:
+            return JSONResponse(
+                {"error": "Episode details could not be loaded"}, status_code=502
+            )
+
     with get_db() as conn:
         rows = conn.execute(
             f"""
@@ -499,6 +869,8 @@ async def list_seasons(
             (title,),
         ).fetchall()
 
+        metadata = _series_detail_metadata(conn, title)
+
     followed_all = any(f["season"] is None for f in follows)
     followed_seasons = {f["season"] for f in follows if f["season"] is not None}
 
@@ -518,6 +890,8 @@ async def list_seasons(
 
     return JSONResponse({
         "title": title,
+        "year": metadata["year"] if metadata else None,
+        "provider": metadata["provider_name"] if metadata else None,
         "seasons": seasons,
         "is_following_all": followed_all,
     })
@@ -545,16 +919,17 @@ async def list_episodes(
                    AND s2.exclude = 0 AND s2.imported = 0
                    AND (s2.include_only_active = 0 OR s2.include_only = 1)
                 ) AS can_add_count,
-                (SELECT s2.filtered_title FROM streams s2
+                                (SELECT NULLIF(TRIM(json_extract(s2.metadata_json, '$."episode-title"')), '')
+                                 FROM streams s2
                  JOIN providers p2 ON p2.slug = s2.provider
                  WHERE s2.entry_id = e.entry_id
-                   AND p2.strm_mode = 'import_selected' AND p2.is_active = 1
+                                     AND p2.is_active = 1
                    AND s2.exclude = 0
                    AND (s2.include_only_active = 0 OR s2.include_only = 1)
-                   AND s2.filtered_title IS NOT NULL AND s2.filtered_title != ''
+                                     AND NULLIF(TRIM(json_extract(s2.metadata_json, '$."episode-title"')), '') IS NOT NULL
                  ORDER BY p2.priority, p2.slug
                  LIMIT 1
-                ) AS filtered_title,
+                                ) AS episode_name,
                 (SELECT _dl.status FROM downloads _dl WHERE _dl.entry_id = e.entry_id) AS download_status
             FROM entries e
             WHERE e.type = 'series'
@@ -569,7 +944,8 @@ async def list_episodes(
         "entry_id": r["entry_id"],
         "episode": r["episode"],
         "cover_art": r["cover_art"],
-        "display_title": (r["filtered_title"] or "").strip() or None,
+        "episode_name": (r["episode_name"] or "").strip() or None,
+        "display_title": (r["episode_name"] or "").strip() or None,
         "is_owned": r["owner_slug"] is not None,
         "owner_slug": r["owner_slug"],
         "stream_count": r["stream_count"],
@@ -1609,7 +1985,8 @@ async def list_downloads(current_user: TokenData = Depends(get_current_user)):
         rows = conn.execute(
             """
             SELECT d.entry_id, d.status, d.provider, d.container,
-                   d.file_size, d.fail_reason, d.retry_count,
+                     d.file_size, d.expected_size, d.downloaded_bytes,
+                     d.fail_reason, d.retry_count,
                    d.queued_at, d.completed_at, d.failed_at,
                    d.local_path,
                    e.type, e.cleaned_title, e.year, e.season, e.episode, e.air_date
@@ -1641,6 +2018,8 @@ async def list_downloads(current_user: TokenData = Depends(get_current_user)):
             "provider": r["provider"],
             "container": r["container"],
             "file_size": r["file_size"],
+            "expected_size": r["expected_size"],
+            "downloaded_bytes": r["downloaded_bytes"],
             "fail_reason": r["fail_reason"],
             "retry_count": r["retry_count"],
             "queued_at": (r["queued_at"] or "")[:19].replace("T", " "),

@@ -3,66 +3,58 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <h1>Dashboard</h1>
-  <p class="page-subtitle">Welcome back, <strong>{{ current_user.username }}</strong>.</p>
-  <div class="version-info">
-    <span class="version">v{{ version }}</span>
-    {% if update_available %}
-    <span class="update-badge">Update Available</span>
-    {% endif %}
-  </div>
+{% if update_available %}
+<div class="dashboard-meta">
+  <span class="update-badge">Update Available</span>
 </div>
+{% endif %}
 
 <div class="card-grid">
-  <div class="card">
+  <a href="/providers" class="card dashboard-card">
     <h2 class="card-title">Providers</h2>
     <p class="card-body">Manage your M3U, Xtream Codes, and local file sources.</p>
-    <a href="/providers" class="btn btn-secondary">Manage Providers</a>
-  </div>
+  </a>
 
-  <div class="card">
+  <a href="/schedules" class="card dashboard-card">
     <h2 class="card-title">Tasks &amp; Schedules</h2>
     <p class="card-body">Configure automated ingestion, STRM generation, and per-provider sync schedules.</p>
-    <a href="/schedules" class="btn btn-secondary">Manage Schedules</a>
-  </div>
+  </a>
 
-  <div class="card">
+  <a href="/library" class="card dashboard-card">
     <h2 class="card-title">Library</h2>
     <p class="card-body">Browse ingested content, manage your selections, and follow series or shows.</p>
-    <a href="/library" class="btn btn-secondary">Open Library</a>
-  </div>
+  </a>
 
-  <div class="card">
+  <a href="/library/downloads" class="card dashboard-card">
     <h2 class="card-title">Downloads</h2>
     <p class="card-body">View and manage queued, completed, and failed downloads.</p>
-    <a href="/library/downloads" class="btn btn-secondary">View Downloads</a>
-  </div>
+  </a>
 
-  <div class="card">
+  <a href="/filters" class="card dashboard-card">
     <h2 class="card-title">Filters</h2>
     <p class="card-body">Define per-provider rules to rename, strip, exclude, or include content by title.</p>
-    <a href="/filters" class="btn btn-secondary">Manage Filters</a>
-  </div>
+  </a>
 
-  <div class="card">
+  <a href="/integrations" class="card dashboard-card">
     <h2 class="card-title">Integrations</h2>
     <p class="card-body">Connect external services like TMDB for metadata enrichment and poster art.</p>
-    <a href="/integrations" class="btn btn-secondary">Manage Integrations</a>
-  </div>
+  </a>
 
   {% if current_user.is_admin %}
-  <div class="card">
+  <a href="/admin/database" class="card dashboard-card">
     <h2 class="card-title">Database</h2>
     <p class="card-body">Inspect raw ingested entries and streams, or reset the library for testing.</p>
-    <a href="/admin/library" class="btn btn-secondary">Open Database</a>
-  </div>
+  </a>
 
-  <div class="card">
+  <a href="/admin/logs" class="card dashboard-card">
+    <h2 class="card-title">Logs</h2>
+    <p class="card-body">Review persistent application logs by severity, source, and archive.</p>
+  </a>
+
+  <a href="/admin/users" class="card dashboard-card">
     <h2 class="card-title">Users</h2>
     <p class="card-body">Manage user accounts and application access.</p>
-    <a href="/admin/users" class="btn btn-secondary">Manage Users</a>
-  </div>
+  </a>
   {% endif %}
 </div>
 {% endblock %}

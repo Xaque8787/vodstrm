@@ -2,18 +2,17 @@ import logging
 import os
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.auth.jwt_handler import TokenData, get_current_user
+from app.config import settings
 from app.database import get_db
+from app.template_engine import create_templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/schedules")
-templates = Jinja2Templates(
-    directory=os.path.join(os.path.dirname(__file__), "..", "templates")
-)
+templates = create_templates()
 
 # ---------------------------------------------------------------------------
 # HELPERS
@@ -24,13 +23,54 @@ def _list_providers() -> list[dict]:
         rows = conn.execute(
             "SELECT id, name, slug, type, is_active, schedule_omitted, strm_mode FROM providers ORDER BY name"
         ).fetchall()
-    return [dict(r) for r in rows]
+    from app.tasks.downloader import is_provider_running
+
+    providers = [dict(r) for r in rows]
+    for provider in providers:
+        provider["is_running"] = is_provider_running(provider["slug"])
+    return providers
 
 
 def _list_schedules() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM task_schedules ORDER BY label").fetchall()
     return [dict(r) for r in rows]
+
+
+def _provider_sync_statuses() -> list[dict]:
+    from app.tasks import progress
+    from app.tasks.downloader import is_provider_running
+
+    runtime_states = progress.snapshot()
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.slug, p.name,
+                   (SELECT COUNT(*) FROM streams s
+                    WHERE s.provider = p.slug) AS stream_count,
+                   (SELECT COUNT(DISTINCT s.strm_path) FROM streams s
+                    WHERE s.provider = p.slug AND s.strm_path IS NOT NULL) AS strm_count,
+                   (SELECT COUNT(*) FROM xtream_series_cache x
+                    WHERE x.provider_slug = p.slug AND x.fetch_status = 'ok') AS series_cached
+            FROM providers p
+            ORDER BY p.name
+            """
+        ).fetchall()
+
+    statuses: list[dict] = []
+    for row in rows:
+        value = dict(row)
+        state = runtime_states.get(row["slug"], {})
+        running = is_provider_running(row["slug"])
+        value.update(state)
+        value["status"] = "running" if running else state.get("status", "idle")
+        value["is_running"] = running
+        value.setdefault("phase", "idle")
+        value.setdefault("message", "Ready to sync")
+        value.setdefault("current", None)
+        value.setdefault("total", None)
+        statuses.append(value)
+    return statuses
 
 
 def _get_schedule(task_id: str) -> dict | None:
@@ -153,7 +193,7 @@ async def schedules_page(
     scheduler_jobs = {job.id: job for job in scheduler.get_jobs()}
 
     _GLOBAL_TASKS = [
-        {"task_type": "download_all_providers", "label": "Download All Active Providers"},
+        {"task_type": "download_all_providers", "label": "Sync All Active Providers"},
         {"task_type": "clean_strm_orphans",     "label": "Clean Orphaned STRM Files"},
         {"task_type": "process_downloads",      "label": "Process Download Queue"},
     ]
@@ -186,8 +226,21 @@ async def schedules_page(
             "current_user": current_user,
             "providers": providers,
             "global_tasks": global_tasks,
-            "tz": os.getenv("TZ", "America/Los_Angeles"),
+            "tz": settings.timezone,
         },
+    )
+
+
+@router.get("/status", response_class=JSONResponse)
+async def sync_status(
+    current_user: TokenData = Depends(get_current_user),
+):
+    providers = _provider_sync_statuses()
+    return JSONResponse(
+        {
+            "providers": providers,
+            "is_running": any(provider["is_running"] for provider in providers),
+        }
     )
 
 
@@ -252,7 +305,8 @@ async def run_global_now(
         import threading
         threading.Thread(target=fn, daemon=True).start()
         logger.info("Manual global trigger: %s by %s", task_type, current_user.username)
-    return RedirectResponse("/schedules", status_code=302)
+    notice = "started" if task_type == "download_all_providers" else "task-started"
+    return RedirectResponse(f"/schedules?notice={notice}", status_code=302)
 
 
 # ---------------------------------------------------------------------------
@@ -264,11 +318,14 @@ async def run_provider_now(
     provider_slug: str,
     current_user: TokenData = Depends(get_current_user),
 ):
-    from app.tasks.downloader import download_provider
+    from app.tasks.downloader import download_provider, is_provider_running
+    if is_provider_running(provider_slug):
+        logger.info("Manual sync skipped; provider already running: %s", provider_slug)
+        return RedirectResponse("/schedules?notice=already-running", status_code=302)
     import threading
     threading.Thread(target=download_provider, args=(provider_slug,), daemon=True).start()
-    logger.info("Manual download trigger: provider=%s by %s", provider_slug, current_user.username)
-    return RedirectResponse("/schedules", status_code=302)
+    logger.info("Manual sync trigger: provider=%s by %s", provider_slug, current_user.username)
+    return RedirectResponse("/schedules?notice=started", status_code=302)
 
 
 @router.post("/provider/{provider_slug}/omit")

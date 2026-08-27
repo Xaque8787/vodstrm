@@ -34,13 +34,16 @@ import json
 import logging
 import os
 
+from app.config import settings
 from app.database import get_db
 from app.tasks.base import task
 from app.utils.env import resolve_path
 
 logger = logging.getLogger("app.tasks.live_m3u")
 
-_LIVETV_DIR_RELATIVE = os.path.join(os.getenv("VOD_DIR", "data/vod"), "livetv")
+_LIVETV_DIR_RELATIVE = os.path.join(
+    settings.vod_path, settings.vod_live_tv_folder
+)
 
 _ALL_PROVIDERS_FILENAME = "all_providers.m3u"
 

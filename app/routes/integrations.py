@@ -5,18 +5,16 @@ import os
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 
 from app.auth.jwt_handler import TokenData, get_current_user
 from app.database import get_db
+from app.template_engine import create_templates
 from app.utils.env import local_now_iso
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/integrations")
-templates = Jinja2Templates(
-    directory=os.path.join(os.path.dirname(__file__), "..", "templates")
-)
+templates = create_templates()
 
 
 def _load_tmdb_settings(conn) -> dict:

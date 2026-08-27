@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Downloads — VODSTRM{% endblock %}
+{% block page_heading %}Downloads{% endblock %}
+{% block page_description %}Monitor transfers and manage offline media.{% endblock %}
+{% block page_actions %}
+<div class="downloads-actions">
+  <button class="btn btn-secondary btn-sm" onclick="refreshDownloads(this)">Refresh</button>
+  <button class="btn btn-danger-outline btn-sm" id="btn-clear-failed" onclick="openClearModal()">Clear Failed</button>
+</div>
+{% endblock %}
 
 {% block head %}
 <style>
   .downloads-wrap {
-    padding: calc(var(--spacing) * 3);
+    padding: 0;
     max-width: 960px;
-  }
-  .downloads-heading {
-    font-size: 1.4rem;
-    font-weight: 700;
-    margin-bottom: calc(var(--spacing) * 3);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
   }
   .downloads-actions {
     display: flex;
@@ -35,7 +35,7 @@
     white-space: nowrap;
   }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .btn-primary { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
   .btn-primary:hover:not(:disabled) { background: var(--color-primary-hover); }
   .btn-secondary { background: transparent; border-color: var(--color-border); color: var(--color-text); }
   .btn-secondary:hover:not(:disabled) { background: var(--color-bg); }
@@ -69,7 +69,7 @@
     color: var(--color-text);
   }
   .dl-table tr:last-child td { border-bottom: none; }
-  .dl-table tr:hover { background: rgba(0,0,0,0.015); }
+  .dl-table tr:hover { background: var(--color-surface-hover); }
 
   .status-pill {
     display: inline-block;
@@ -80,12 +80,12 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .st-pending    { background: #e9ecef; color: #495057; }
-  .st-probing    { background: #cfe2ff; color: #084298; }
-  .st-downloading { background: #fff3cd; color: #664d03; }
-  .st-completed  { background: #d1e7dd; color: #0a3622; }
-  .st-failed     { background: #f8d7da; color: #842029; }
-  .st-cancelled  { background: #e2e3e5; color: #41464b; }
+  .st-pending    { background: var(--color-neutral-bg); color: var(--color-neutral-text); }
+  .st-probing    { background: var(--color-info-bg); color: var(--color-info-text); }
+  .st-downloading { background: var(--color-warning-bg); color: var(--color-warning-text); }
+  .st-completed  { background: var(--color-success-bg); color: var(--color-success-text); }
+  .st-failed     { background: var(--color-error-bg); color: var(--color-error-text); }
+  .st-cancelled  { background: var(--color-neutral-bg); color: var(--color-neutral-text); }
 
   .dl-empty {
     text-align: center;
@@ -100,6 +100,24 @@
   }
   .dl-title-cell { font-weight: 600; }
   .dl-meta { font-size: 0.75rem; color: var(--color-text-muted); margin-top: 2px; }
+  .dl-progress { min-width: 150px; }
+  .dl-progress-track {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--color-border);
+  }
+  .dl-progress-fill {
+    height: 100%;
+    background: var(--color-primary);
+    transition: width 0.3s ease;
+  }
+  .dl-progress-label {
+    margin-top: 4px;
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
   .dl-actions { display: flex; gap: 6px; }
   .dl-loading {
     text-align: center;
@@ -133,14 +151,6 @@
 
 {% block content %}
 <div class="downloads-wrap">
-  <div class="downloads-heading">
-    <span>Downloads</span>
-    <div class="downloads-actions">
-      <button class="btn btn-secondary btn-sm" onclick="location.reload()">Refresh</button>
-      <button class="btn btn-danger-outline btn-sm" id="btn-clear-failed" onclick="openClearModal()">Clear Failed</button>
-    </div>
-  </div>
-
   <div id="dl-loading" class="dl-loading">Loading downloads…</div>
   <div id="dl-empty" class="dl-empty" style="display:none;">No downloads yet. Queue content from the library or via a download-mode follow.</div>
   <table class="dl-table" id="dl-table" style="display:none;">
@@ -184,13 +194,52 @@
     return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
+  function renderSize(item) {
+    const received = Number(item.downloaded_bytes) || 0;
+    const expected = Number(item.expected_size) || 0;
+    if (item.status === "downloading" && expected > 0) {
+      const percent = Math.min(100, Math.max(0, received / expected * 100));
+      return `
+        <div class="dl-progress">
+          <div class="dl-progress-track" role="progressbar" aria-label="Download progress"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent.toFixed(0)}">
+            <div class="dl-progress-fill" style="width:${percent.toFixed(2)}%"></div>
+          </div>
+          <div class="dl-progress-label">${fmtSize(received)} / ${fmtSize(expected)} &middot; ${percent.toFixed(0)}%</div>
+        </div>`;
+    }
+    if (item.status === "downloading" && received > 0) {
+      return `<div class="dl-progress-label">${fmtSize(received)} downloaded</div>`;
+    }
+    return fmtSize(item.file_size || expected);
+  }
+
+  let downloadsRequestInFlight = false;
+
   async function loadDownloads() {
+    if (downloadsRequestInFlight) return;
+    downloadsRequestInFlight = true;
     try {
-      const res = await fetch("/library/downloads/list");
+      const res = await fetch("/library/downloads/list", { cache: "no-store" });
+      if (!res.ok) throw new Error("Refresh failed");
       const data = await res.json();
       renderDownloads(data.downloads || []);
     } catch {
       document.getElementById("dl-loading").textContent = "Failed to load.";
+    } finally {
+      downloadsRequestInFlight = false;
+    }
+  }
+
+  async function refreshDownloads(button) {
+    if (downloadsRequestInFlight) return;
+    button.disabled = true;
+    button.textContent = "Refreshing...";
+    try {
+      await loadDownloads();
+    } finally {
+      button.disabled = false;
+      button.textContent = "Refresh";
     }
   }
 
@@ -214,7 +263,7 @@
       const tr = document.createElement("tr");
       let actions = "";
       if (item.is_active) {
-        actions += `<button class="btn btn-danger-outline btn-sm" onclick="cancelDl('${item.entry_id}')">Cancel</button>`;
+        actions += `<button class="btn btn-danger-outline btn-sm" onclick="cancelDl('${item.entry_id}', this)">Cancel</button>`;
       }
       if (item.is_completed) {
         actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}')">Delete File</button>`;
@@ -236,7 +285,7 @@
         </td>
         <td><span class="status-pill st-${item.status}">${item.status}</span></td>
         <td>${escHtml(item.provider) || "\u2014"}</td>
-        <td>${fmtSize(item.file_size)}</td>
+        <td>${renderSize(item)}</td>
         <td>${item.queued_at || "\u2014"}</td>
         <td><div class="dl-actions">${actions}</div></td>
       `;
@@ -244,9 +293,14 @@
     }
   }
 
-  async function cancelDl(entryId) {
+  async function cancelDl(entryId, button) {
     try {
-      await fetch(`/library/entries/${entryId}/cancel-download`, { method: "POST" });
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Stopping...";
+      }
+      const res = await fetch(`/library/entries/${entryId}/cancel-download`, { method: "POST" });
+      if (!res.ok) throw new Error("Cancel failed");
       loadDownloads();
     } catch { alert("Failed to cancel."); }
   }
@@ -281,6 +335,6 @@
   });
 
   loadDownloads();
-  setInterval(loadDownloads, 5000);
+  setInterval(loadDownloads, 2000);
 </script>
 {% endblock %}

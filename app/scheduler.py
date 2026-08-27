@@ -5,6 +5,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from app.config import settings
 from app.utils.env import resolve_path
 
 logger = logging.getLogger("app.scheduler")
@@ -13,11 +14,8 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def _build_scheduler() -> BackgroundScheduler:
-    scheduler_db_rel = os.getenv("SCHEDULER_DB_PATH", "data/scheduler.db")
-    scheduler_db_path = resolve_path(scheduler_db_rel)
+    scheduler_db_path = resolve_path(settings.scheduler_db_path)
     os.makedirs(os.path.dirname(scheduler_db_path), exist_ok=True)
-
-    tz = os.getenv("TZ", "America/Los_Angeles")
 
     jobstores = {
         "default": SQLAlchemyJobStore(url=f"sqlite:///{scheduler_db_path}"),
@@ -35,7 +33,7 @@ def _build_scheduler() -> BackgroundScheduler:
         jobstores=jobstores,
         executors=executors,
         job_defaults=job_defaults,
-        timezone=tz,
+        timezone=settings.timezone,
     )
 
 
@@ -52,7 +50,7 @@ def start_scheduler() -> None:
         scheduler.start()
         from app.tasks import registry
         registry.register_all(scheduler)
-        logger.info("Scheduler started (tz=%s)", os.getenv("TZ", "America/Los_Angeles"))
+        logger.info("Scheduler started (tz=%s)", settings.timezone)
 
 
 def stop_scheduler() -> None:

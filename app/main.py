@@ -5,9 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from app.auth.jwt_handler import TokenData, get_current_user
+from app.config import settings
 from app.routes import admin as admin_router
 from app.routes import auth as auth_router
 from app.routes import filters as filters_router
@@ -15,19 +15,19 @@ from app.routes import library as library_router
 from app.routes import providers as providers_router
 from app.routes import integrations as integrations_router
 from app.routes import schedules as schedules_router
+from app.template_engine import create_templates
 from app.utils.logging_config import configure_logging
 from app.utils.version import check_version
 
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(__file__)
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+templates = create_templates()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    debug = os.getenv("DEBUG", "false").lower() == "true"
-    configure_logging(debug=debug)
+    configure_logging(debug=settings.debug)
     logger.info("Application starting up")
 
     from app.database import init_db
@@ -37,7 +37,9 @@ async def lifespan(app: FastAPI):
     from run_migrations import run_all_migrations
     run_all_migrations()
 
-    from app.tasks.downloads import reset_stuck_downloads
+    from app.tasks.downloads import reset_stuck_downloads, validate_storage_roots
+    validate_storage_roots()
+    logger.info("VOD and offline storage roots verified")
     reset_stuck_downloads()
 
     from app.scheduler import start_scheduler
@@ -55,9 +57,16 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="vodstrm",
         lifespan=lifespan,
-        docs_url="/docs" if os.getenv("DEBUG", "false").lower() == "true" else None,
+        docs_url="/docs" if settings.debug else None,
         redoc_url=None,
     )
+
+    @app.middleware("http")
+    async def revalidate_static_assets(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
 
     app.mount(
         "/static",
@@ -78,13 +87,12 @@ def create_app() -> FastAPI:
         from app.routes.auth import _admin_exists
         if not _admin_exists():
             return RedirectResponse("/setup", status_code=302)
-        version, update_available = check_version()
+        _version, update_available = check_version()
         return templates.TemplateResponse(
             "index.html",
             {
                 "request": request,
                 "current_user": current_user,
-                "version": version,
                 "update_available": update_available,
             },
         )

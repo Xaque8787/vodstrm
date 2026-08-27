@@ -1,8 +1,10 @@
 #!/bin/sh
 set -e
 
-PUID=${PUID:-1000}
-PGID=${PGID:-1000}
+: "${PUID:?PUID must be set in .env}"
+: "${PGID:?PGID must be set in .env}"
+: "${APP_HOST:?APP_HOST must be set in .env}"
+: "${APP_PORT:?APP_PORT must be set in .env}"
 
 # Create group if it doesn't already exist with this GID
 if ! getent group "$PGID" > /dev/null 2>&1; then
@@ -22,6 +24,6 @@ gosu "$PUID:$PGID" python run_migrations.py
 
 echo "Starting application as uid=${PUID} gid=${PGID}..."
 exec gosu "$PUID:$PGID" uvicorn app.main:app \
-    --host 0.0.0.0 \
-    --port "${APP_PORT:-2112}" \
+    --host "$APP_HOST" \
+    --port "$APP_PORT" \
     --workers 1

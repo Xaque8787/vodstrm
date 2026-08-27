@@ -4,7 +4,6 @@ import os
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 
 from app.auth.jwt_handler import TokenData, get_current_user
 from app.database import get_db
@@ -12,13 +11,12 @@ from app.filters.query import (
     create_filter, delete_filter, get_filter,
     list_filters, list_provider_slugs, toggle_filter, update_filter,
 )
+from app.template_engine import create_templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/filters")
-templates = Jinja2Templates(
-    directory=os.path.join(os.path.dirname(__file__), "..", "templates")
-)
+templates = create_templates()
 
 _FILTER_TYPES = ["remove", "exclude", "include_only", "replace"]
 _ENTRY_TYPES = ["movie", "series", "live", "tv_vod", "unsorted"]

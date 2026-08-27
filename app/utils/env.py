@@ -1,6 +1,8 @@
 import os
 from datetime import datetime, timezone
 
+from app.config import settings
+
 _DOCKER_ROOT = "/app"
 
 
@@ -28,8 +30,7 @@ def local_now() -> datetime:
     """
     try:
         import zoneinfo
-        tz_name = os.getenv("TZ", "UTC")
-        tz = zoneinfo.ZoneInfo(tz_name)
+        tz = zoneinfo.ZoneInfo(settings.timezone)
         return datetime.now(tz)
     except Exception:
         return datetime.now(timezone.utc)

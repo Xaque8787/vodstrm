@@ -2,9 +2,10 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
+from app.config import settings
 from app.utils.env import resolve_path
 
-_LOG_DIR = resolve_path(os.getenv("LOG_DIR", "data/logs"))
+_LOG_DIR = resolve_path(settings.log_dir)
 _LOG_FILE = os.path.join(_LOG_DIR, "app.log")
 
 

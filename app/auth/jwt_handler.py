@@ -1,4 +1,3 @@
-import os
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -6,13 +5,14 @@ from typing import Optional
 from jose import JWTError, jwt
 from fastapi import Request, HTTPException, status
 
+from app.config import settings
 from app.models import TokenData
 
 logger = logging.getLogger(__name__)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 COOKIE_NAME = "access_token"
 
 

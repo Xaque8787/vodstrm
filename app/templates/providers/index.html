@@ -1,16 +1,11 @@
 {% extends "base.html" %}
 
 {% block title %}Providers{% endblock %}
+{% block page_heading %}Providers{% endblock %}
+{% block page_description %}Manage M3U, Xtream Codes, and local-file sources.{% endblock %}
+{% block page_actions %}<button class="btn btn-primary" id="add-provider-btn">+ Add Provider</button>{% endblock %}
 
 {% block content %}
-<div class="page-header page-header--actions">
-  <div>
-    <h1>Providers</h1>
-    <p class="page-subtitle">Manage your M3U and Xtream Code sources.</p>
-  </div>
-  <button class="btn btn-primary" id="add-provider-btn">+ Add Provider</button>
-</div>
-
 {% if error %}
 <div class="alert alert-error" style="margin-bottom: 24px;">{{ error }}</div>
 {% endif %}
@@ -116,7 +111,13 @@
       </div>
       <div class="form-group">
         <label for="xt-password">Password</label>
-        <input type="password" id="xt-password" name="password" required />
+        <div class="password-field">
+          <input type="password" id="xt-password" name="password" required />
+          <button type="button" class="password-toggle" data-password-toggle
+            aria-label="Show password" aria-pressed="false" title="Show password">
+            <span class="password-toggle__icon" aria-hidden="true">&#128065;</span>
+          </button>
+        </div>
       </div>
     </div>
     <div class="form-row">
@@ -218,8 +219,9 @@
 
 <!-- PROVIDERS TABLE -->
 {% if providers %}
-<div class="card" style="margin-top: 32px;">
-  <table class="table">
+<div class="card provider-table-card">
+  <div class="provider-table-wrap">
+  <table class="table provider-table">
     <thead>
       <tr>
         <th>Status</th>
@@ -233,8 +235,8 @@
     </thead>
     <tbody>
       {% for p in providers %}
-      <tr class="{% if not p.is_active %}row--inactive{% endif %}">
-        <td>
+      <tr class="provider-row {% if not p.is_active %}row--inactive{% endif %}">
+        <td data-label="Status">
           {% if p.is_active %}
           <button type="button"
             class="toggle-btn toggle-btn--active"
@@ -255,8 +257,8 @@
           </form>
           {% endif %}
         </td>
-        <td><strong>{{ p.name }}</strong></td>
-        <td>
+        <td data-label="Name"><strong>{{ p.name }}</strong></td>
+        <td data-label="Type">
           {% if p.type == 'm3u' %}
           <span class="badge badge--blue">M3U</span>
           {% elif p.type == 'xtream' %}
@@ -265,7 +267,8 @@
           <span class="badge badge--gray">Local</span>
           {% endif %}
         </td>
-        <td class="text-muted">
+        <td class="text-muted" data-label="Details">
+          <div class="provider-row-details">
           {% if p.type == "m3u" %}
             <button type="button" class="details-toggle" data-details="{{ p.slug }}">Show URL</button>
             <div class="details-expanded" id="details-{{ p.slug }}" style="display:none">
@@ -280,16 +283,19 @@
               <code class="details-value">{{ p.local_file_path or "—" }}</code>
             </div>
           {% endif %}
+          </div>
         </td>
-        <td class="text-muted">{{ p.priority }}</td>
-        <td class="text-muted">{{ p.created_at[:10] }}</td>
-        <td class="table-actions">
-          <button type="button" class="btn btn-secondary btn-sm edit-open-btn"
-            data-edit-id="{{ p.slug }}">Edit</button>
-          <form method="post" action="/providers/{{ p.slug }}/delete"
-            data-confirm="Remove provider &quot;{{ p.name }}&quot;?" style="display:inline">
-            <button type="submit" class="btn btn-danger btn-sm">Remove</button>
-          </form>
+        <td class="text-muted" data-label="Priority">{{ p.priority }}</td>
+        <td class="text-muted" data-label="Added">{{ p.created_at[:10] }}</td>
+        <td class="table-actions" data-label="Actions">
+          <div class="provider-row-actions">
+            <button type="button" class="btn btn-secondary btn-sm edit-open-btn"
+              data-edit-id="{{ p.slug }}">Edit</button>
+            <form method="post" action="/providers/{{ p.slug }}/delete"
+              data-confirm="Remove provider &quot;{{ p.name }}&quot;?" style="display:inline">
+              <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+            </form>
+          </div>
         </td>
       </tr>
 
@@ -370,7 +376,13 @@
               </div>
               <div class="form-group">
                 <label>Password</label>
-                <input type="password" name="password" placeholder="New password" required />
+                <div class="password-field">
+                  <input type="password" name="password" placeholder="New password" required />
+                  <button type="button" class="password-toggle" data-password-toggle
+                    aria-label="Show password" aria-pressed="false" title="Show password">
+                    <span class="password-toggle__icon" aria-hidden="true">&#128065;</span>
+                  </button>
+                </div>
               </div>
               <div class="form-group form-group--sm">
                 <label>Port <span class="label-optional">(opt)</span></label>
@@ -475,6 +487,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% else %}
 <div class="empty-state">

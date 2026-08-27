@@ -15,8 +15,7 @@ VODSTRM is a self-hosted media library manager that ingests M3U and Xtream Codes
   - [Prerequisites](#prerequisites)
   - [Quick Start](#quick-start)
   - [Configuration](#configuration)
-    - [.env (Docker environment)](#env-docker-environment)
-    - [app.env (Application settings)](#appenv-application-settings)
+    - [.env (Application settings)](#env-application-settings)
 - [Usage](#usage)
   - [First Run & Setup](#first-run--setup)
   - [Providers](#providers)
@@ -66,21 +65,15 @@ services:
     container_name: vodstrm
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-2112}:${APP_PORT:-2112}"
-    # env_file:
-    #   - app.env
-    environment:
-      - SECRET_KEY=${SECRET_KEY}
-      - TZ=${TZ:-America/Los_Angeles}
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      - "${APP_PORT}:${APP_PORT}"
+    env_file:
+      - .env
     volumes:
-      - ${DATA_PATH:-./data}:/app/data
-      - ${VOD_PATH:-./data/vod}:/app/data/vod
+      - ${DATA_PATH}:/app/data
       # Uncomment and point to a host path containing local .m3u files. Or place m3u files directly in /app/data/m3u.
       # - /path/on/host/to/m3u:/app/data/m3u
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-2112}/login"]
+      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT}/login"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -101,67 +94,53 @@ docker compose up -d
 
 ### Configuration
 
-VODSTRM uses two separate configuration files. Only `.env` is required to get started.
+VODSTRM uses one project-root `.env` file for standalone execution, application settings, and Docker Compose interpolation. Copy `example.env` to `.env`, then adjust values for your environment. Python falls back to the checked-in `example.env` when `.env` is absent; Docker Compose requires `.env` for path and port interpolation.
 
-#### .env (Docker environment)
+#### .env (Application settings)
 
 This file controls the Docker container itself — ports, paths, timezone, and secrets. Docker Compose reads it automatically when it exists in the same directory as `docker-compose.yml`.
 
 ```env
-# Change key in production
-# Generate a random key with: openssl rand -hex 32
-SECRET_KEY=change-me-to-a-random-key
-
+# Standalone server
+APP_HOST=0.0.0.0
 APP_PORT=2112
-
-# User/group ID the container runs as (avoids volume permission issues)
-# Find yours with: id -u && id -g
-PUID=1000
-PGID=1000
-
-# Timezone for the scheduler and timestamps
-# https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-TZ=America/Los_Angeles
-
-# Host path for app data (SQLite DBs, logs, downloaded M3U files)
-DATA_PATH=./data
-
-# Host path for STRM/VOD output — point this at your media server or NAS
-# VOD_PATH=/mnt/nas/media
-VOD_PATH=./data/vod
-
-# Set to "true" to enable debug mode (enables /docs, verbose logging)
-#DEBUG=true
-# JWT token expiry in minutes (default: 60)
-#ACCESS_TOKEN_EXPIRE_MINUTES=60
-# Set to "true" when running behind HTTPS to mark cookies as Secure
-#SECURE_COOKIES=true
-```
-
-**Local M3U files:** If you have `.m3u` files on your host, you can either mount a directory into the container (uncomment the volume in `docker-compose.yml` and set the host path), or simply drop the files into `DATA_PATH/m3u` and add them as a Local File provider through the UI.
-
----
-
-#### app.env (Application settings)
-
-This file controls application-level behaviour. It is optional — the defaults shown below are used if the file is absent. To activate it, uncomment the `env_file` block in `docker-compose.yml`.
-
-```env
-# Path to the main SQLite database inside the container
-DATABASE_PATH=data/app.db
-
-# Path to the APScheduler jobs database inside the container
-SCHEDULER_DB_PATH=data/scheduler.db
-
-# How long a login session stays valid, in minutes
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-
-# Set to true to enable debug logging and the interactive API docs at /docs
+APP_RELOAD=true
 DEBUG=false
 
-# Set to true when running behind HTTPS to mark auth cookies as Secure
+# Authentication
+SECRET_KEY=change-me-to-a-random-key
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 SECURE_COOKIES=false
+
+# Application storage
+DATABASE_PATH=data/app.db
+SCHEDULER_DB_PATH=data/scheduler.db
+VOD_PATH=data/vod
+VOD_MOVIES_FOLDER=movies
+VOD_SERIES_FOLDER=series
+VOD_LIVE_TV_FOLDER=livetv
+VOD_UNSORTED_FOLDER=unsorted
+VOD_UNKNOWN_YEAR_FOLDER=unknown
+M3U_DIR=data/m3u
+VOD_OFFLINE_PATH=data/vod-offline
+LOG_DIR=data/logs
+
+# Scheduling
+TZ=America/Los_Angeles
+
+# Docker Compose
+PUID=1000
+PGID=1000
+DATA_PATH=./data
 ```
+
+`VOD_PATH` is the media-server-facing tree. `VOD_OFFLINE_PATH` stores the physical downloaded files and mirrors the same relative layout under `movies/`, `series/`, and `unsorted/`. Completed files in `VOD_PATH` are hard links to files in `VOD_OFFLINE_PATH`.
+
+The immediate subfolder names are configurable with `VOD_MOVIES_FOLDER`, `VOD_SERIES_FOLDER`, `VOD_LIVE_TV_FOLDER`, and `VOD_UNSORTED_FOLDER`. Their defaults preserve the existing `movies`, `series`, `livetv`, and `unsorted` layout. Dated TV content shares `VOD_SERIES_FOLDER`; `VOD_UNKNOWN_YEAR_FOLDER` defaults to `unknown` when dated TV has no year. Season directories retain the standard `Season NN` format. Configurable folder values must resolve to one folder name; separators and `..` are rejected.
+
+Both application paths must be on the same filesystem because hard links cannot cross filesystems. Docker therefore mounts only `DATA_PATH` at `/app/data`; keep both paths beneath that mount unless you provide another single common-parent mount yourself.
+
+**Local M3U files:** If you have `.m3u` files on your host, you can either mount a directory into the container (uncomment the volume in `docker-compose.yml` and set the host path), or simply drop the files into `DATA_PATH/m3u` and add them as a Local File provider through the UI.
 
 ---
 
@@ -185,7 +164,9 @@ Provide a direct HTTP/HTTPS link to an `.m3u` or `.m3u8` file. VODSTRM will down
 
 #### Xtream Codes
 
-Enter your Xtream Codes server URL, username, and password. Optionally specify a port and choose a stream format (TS or HLS). VODSTRM constructs the API request automatically.
+Enter your Xtream Codes server URL, username, and password. Optionally specify a port and choose a stream format (TS or HLS). VODSTRM first requests the provider's M3U Plus playlist. If playlist export is unavailable, it automatically falls back to the native Xtream Player API.
+
+Native Player API ingestion imports live channels and movies immediately and stores the complete TV-series summary catalogue. Provider synchronization never requests per-series episode details. When a user opens a show in the Library, VODSTRM requests `get_series_info` for that show, persists its episodes, and reuses those on-demand details during later synchronizations.
 
 #### Local File
 
@@ -244,6 +225,10 @@ Use the tabs at the top to filter by type:
 - Use the search bar to filter entries by title in real time.
 - Use the ownership filter to show only entries already in your library, only entries not yet added, or everything.
 
+#### Stream Links
+
+Movie details and individual TV episodes expose their provider stream link with **Reveal** and **Copy** controls. Stream URLs can contain provider credentials, so reveal or copy them only in a private environment.
+
 #### Adding & Removing Content
 
 Depending on the content type, you can add or remove content at different granularities:
@@ -280,7 +265,7 @@ Each follow rule operates in one of two modes:
 
 ### Live TV
 
-VODSTRM generates M3U playlist files for your live TV channels alongside the `.strm` library. These are written to the `livetv/` subdirectory inside your VOD output path (e.g. `data/vod/livetv/`).
+VODSTRM generates M3U playlist files for your live TV channels alongside the `.strm` library. These are written to the `VOD_LIVE_TV_FOLDER` subdirectory inside your VOD output path (by default, `data/vod/livetv/`).
 
 #### Per-Provider M3U
 
@@ -341,26 +326,28 @@ The **Reapply All Filters** button re-runs the entire filter pipeline against ev
 
 **URL:** `/schedules`
 
-The Schedules page controls when VODSTRM automatically fetches and processes your providers.
+The Schedules page controls when VODSTRM automatically fetches and processes your providers. It also displays live per-provider progress, durable stream/STRM counts, series-cache progress, and the resolved output directory.
+
+Provider synchronization runs in phases: catalogue retrieval, database persistence, filtering, STRM generation, and live M3U generation. Files do not appear in the output directory during the earlier API and database phases. The live monitor identifies the active phase and begins reporting STRM counts as file generation completes.
 
 #### Global Tasks
 
 Three global tasks are available:
 
-- **Download All Providers** — Downloads the latest M3U data from all active providers, runs ingestion, applies filters, and syncs `.strm` files. This is the primary task you will want to run on a regular schedule.
+- **Sync All Active Providers** — Retrieves the latest provider catalogues, runs ingestion, applies filters, and synchronizes `.strm` and live `.m3u` files. This is the primary task you will want to run on a regular schedule.
 - **Clean STRM Orphans** — Scans the VOD output directory and removes any `.strm` files that no longer have a corresponding database entry. Useful for cleaning up after providers are deleted or content is removed.
 - **Process Download Queue** — Wakes the download processor, which claims pending download rows up to the configured concurrency limit, probes each stream with ffprobe, and downloads via ffmpeg stream-copy remux. Completed downloads trigger a STRM sync so that `.strm` files are cleaned up for entries that now have local files.
 
 Each global task can be:
-- **Run Now** — Triggered immediately, outside of any schedule.
+- **Sync Now / Run Now** — Starts the selected provider sync or maintenance task immediately in the background.
 - **Scheduled** — Set a recurring trigger using either a cron expression (e.g. `0 3 * * *` for 3 AM daily) or a simple interval (e.g. every 6 hours).
 
 #### Per-Provider Controls
 
 The provider table below the global tasks shows each configured provider with the following controls:
 
-- **Omit from Schedule** — Temporarily exclude a provider from all scheduled and global ingest runs without touching its data. When omitted, the provider's existing streams and entries remain in the database exactly as they are — they just will not be updated. An amber **Omitted** badge appears next to the provider name as a reminder that its data may be stale. Click the toggle again to include the provider in future runs. To manually run an omitted provider regardless, use the **Download Now** button. To disable a provider and remove its data, use the Disable action on the Providers page.
-- **Download Now** — Manually trigger a download and ingest for a single provider without affecting others. Works even if the provider is omitted from the schedule.
+- **Omit from Schedule** — Temporarily exclude a provider from all scheduled and global ingest runs without touching its data. When omitted, the provider's existing streams and entries remain in the database exactly as they are — they just will not be updated. An amber **Omitted** badge appears next to the provider name as a reminder that its data may be stale. Click the toggle again to include the provider in future runs. To manually run an omitted provider regardless, use **Sync Now**. To disable a provider and remove its data, use the Disable action on the Providers page.
+- **Sync Now** — Manually synchronize one provider without affecting others. Works even if the provider is omitted from the schedule. Duplicate clicks are ignored while that provider is already running.
 - **STRM Mode** — Toggle between Generate All and Import Selected mode for the provider.
 
 ---
@@ -375,9 +362,9 @@ The Admin section contains tools for inspecting the internal state of the applic
 
 Lists all user accounts. Any user can be deleted except the currently logged-in account. VODSTRM does not currently support self-service registration — new accounts must be created by an existing admin.
 
-#### Library Inspector
+#### Database
 
-**URL:** `/admin/library`
+**URL:** `/admin/database`
 
 A low-level view into the entries and streams tables in the database.
 
@@ -385,6 +372,14 @@ A low-level view into the entries and streams tables in the database.
 - **Streams tab** — Shows the individual stream records attached to each entry, including which provider they came from, their current URL, and their `filtered_title`. Expand any row to inspect the raw metadata JSON and the filter hits that were applied during the last filter run.
 
 The **Clear Entries** and **Clear Streams** buttons wipe the respective tables. Use with caution — clearing entries will remove all ownership and follow data, and the next ingestion run will treat everything as new.
+
+#### Logs
+
+**URL:** `/admin/logs`
+
+Application logs are written persistently to `LOG_DIR/app.log` (default `data/logs/app.log`). Docker stores that directory under the `${DATA_PATH}:/app/data` volume. The log rotates at 5 MB and retains three archives: `app.log.1`, `app.log.2`, and `app.log.3`.
+
+The admin-only viewer can switch between current and rotated files, filter by severity, search logger names or messages, change the tail limit, and auto-refresh the current view. Severity is color-coded: debug, informational, warning, error, and critical records each have distinct visual treatment. The viewer only exposes the known `app.log` rotation family and does not accept arbitrary filesystem paths.
 
 ---
 
@@ -407,7 +402,7 @@ The status widget on the Integrations page shows the current queue depth, the la
 
 ### Downloads
 
-The Downloads integration converts remote stream URLs into local media files stored in your VOD directory. Instead of generating a `.strm` file that points at a remote URL, VODSTRM downloads the content via ffmpeg and lets your media server read the local file directly. This is useful for offline access, unreliable providers, or content you want to keep permanently.
+The Downloads integration converts remote stream URLs into persistent offline media. The physical file is stored under `VOD_OFFLINE_PATH`; a hard link with the same relative path is created under `VOD_PATH` so your media server can read it directly. This is useful for offline access, unreliable providers, or content you want to keep permanently.
 
 #### How It Works
 
@@ -424,16 +419,16 @@ The Downloads integration converts remote stream URLs into local media files sto
    ```
 
    - **Probing** — The stream URL is probed with `ffprobe` to verify it is reachable and to capture format metadata.
-   - **Downloading** — The stream is downloaded via `ffmpeg -c copy` (stream-copy remux, no re-encoding) into a staging file.
-   - **Finalizing** — The staging file is moved to its final path in the VOD directory (e.g. `data/vod/movies/Movie Title (Year).mkv`), and a STRM sync is triggered to remove the now-obsolete `.strm` file.
+  - **Downloading** — Progressive media files such as MP4, MKV, and TS are downloaded byte-for-byte in their original container, preserving every video, audio, subtitle, data stream, chapter, and metadata field. Non-progressive inputs use ffmpeg stream copy with every input stream explicitly mapped. VODSTRM does not re-encode or silently drop incompatible streams; the download fails instead. The partial file uses a `.part` suffix beside its final offline destination.
+  - **Finalizing** — The `.part` file is atomically renamed into the mirrored path under `VOD_OFFLINE_PATH` using the configured content folder (for example, `data/vod-offline/movies/Movie Title (Year)/Movie Title (Year).mp4` with defaults). VODSTRM then creates the matching hard link under `VOD_PATH`, and STRM sync removes the now-obsolete `.strm` file.
 
-3. **STRM interaction** — When a download completes, the entry's `.strm` file is deleted and your media server picks up the local media file instead. If a download is cancelled or its file is deleted, the `.strm` file is regenerated on the next sync. During every STRM sync, completed download files are also moved to match their current derived path — if a filter rule changes a title, the media file is relocated automatically.
+3. **STRM interaction** — When a download completes, the entry's `.strm` file is deleted and your media server picks up the hard-linked media file instead. If a download is cancelled or both file names disappear, the `.strm` file is regenerated on the next sync. During every STRM sync, completed downloads are reconciled across both mirrored trees; missing VOD links are repaired and filter-driven renames update both paths.
 
-4. **Failure handling** — Failed downloads are retained with a reason (e.g. `probe_failed`, `ffmpeg_failed`, `no_eligible_stream`). They can be retried individually from the Downloads page or in bulk via the Clear Failed button. Failed rows are automatically cleaned up after 90 days; cancelled rows after 24 hours. Both happen during STRM sync.
+4. **Cancellation and failure handling** — The Cancel action stops an active HTTP transfer or ffmpeg process, removes its partial `.part` file, and retains the row as cancelled for retry. Failed downloads are retained with a reason (e.g. `probe_failed`, `ffmpeg_failed`, `hardlink_failed`, `no_eligible_stream`). They can be retried individually from the Downloads page or in bulk via the Clear Failed button. Failed rows are automatically cleaned up after 90 days; cancelled rows after 24 hours. Both happen during STRM sync.
 
 5. **Provider independence** — Download rows are keyed by entry_id, not by stream or provider. If a provider is removed, the downloaded file and its database row survive. The foreign key uses ON DELETE SET NULL, so the row persists even if the underlying entry is orphaned.
 
-6. **Automatic maintenance** — On startup, any downloads stuck in the probing or downloading state are reset to pending. During STRM sync, orphaned staging files in the download directory are removed, and completed downloads whose local file has gone missing are automatically cancelled.
+6. **Automatic maintenance** — On startup, downloads stuck in probing or downloading are reset to pending. During STRM sync, orphaned `.part` and offline files are removed, existing VOD-only downloads are adopted into the offline tree, missing hard links are repaired, and completed downloads are cancelled only when neither path exists.
 
 #### Configuration
 

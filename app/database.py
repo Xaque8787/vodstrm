@@ -4,9 +4,10 @@ import os
 from contextlib import contextmanager
 from typing import Generator
 
+from app.config import settings
 from app.utils.env import resolve_path
 
-_DATABASE_RELATIVE = os.getenv("DATABASE_PATH", "data/app.db")
+_DATABASE_RELATIVE = settings.database_path
 DATABASE_PATH = resolve_path(_DATABASE_RELATIVE)
 
 _sql_logger = logging.getLogger("app.sql")
@@ -83,6 +84,12 @@ CREATE TABLE IF NOT EXISTS entries (
     updated_at  TEXT
 );
 
+CREATE INDEX IF NOT EXISTS idx_entries_type_cleaned_title
+    ON entries(type, cleaned_title);
+
+CREATE INDEX IF NOT EXISTS idx_entries_type_lower_cleaned_title
+    ON entries(type, lower(cleaned_title));
+
 -- -------------------------------------------------------
 -- MEDIA LIBRARY: streams (where content comes from)
 -- -------------------------------------------------------
@@ -126,6 +133,55 @@ CREATE INDEX IF NOT EXISTS idx_streams_entry_id
 -- Fast lookup of all streams belonging to a batch (used in cleanup)
 CREATE INDEX IF NOT EXISTS idx_streams_batch_id
     ON streams(batch_id);
+
+CREATE INDEX IF NOT EXISTS idx_streams_provider_entry
+    ON streams(provider, entry_id);
+
+-- -------------------------------------------------------
+-- XTREAM: native Player API series episode cache
+-- -------------------------------------------------------
+-- Player API exposes series summaries in bulk but requires one request per
+-- series for episodes. Cache normalized episode descriptors so native Xtream
+-- ingestion can refresh a bounded subset while still producing a complete
+-- current batch from everything fetched so far.
+CREATE TABLE IF NOT EXISTS xtream_series_cache (
+    provider_slug   TEXT NOT NULL REFERENCES providers(slug)
+                    ON UPDATE CASCADE ON DELETE CASCADE,
+    series_id       TEXT NOT NULL,
+    series_name     TEXT NOT NULL,
+    last_modified  TEXT,
+    episodes_json  TEXT NOT NULL DEFAULT '[]',
+    fetch_status   TEXT NOT NULL DEFAULT 'ok'
+                   CHECK(fetch_status IN ('ok', 'error')),
+    fetched_at     TEXT NOT NULL,
+    PRIMARY KEY (provider_slug, series_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_xtream_series_cache_refresh
+    ON xtream_series_cache(provider_slug, fetch_status, fetched_at);
+
+-- Player API returns the complete series summary catalogue in one request.
+-- Persist it independently from episode entries so every known show is
+-- browseable/searchable before its get_series_info details are cached.
+CREATE TABLE IF NOT EXISTS xtream_series_catalog (
+    provider_slug  TEXT NOT NULL REFERENCES providers(slug)
+                   ON UPDATE CASCADE ON DELETE CASCADE,
+    series_id      TEXT NOT NULL,
+    series_name    TEXT NOT NULL,
+    title_key      TEXT NOT NULL,
+    cover          TEXT,
+    category_id    TEXT,
+    last_modified TEXT,
+    metadata_json  TEXT NOT NULL DEFAULT '{}',
+    updated_at     TEXT NOT NULL,
+    PRIMARY KEY (provider_slug, series_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_xtream_series_catalog_name
+    ON xtream_series_catalog(series_name COLLATE NOCASE);
+
+CREATE INDEX IF NOT EXISTS idx_xtream_series_catalog_provider_name
+    ON xtream_series_catalog(provider_slug, series_name COLLATE NOCASE);
 
 -- -------------------------------------------------------
 -- FILTERS: rule definitions and scope
@@ -257,8 +313,11 @@ CREATE TABLE IF NOT EXISTS downloads (
     container         TEXT DEFAULT 'mkv',
     staging_path      TEXT,
     local_path        TEXT,
+    offline_path      TEXT,
     probe_data        TEXT,
     file_size         INTEGER,
+    expected_size     INTEGER,
+    downloaded_bytes  INTEGER NOT NULL DEFAULT 0,
     fail_reason       TEXT,
     retry_count       INTEGER NOT NULL DEFAULT 0,
     reencode_eligible INTEGER NOT NULL DEFAULT 0,
@@ -284,7 +343,7 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=30000")
-    if os.getenv("DEBUG", "false").lower() == "true":
+    if settings.debug:
         conn.set_trace_callback(_sql_logger.debug)
     return conn
 
