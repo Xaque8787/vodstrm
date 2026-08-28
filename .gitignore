@@ -1,5 +1,6 @@
 node_modules/
 .env
+app.env
 __pycache__/
 *.py[codz]
 *$py.class

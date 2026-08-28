@@ -61,6 +61,21 @@ class LogReaderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             log_reader.read_log_entries(level="TRACE")
 
+    def test_cleanup_truncates_active_log_and_deletes_archive(self):
+        active_result = log_reader.cleanup_log_file("app.log")
+        archive_result = log_reader.cleanup_log_file("app.log.1")
+
+        self.assertEqual(active_result["action"], "cleared")
+        self.assertGreater(active_result["bytes_removed"], 0)
+        self.assertTrue(os.path.isfile(self.current))
+        self.assertEqual(os.path.getsize(self.current), 0)
+        self.assertEqual(archive_result["action"], "deleted")
+        self.assertFalse(os.path.exists(os.path.join(self.log_dir, "app.log.1")))
+
+    def test_cleanup_rejects_non_allowlisted_file(self):
+        with self.assertRaises(ValueError):
+            log_reader.cleanup_log_file("../app.log")
+
 
 if __name__ == "__main__":
     unittest.main()

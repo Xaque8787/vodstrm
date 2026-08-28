@@ -13,8 +13,8 @@ active or completed downloads from .strm generation (Model B).
 import json
 import logging
 import os
+import re
 import subprocess
-import tempfile
 import threading
 import time
 from urllib.parse import urlsplit
@@ -28,7 +28,6 @@ from app.utils.env import local_now_iso, resolve_path
 
 logger = logging.getLogger("app.tasks.downloads")
 
-_VOD_ROOT_RELATIVE = settings.vod_path
 _OFFLINE_ROOT_RELATIVE = settings.vod_offline_path
 
 _lock = threading.Lock()
@@ -61,6 +60,36 @@ _PROGRESSIVE_CONTAINERS = {
     "ts": {"mpegts"},
     "m2ts": {"mpegts"},
 }
+_FFMPEG_OUTPUT_FORMATS = {
+    "mkv": "matroska",
+    "mp4": "mp4",
+    "ts": "mpegts",
+}
+
+
+def _redact_media_error(message: str) -> str:
+    return re.sub(r"https?://[^\s]+", "[REDACTED_URL]", message)
+
+
+def _looks_like_mpegts(url: str) -> bool:
+    """Check three packet boundaries without downloading the media object."""
+    try:
+        with requests.get(
+            url,
+            headers={**_HTTP_HEADERS, "Range": "bytes=0-563"},
+            stream=True,
+            allow_redirects=True,
+            timeout=(15, 15),
+        ) as response:
+            response.raise_for_status()
+            prefix = bytearray()
+            for chunk in response.iter_content(chunk_size=564):
+                prefix.extend(chunk)
+                if len(prefix) >= 564:
+                    break
+    except requests.RequestException:
+        return False
+    return len(prefix) > 376 and all(prefix[offset] == 0x47 for offset in (0, 188, 376))
 
 
 def _load_settings(conn) -> dict:
@@ -84,48 +113,37 @@ def _offline_root() -> str:
     return path
 
 
-def _vod_root() -> str:
-    return resolve_path(_VOD_ROOT_RELATIVE)
-
-
-def validate_storage_roots() -> None:
-    """Fail fast when VOD and offline roots cannot share hard links."""
-    offline_root = _offline_root()
-    vod_root = _vod_root()
-    os.makedirs(offline_root, exist_ok=True)
-    os.makedirs(vod_root, exist_ok=True)
-    descriptor, source_path = tempfile.mkstemp(
-        prefix=".vodstrm-hardlink-", dir=offline_root
-    )
-    os.close(descriptor)
-    link_path = os.path.join(vod_root, os.path.basename(source_path))
+def _remove_empty_offline_dirs(path: str) -> None:
+    """Remove empty item ancestors without removing the category or root."""
+    root = os.path.abspath(_offline_root())
+    current = os.path.abspath(os.path.dirname(path))
     try:
-        os.link(source_path, link_path)
-    except OSError as exc:
-        raise RuntimeError(
-            "VOD_PATH and VOD_OFFLINE_PATH must be writable and on the same "
-            "filesystem so completed media can be hard-linked"
-        ) from exc
-    finally:
-        for path in (link_path, source_path):
-            try:
-                os.remove(path)
-            except FileNotFoundError:
-                pass
-
-
-def _remove_empty_dirs(directory: str, root: str) -> None:
-    """Walk upward from directory, removing empty folders until root."""
-    current = directory
-    while current and os.path.abspath(current) != os.path.abspath(root):
+        if os.path.commonpath((root, current)) != root:
+            return
+    except ValueError:
+        return
+    relative = os.path.relpath(current, root)
+    category = relative.split(os.sep, 1)[0]
+    if category in {".", ".."}:
+        return
+    category_root = os.path.join(root, category)
+    while current != category_root:
         try:
-            if not os.listdir(current):
-                os.rmdir(current)
-                current = os.path.dirname(current)
-            else:
-                break
+            os.rmdir(current)
         except OSError:
             break
+        current = os.path.dirname(current)
+
+
+def _remove_download_file(path: str | None) -> None:
+    if not path:
+        return
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        return
+    _remove_empty_offline_dirs(path)
 
 
 def _derive_media_path(entry_type, title, year, season, episode,
@@ -136,28 +154,41 @@ def _derive_media_path(entry_type, title, year, season, episode,
                 root, container=container, air_date=air_date)
 
 
-def _ensure_hardlink(source_path: str, link_path: str) -> None:
-    """Create or replace link_path as a hard link to source_path."""
-    os.makedirs(os.path.dirname(link_path), exist_ok=True)
-    if os.path.exists(link_path):
-        if os.path.samefile(source_path, link_path):
-            return
-        os.remove(link_path)
-    os.link(source_path, link_path)
-
-
 def _ffprobe_stream(url: str, timeout: int = 30) -> dict | None:
     """Run ffprobe on a URL, return parsed JSON or None on failure."""
     try:
+        base_command = [
+            "ffprobe", "-v", "error", "-user_agent", _HTTP_HEADERS["User-Agent"],
+            "-reconnect", "1", "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5", "-print_format", "json",
+            "-show_format", "-show_streams",
+        ]
         result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_format", "-show_streams", url],
-            capture_output=True, text=True, timeout=timeout,
+            [*base_command, url], capture_output=True, text=True, timeout=timeout,
         )
+        input_format = None
+        if result.returncode != 0 and _looks_like_mpegts(url):
+            logger.warning(
+                "[DOWNLOADS] Provider mislabeled MPEG-TS media; retrying probe "
+                "with forced input format"
+            )
+            input_format = "mpegts"
+            result = subprocess.run(
+                [*base_command, "-f", input_format, url],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
         if result.returncode != 0:
-            logger.warning("[DOWNLOADS] ffprobe failed: %s", result.stderr[:200])
+            logger.warning(
+                "[DOWNLOADS] ffprobe failed: %s",
+                _redact_media_error(result.stderr)[:500],
+            )
             return None
-        return json.loads(result.stdout)
+        probe_data = json.loads(result.stdout)
+        if input_format:
+            probe_data["_vodstrm_input_format"] = input_format
+        return probe_data
     except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as exc:
         logger.warning("[DOWNLOADS] ffprobe error: %s", exc)
         return None
@@ -170,6 +201,8 @@ def _ffmpeg_download(
     progress_callback=None,
     expected_size: int | None = None,
     cancel_event: threading.Event | None = None,
+    input_format: str | None = None,
+    output_container: str = "mkv",
 ) -> bool:
     """Download via ffmpeg stream-copy remux. Returns True on success.
 
@@ -183,14 +216,20 @@ def _ffmpeg_download(
         "-reconnect", "1",
         "-reconnect_streamed", "1",
         "-reconnect_delay_max", "5",
+        "-user_agent", _HTTP_HEADERS["User-Agent"],
         "-copy_unknown",
+    ]
+    if input_format:
+        cmd.extend(["-f", input_format])
+    cmd.extend([
         "-i", url,
         "-map", "0",
         "-map_metadata", "0",
         "-map_chapters", "0",
         "-c", "copy",
+        "-f", _FFMPEG_OUTPUT_FORMATS.get(output_container, output_container),
         dest_path,
-    ]
+    ])
     try:
         process = subprocess.Popen(
             cmd,
@@ -227,7 +266,11 @@ def _ffmpeg_download(
 
     _, stderr = process.communicate()
     if process.returncode != 0:
-        logger.warning("[DOWNLOADS] ffmpeg failed (exit %d): %s", process.returncode, stderr[-800:])
+        logger.warning(
+            "[DOWNLOADS] ffmpeg failed (exit %d): %s",
+            process.returncode,
+            _redact_media_error(stderr)[-800:],
+        )
         return False
     if progress_callback and os.path.exists(dest_path):
         progress_callback(os.path.getsize(dest_path), expected_size)
@@ -257,67 +300,118 @@ def _http_download_exact(
     cancel_event: threading.Event | None = None,
 ) -> bool:
     """Copy a progressive HTTP media object byte-for-byte without remuxing."""
-    try:
-        with requests.get(
-            url,
-            headers=_HTTP_HEADERS,
-            stream=True,
-            allow_redirects=True,
-            timeout=(30, 60),
-        ) as response:
-            response.raise_for_status()
-            content_type = (response.headers.get("content-type") or "").lower()
-            if content_type.startswith("text/") or "json" in content_type:
+    range_chunk_size = 4 * 1024 * 1024
+    expected_size = None
+    last_reported_bytes = 0
+    last_reported_at = time.monotonic()
+    while expected_size is None or os.path.getsize(dest_path) < expected_size:
+        range_completed = False
+        for attempt in range(1, 5):
+            try:
+                offset = os.path.getsize(dest_path) if os.path.exists(dest_path) else 0
+                range_end = offset + range_chunk_size - 1
+                if expected_size is not None:
+                    range_end = min(range_end, expected_size - 1)
+                headers = {
+                    **_HTTP_HEADERS,
+                    "Range": f"bytes={offset}-{range_end}",
+                }
+                with requests.get(
+                    url,
+                    headers=headers,
+                    stream=True,
+                    allow_redirects=True,
+                    timeout=(30, 60),
+                ) as response:
+                    response.raise_for_status()
+                    content_type = (response.headers.get("content-type") or "").lower()
+                    if content_type.startswith("text/") or "json" in content_type:
+                        logger.warning(
+                            "[DOWNLOADS] Direct media download returned non-media content-type=%s",
+                            content_type or "unknown",
+                        )
+                        return False
+
+                    content_range = response.headers.get("content-range") or ""
+                    range_match = re.fullmatch(
+                        r"bytes (\d+)-(\d+)/(\d+)", content_range
+                    )
+                    if response.status_code == 206:
+                        if not range_match or int(range_match.group(1)) != offset:
+                            logger.warning(
+                                "[DOWNLOADS] Direct download returned an invalid byte range"
+                            )
+                            return False
+                        response_end = int(range_match.group(2))
+                        expected_size = int(range_match.group(3))
+                        if response_end > range_end or response_end >= expected_size:
+                            logger.warning(
+                                "[DOWNLOADS] Direct download returned an invalid range boundary"
+                            )
+                            return False
+                        response_size = response_end - offset + 1
+                    elif offset:
+                        logger.warning(
+                            "[DOWNLOADS] Source ignored byte-range resume"
+                        )
+                        return False
+                    else:
+                        content_length = response.headers.get("content-length")
+                        try:
+                            expected_size = int(content_length) if content_length else None
+                        except ValueError:
+                            expected_size = None
+                        response_size = expected_size
+
+                    bytes_written = offset
+                    if progress_callback:
+                        progress_callback(bytes_written, expected_size)
+                    with open(dest_path, "ab" if offset else "wb") as destination:
+                        for chunk in response.iter_content(chunk_size=1024 * 1024):
+                            if cancel_event and cancel_event.is_set():
+                                logger.info("[DOWNLOADS] Direct transfer cancelled")
+                                return False
+                            if chunk:
+                                destination.write(chunk)
+                                bytes_written += len(chunk)
+                                now = time.monotonic()
+                                if progress_callback and (
+                                    bytes_written == expected_size
+                                    or bytes_written - last_reported_bytes >= 16 * 1024 * 1024
+                                    or now - last_reported_at >= 1
+                                ):
+                                    progress_callback(bytes_written, expected_size)
+                                    last_reported_bytes = bytes_written
+                                    last_reported_at = now
+                    if response_size is not None and bytes_written - offset != response_size:
+                        raise requests.exceptions.ChunkedEncodingError(
+                            "incomplete byte range"
+                        )
+                    if progress_callback and bytes_written != last_reported_bytes:
+                        progress_callback(bytes_written, expected_size)
+                    range_completed = True
+                    break
+            except requests.RequestException as exc:
                 logger.warning(
-                    "[DOWNLOADS] Direct media download returned non-media content-type=%s",
-                    content_type or "unknown",
+                    "[DOWNLOADS] Direct range interrupted (%s), attempt %d/4",
+                    type(exc).__name__,
+                    attempt,
+                )
+            except OSError as exc:
+                logger.warning(
+                    "[DOWNLOADS] Direct lossless download failed (%s)",
+                    type(exc).__name__,
                 )
                 return False
-            expected_size = None
-            content_length = response.headers.get("content-length")
-            if content_length:
-                try:
-                    expected_size = int(content_length)
-                except ValueError:
-                    expected_size = None
-            bytes_written = 0
-            last_reported_bytes = 0
-            last_reported_at = time.monotonic()
-            if progress_callback:
-                progress_callback(0, expected_size)
-            with open(dest_path, "wb") as destination:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if cancel_event and cancel_event.is_set():
-                        logger.info("[DOWNLOADS] Direct transfer cancelled")
-                        return False
-                    if chunk:
-                        destination.write(chunk)
-                        bytes_written += len(chunk)
-                        now = time.monotonic()
-                        if progress_callback and (
-                            bytes_written == expected_size
-                            or bytes_written - last_reported_bytes >= 16 * 1024 * 1024
-                            or now - last_reported_at >= 1
-                        ):
-                            progress_callback(bytes_written, expected_size)
-                            last_reported_bytes = bytes_written
-                            last_reported_at = now
-            if progress_callback and bytes_written != last_reported_bytes:
-                progress_callback(bytes_written, expected_size)
-        if expected_size is not None and bytes_written != expected_size:
-            logger.warning(
-                "[DOWNLOADS] Direct download incomplete — expected=%d received=%d",
-                expected_size,
-                bytes_written,
-            )
+            if cancel_event and cancel_event.is_set():
+                return False
+            if attempt < 4:
+                time.sleep(attempt)
+        if not range_completed:
             return False
-        return os.path.exists(dest_path) and bytes_written > 0
-    except (requests.RequestException, OSError) as exc:
-        logger.warning(
-            "[DOWNLOADS] Direct lossless download failed (%s)",
-            type(exc).__name__,
-        )
-        return False
+        if expected_size is None:
+            return os.path.getsize(dest_path) > 0
+    return os.path.getsize(dest_path) == expected_size
 
 
 def _winning_stream(conn, entry_id: str) -> tuple[str, str, str] | None:
@@ -354,14 +448,19 @@ def _process_one(conn, row, settings, cancel_event=None) -> bool:
     timeout = settings.get("ffmpeg_timeout", 3600)
 
     def is_cancelled():
-        return cancel_event is not None and cancel_event.is_set()
+        if cancel_event is not None and cancel_event.is_set():
+            return True
+        current = conn.execute(
+            "SELECT status FROM downloads WHERE entry_id=?", (entry_id,)
+        ).fetchone()
+        return current is None or current["status"] == "cancelled"
 
     # Get winning stream
     stream_info = _winning_stream(conn, entry_id)
     if not stream_info:
         conn.execute(
             "UPDATE downloads SET status='failed', fail_reason='no_eligible_stream', "
-            "failed_at=?, updated_at=? WHERE entry_id=?",
+            "failed_at=?, updated_at=? WHERE entry_id=? AND status='pending'",
             (now, now, entry_id),
         )
         conn.commit()
@@ -372,26 +471,53 @@ def _process_one(conn, row, settings, cancel_event=None) -> bool:
         return False
 
     # Transition to probing
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE downloads SET status='probing', stream_url=?, provider=?, "
-        "probing_at=?, updated_at=? WHERE entry_id=?",
+        "probing_at=?, updated_at=? WHERE entry_id=? AND status='pending'",
         (stream_url, provider, now, now, entry_id),
     )
+    if cursor.rowcount != 1:
+        conn.rollback()
+        return False
     conn.commit()
 
     # Probe
     probe_data = _ffprobe_stream(stream_url)
+    if not probe_data:
+        try:
+            from app.ingestion.xtream_native import refresh_episode_stream
+            refreshed_url = refresh_episode_stream(conn, entry_id, provider)
+        except Exception as exc:
+            logger.warning(
+                "[DOWNLOADS] Xtream episode refresh failed (%s)",
+                type(exc).__name__,
+            )
+            refreshed_url = None
+        if refreshed_url and refreshed_url != stream_url:
+            logger.info(
+                "[DOWNLOADS] Retrying probe with refreshed Xtream episode stream"
+            )
+            stream_url = refreshed_url
+            probe_data = _ffprobe_stream(stream_url)
+            conn.execute(
+                "UPDATE downloads SET stream_url=?, updated_at=? "
+                "WHERE entry_id=? AND status='probing'",
+                (stream_url, local_now_iso(), entry_id),
+            )
+            conn.commit()
     if is_cancelled():
         return False
     if not probe_data:
         conn.execute(
             "UPDATE downloads SET status='failed', fail_reason='probe_failed', "
-            "failed_at=?, updated_at=?, retry_count=retry_count+1 WHERE entry_id=?",
+            "failed_at=?, updated_at=?, retry_count=retry_count+1 "
+            "WHERE entry_id=? AND status='probing'",
             (now, now, entry_id),
         )
         conn.commit()
         return False
 
+    input_format = probe_data.pop("_vodstrm_input_format", None)
     source_container = _progressive_source_container(stream_url, probe_data)
     container = source_container or configured_container
     try:
@@ -417,20 +543,20 @@ def _process_one(conn, row, settings, cancel_event=None) -> bool:
         entry["type"], title, entry["year"], entry["season"],
         entry["episode"], container, _offline_root(), air_date=entry["air_date"],
     )
-    vod_path = _derive_media_path(
-        entry["type"], title, entry["year"], entry["season"],
-        entry["episode"], container, _vod_root(), air_date=entry["air_date"],
-    )
     staging = f"{offline_path}.part"
     os.makedirs(os.path.dirname(staging), exist_ok=True)
 
     # Transition to downloading
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE downloads SET status='downloading', probe_data=?, container=?, "
         "staging_path=?, offline_path=?, expected_size=?, downloaded_bytes=0, "
-        "downloading_at=?, updated_at=? WHERE entry_id=?",
+        "downloading_at=?, updated_at=? WHERE entry_id=? AND status='probing'",
         (json.dumps(probe_data), container, staging, offline_path, expected_size, now, now, entry_id),
     )
+    if cursor.rowcount != 1:
+        conn.rollback()
+        _remove_download_file(staging)
+        return False
     conn.commit()
 
     def record_progress(bytes_written, total_bytes):
@@ -466,159 +592,202 @@ def _process_one(conn, row, settings, cancel_event=None) -> bool:
             progress_callback=record_progress,
             expected_size=expected_size,
             cancel_event=cancel_event,
+            input_format=input_format,
+            output_container=container,
         )
         failure_reason = "ffmpeg_failed"
     if not success:
-        if os.path.exists(staging):
-            try:
-                os.remove(staging)
-            except OSError:
-                pass
+        if not source_container:
+            _remove_download_file(staging)
         if is_cancelled():
             return False
         conn.execute(
             "UPDATE downloads SET status='failed', fail_reason=?, "
-            "failed_at=?, updated_at=?, retry_count=retry_count+1 WHERE entry_id=?",
+            "failed_at=?, updated_at=?, retry_count=retry_count+1 "
+            "WHERE entry_id=? AND status='downloading'",
             (failure_reason, now, now, entry_id),
         )
         conn.commit()
         return False
 
     if is_cancelled():
-        if os.path.exists(staging):
-            try:
-                os.remove(staging)
-            except OSError:
-                pass
+        _remove_download_file(staging)
         return False
 
     # Finalization and cancellation signaling share a lock so the last-chunk
     # race either cancels staging or cleanly deletes an already-completed file.
     with _cancel_lock:
         if is_cancelled():
-            if os.path.exists(staging):
-                try:
-                    os.remove(staging)
-                except OSError:
-                    pass
+            _remove_download_file(staging)
             return False
-        os.makedirs(os.path.dirname(offline_path), exist_ok=True)
-        os.replace(staging, offline_path)
         try:
-            _ensure_hardlink(offline_path, vod_path)
+            os.replace(staging, offline_path)
         except OSError as exc:
+            if is_cancelled():
+                _remove_download_file(staging)
+                _remove_download_file(offline_path)
+                return False
             conn.execute(
-                "UPDATE downloads SET status='failed', fail_reason='hardlink_failed', "
-                "offline_path=?, staging_path=NULL, failed_at=?, updated_at=?, "
-                "retry_count=retry_count+1 WHERE entry_id=?",
+                "UPDATE downloads SET status='failed', fail_reason='finalize_failed', "
+                "offline_path=?, failed_at=?, updated_at=?, "
+                "retry_count=retry_count+1 "
+                "WHERE entry_id=? AND status='downloading'",
                 (offline_path, now, now, entry_id),
             )
             conn.commit()
             logger.error(
-                "[DOWNLOADS] Could not hard-link offline media into VOD tree (%s)",
+                "[DOWNLOADS] Could not finalize media into VOD tree (%s)",
                 exc,
             )
             return False
 
-        file_size = os.path.getsize(offline_path)
-        conn.execute(
+        try:
+            file_size = os.path.getsize(offline_path)
+        except OSError:
+            if is_cancelled():
+                _remove_download_file(offline_path)
+                return False
+            raise
+        cursor = conn.execute(
             "UPDATE downloads SET status='completed', local_path=?, offline_path=?, container=?, "
             "file_size=?, expected_size=COALESCE(expected_size, ?), "
             "downloaded_bytes=?, staging_path=NULL, completed_at=?, updated_at=? "
-            "WHERE entry_id=?",
-            (vod_path, offline_path, container, file_size, file_size, file_size, now, now, entry_id),
+            "WHERE entry_id=? AND status='downloading'",
+            (offline_path, offline_path, container, file_size, file_size, file_size, now, now, entry_id),
         )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            _remove_download_file(offline_path)
+            return False
         conn.commit()
     logger.info(
-        "[DOWNLOADS] Completed — entry=%s offline=%s vod_link=%s size=%d",
-        entry_id[:12], offline_path, vod_path, file_size,
+        "[DOWNLOADS] Completed — entry=%s offline=%s size=%d",
+        entry_id[:12], offline_path, file_size,
     )
     return True
 
 
 @task("process_downloads")
 def process_downloads(force: bool = False) -> None:
-    """Wake up, claim pending download rows up to max_concurrent, process each.
+    """Wake up and drain pending downloads until the queue is empty.
 
     When force=True, skip the enabled check (manual trigger from the UI).
     """
     global _active_count
+    restart_if_pending = False
 
     with _lock:
         if _active_count > 0:
             logger.debug("[DOWNLOADS] Already processing, skipping this cycle")
             return
+        _active_count = 1
 
-    with get_db() as conn:
-        settings = _load_settings(conn)
-        max_concurrent = settings["max_concurrent"]
+    try:
+        reset_stuck_downloads()
 
-        if max_concurrent < 1:
-            logger.warning("[DOWNLOADS] max_concurrent is %d, skipping", max_concurrent)
-            return
+        with get_db() as conn:
+            settings = _load_settings(conn)
+            max_concurrent = settings["max_concurrent"]
 
-        if not force and not settings.get("enabled", False):
-            logger.debug("[DOWNLOADS] Integration is disabled, skipping")
-            return
+            if max_concurrent < 1:
+                logger.warning("[DOWNLOADS] max_concurrent is %d, skipping", max_concurrent)
+                return
+
+            if not force and not settings.get("enabled", False):
+                logger.debug("[DOWNLOADS] Integration is disabled, skipping")
+                return
+            restart_if_pending = True
 
         os.makedirs(_offline_root(), exist_ok=True)
 
-        # Claim pending rows (atomic-ish: mark as probing to prevent double-claim)
-        pending = conn.execute(
-            "SELECT entry_id FROM downloads WHERE status='pending' "
-            "ORDER BY queued_at LIMIT ?",
-            (max_concurrent,),
-        ).fetchall()
-
-        if not pending:
-            logger.debug("[DOWNLOADS] No pending downloads")
-            return
-
-        logger.info("[DOWNLOADS] Processing %d pending download(s)", len(pending))
-
-    for row in pending:
-        entry_id = row["entry_id"]
-        cancel_event = threading.Event()
-        with _cancel_lock:
-            _cancel_events[entry_id] = cancel_event
-        with _lock:
-            _active_count += 1
-        try:
+        while True:
             with get_db() as conn:
-                dl_row = conn.execute(
-                    "SELECT * FROM downloads WHERE entry_id=? AND status='pending'",
-                    (entry_id,),
-                ).fetchone()
-                if not dl_row:
-                    continue
-                settings = _load_settings(conn)
-                _process_one(conn, dl_row, settings, cancel_event=cancel_event)
+                pending = conn.execute(
+                    "SELECT entry_id FROM downloads WHERE status='pending' "
+                    "ORDER BY queued_at LIMIT ?",
+                    (max_concurrent,),
+                ).fetchall()
+
+            if not pending:
+                logger.debug("[DOWNLOADS] Pending queue drained")
+                break
+
+            logger.info("[DOWNLOADS] Processing %d pending download(s)", len(pending))
+            for row in pending:
+                entry_id = row["entry_id"]
+                cancel_event = threading.Event()
+                with _cancel_lock:
+                    _cancel_events[entry_id] = cancel_event
+                try:
+                    with get_db() as conn:
+                        dl_row = conn.execute(
+                            "SELECT * FROM downloads "
+                            "WHERE entry_id=? AND status='pending'",
+                            (entry_id,),
+                        ).fetchone()
+                        if not dl_row:
+                            continue
+                        settings = _load_settings(conn)
+                        _process_one(
+                            conn, dl_row, settings, cancel_event=cancel_event
+                        )
+                except Exception as exc:
+                    logger.error(
+                        "[DOWNLOADS] Error processing entry=%s: %s",
+                        entry_id[:12],
+                        exc,
+                        exc_info=True,
+                    )
+                    try:
+                        with get_db() as conn:
+                            if not cancel_event.is_set():
+                                conn.execute(
+                                    "UPDATE downloads SET status='failed', fail_reason=?, "
+                                    "failed_at=?, updated_at=? WHERE entry_id=? "
+                                    "AND status IN ('pending','probing','downloading')",
+                                    (
+                                        str(exc)[:200],
+                                        local_now_iso(),
+                                        local_now_iso(),
+                                        entry_id,
+                                    ),
+                                )
+                                conn.commit()
+                    except Exception:
+                        pass
+                finally:
+                    with _cancel_lock:
+                        if _cancel_events.get(entry_id) is cancel_event:
+                            _cancel_events.pop(entry_id, None)
+
+        # Trigger STRM regeneration after the queue is drained.
+        try:
+            from app.tasks.strm import generate_strm
+            generate_strm()
         except Exception as exc:
-            logger.error("[DOWNLOADS] Error processing entry=%s: %s", entry_id[:12], exc, exc_info=True)
+            logger.error(
+                "[DOWNLOADS] generate_strm after processing failed: %s",
+                exc,
+                exc_info=True,
+            )
+    finally:
+        with _lock:
+            _active_count = 0
+        if restart_if_pending:
             try:
                 with get_db() as conn:
-                    if not cancel_event.is_set():
-                        conn.execute(
-                            "UPDATE downloads SET status='failed', fail_reason=?, "
-                            "failed_at=?, updated_at=? WHERE entry_id=?",
-                            (str(exc)[:200], local_now_iso(), local_now_iso(), entry_id),
-                        )
-                        conn.commit()
+                    has_pending = conn.execute(
+                        "SELECT 1 FROM downloads WHERE status='pending' LIMIT 1"
+                    ).fetchone()
+                if has_pending:
+                    logger.debug(
+                        "[DOWNLOADS] New work arrived while processor was exiting"
+                    )
+                    _kick_processor()
             except Exception:
-                pass
-        finally:
-            with _cancel_lock:
-                if _cancel_events.get(entry_id) is cancel_event:
-                    _cancel_events.pop(entry_id, None)
-            with _lock:
-                _active_count -= 1
-
-    # Trigger STRM regeneration so .strm files are cleaned up for completed downloads
-    try:
-        from app.tasks.strm import generate_strm
-        generate_strm()
-    except Exception as exc:
-        logger.error("[DOWNLOADS] generate_strm after processing failed: %s", exc, exc_info=True)
+                logger.exception(
+                    "[DOWNLOADS] Could not check for pending work after processor exit"
+                )
 
 
 def _kick_processor() -> None:
@@ -700,29 +869,22 @@ def cancel_download(entry_id: str, delete_file: bool = False) -> bool:
             return False
 
         if delete_file:
-            if row["local_path"] and os.path.exists(row["local_path"]):
-                try:
-                    os.remove(row["local_path"])
-                    _remove_empty_dirs(os.path.dirname(row["local_path"]), _vod_root())
-                except OSError:
-                    pass
-            if row["offline_path"] and os.path.exists(row["offline_path"]):
-                try:
-                    os.remove(row["offline_path"])
-                    _remove_empty_dirs(
-                        os.path.dirname(row["offline_path"]), _offline_root()
-                    )
-                except OSError:
-                    pass
-            if row["staging_path"] and os.path.exists(row["staging_path"]):
-                try:
-                    os.remove(row["staging_path"])
-                except OSError:
-                    pass
+            paths = {
+                path
+                for path in (
+                    row["local_path"], row["offline_path"], row["staging_path"]
+                )
+                if path
+            }
+            for path in paths:
+                _remove_download_file(path)
 
-        if row["status"] in ("probing", "downloading"):
+        if row["status"] in ("pending", "probing", "downloading"):
             conn.execute(
-                "UPDATE downloads SET status='cancelled', cancelled_at=?, updated_at=? WHERE entry_id=?",
+                "UPDATE downloads SET status='cancelled', fail_reason='cancelled_by_user', "
+                "local_path=NULL, offline_path=NULL, staging_path=NULL, "
+                "file_size=NULL, completed_at=NULL, cancelled_at=?, updated_at=? "
+                "WHERE entry_id=?",
                 (now, now, entry_id),
             )
         elif delete_file:
@@ -736,17 +898,32 @@ def cancel_download(entry_id: str, delete_file: bool = False) -> bool:
         return True
 
 
-def reset_stuck_downloads() -> int:
-    """Reset rows stuck in probing/downloading back to pending. Called at startup."""
+def reset_stuck_downloads(max_age_seconds: int | None = 300) -> int:
+    """Reset downloads whose worker is gone or whose progress lease expired."""
     now = local_now_iso()
     with get_db() as conn:
-        cursor = conn.execute(
-            "UPDATE downloads SET status='pending', updated_at=? "
-            "WHERE status IN ('probing','downloading')",
-            (now,),
-        )
+        if max_age_seconds is None:
+            cursor = conn.execute(
+                "UPDATE downloads SET status='pending', updated_at=? "
+                "WHERE status IN ('probing','downloading')",
+                (now,),
+            )
+        else:
+            stale_modifier = f"-{max(1, max_age_seconds)} seconds"
+            cursor = conn.execute(
+                "UPDATE downloads SET status='pending', updated_at=? "
+                "WHERE status IN ('probing','downloading') "
+                "AND (updated_at IS NULL OR datetime(updated_at) <= datetime('now', ?))",
+                (now, stale_modifier),
+            )
         count = cursor.rowcount
         if count:
             conn.commit()
             logger.info("[DOWNLOADS] Reset %d stuck download(s) to pending", count)
         return count
+
+
+def resume_downloads_on_startup() -> None:
+    """Reclaim work from the previous web process and restart the queue."""
+    reset_stuck_downloads(max_age_seconds=None)
+    _kick_processor()

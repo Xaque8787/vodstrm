@@ -266,11 +266,11 @@
         actions += `<button class="btn btn-danger-outline btn-sm" onclick="cancelDl('${item.entry_id}', this)">Cancel</button>`;
       }
       if (item.is_completed) {
-        actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}')">Delete File</button>`;
+        actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}', this)">Delete File</button>`;
       }
       if (item.is_failed || item.status === "cancelled") {
         actions += `<button class="btn btn-secondary btn-sm" onclick="retryDl('${item.entry_id}')">Retry</button>`;
-        actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}')">Remove</button>`;
+        actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}', this)">Remove</button>`;
       }
 
       let meta = "";
@@ -305,11 +305,20 @@
     } catch { alert("Failed to cancel."); }
   }
 
-  async function deleteDl(entryId) {
+  async function deleteDl(entryId, button) {
+    const originalLabel = button.textContent;
     try {
-      await fetch(`/library/downloads/${entryId}/delete`, { method: "POST" });
-      loadDownloads();
-    } catch { alert("Failed to delete."); }
+      button.disabled = true;
+      button.textContent = "Deleting...";
+      const res = await fetch(`/library/downloads/${entryId}/delete`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Delete failed");
+      await loadDownloads();
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+      alert(`Failed to delete: ${error.message}`);
+    }
   }
 
   async function retryDl(entryId) {

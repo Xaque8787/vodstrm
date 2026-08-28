@@ -49,6 +49,7 @@ class Settings:
     debug: bool = _bool("DEBUG")
     secret_key: str = _value("SECRET_KEY")
     access_token_expire_minutes: int = _int("ACCESS_TOKEN_EXPIRE_MINUTES")
+    remember_me_days: int = _int("REMEMBER_ME_DAYS", maximum=365)
     secure_cookies: bool = _bool("SECURE_COOKIES")
     database_path: str = _value("DATABASE_PATH")
     scheduler_db_path: str = _value("SCHEDULER_DB_PATH")

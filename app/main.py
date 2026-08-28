@@ -37,10 +37,8 @@ async def lifespan(app: FastAPI):
     from run_migrations import run_all_migrations
     run_all_migrations()
 
-    from app.tasks.downloads import reset_stuck_downloads, validate_storage_roots
-    validate_storage_roots()
-    logger.info("VOD and offline storage roots verified")
-    reset_stuck_downloads()
+    from app.tasks.downloads import resume_downloads_on_startup
+    resume_downloads_on_startup()
 
     from app.scheduler import start_scheduler
     start_scheduler()

@@ -150,6 +150,39 @@ class XtreamNativeTests(unittest.TestCase):
         )
         self.assertIn("user%2Fname/pass%20word%3F", constructed)
 
+    def test_episode_titles_correct_and_deduplicate_bad_provider_positions(self):
+        payload = {
+            "episodes": {
+                "1": [
+                    {
+                        "id": "first-e1",
+                        "season": 1,
+                        "episode_num": 1,
+                        "title": "Show - S01E01 - Pilot",
+                    },
+                    {
+                        "id": "duplicate-e1",
+                        "season": 1,
+                        "episode_num": 2,
+                        "title": "Show - S01E01 - Pilot",
+                    },
+                    {
+                        "id": "first-e2",
+                        "season": 1,
+                        "episode_num": 3,
+                        "title": "Show - S01E02 - Second",
+                    },
+                ]
+            }
+        }
+
+        episodes = xtream_native._normalize_episode_payload(payload)
+
+        self.assertEqual(
+            [(item["episode"], item["id"]) for item in episodes],
+            [(1, "first-e1"), (2, "first-e2")],
+        )
+
     def test_playback_url_round_trips_special_credentials(self):
         client = FakeClient()
         allowed = "!$&'()*+,;=:@"
@@ -167,6 +200,58 @@ class XtreamNativeTests(unittest.TestCase):
             self.assertIn(character, path_parts[2])
         for encoded in ("%20", "%2F", "%3F", "%23", "%25", "%C3%A9"):
             self.assertIn(encoded, path_parts[2])
+
+    def test_refresh_episode_stream_replaces_rotated_stream_id(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.executescript(_SCHEMA)
+        conn.execute(
+            """
+            INSERT INTO providers (
+                name, slug, type, url, username, password, port
+            ) VALUES (
+                'Provider', 'native-provider', 'xtream',
+                'http://example.test', 'user', 'password', '8080'
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO entries (
+                entry_id, type, cleaned_title, raw_title, season, episode
+            ) VALUES ('episode-1', 'series', 'Show', 'Show S01E01', 1, 1)
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO streams (
+                entry_id, stream_url, provider, batch_id, metadata_json
+            ) VALUES (
+                'episode-1', 'http://example.test/old', 'native-provider',
+                'batch', '{"xtream-series-id":"30","xtream-id":"old"}'
+            )
+            """
+        )
+        client = FakeClient(details={"30": series_payload(1)})
+
+        with patch(
+            "app.ingestion.xtream_native.XtreamClient", return_value=client
+        ):
+            stream_url = xtream_native.refresh_episode_stream(
+                conn, "episode-1", "native-provider"
+            )
+
+        row = conn.execute(
+            "SELECT stream_url, metadata_json FROM streams "
+            "WHERE entry_id='episode-1' AND provider='native-provider'"
+        ).fetchone()
+        metadata = json.loads(row["metadata_json"])
+        self.assertEqual(stream_url, row["stream_url"])
+        self.assertTrue(stream_url.endswith("/episode-1.mkv"))
+        self.assertEqual(metadata["xtream-id"], "episode-1")
+        self.assertEqual(metadata["container-extension"], "mkv")
+        conn.close()
 
     @patch("app.ingestion.xtream_native.requests.get")
     def test_player_api_passes_special_credentials_as_query_params(self, mock_get):

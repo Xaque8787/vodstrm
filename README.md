@@ -110,6 +110,7 @@ DEBUG=false
 # Authentication
 SECRET_KEY=change-me-to-a-random-key
 ACCESS_TOKEN_EXPIRE_MINUTES=60
+REMEMBER_ME_DAYS=30
 SECURE_COOKIES=false
 
 # Application storage
@@ -134,11 +135,13 @@ PGID=1000
 DATA_PATH=./data
 ```
 
-`VOD_PATH` is the media-server-facing tree. `VOD_OFFLINE_PATH` stores the physical downloaded files and mirrors the same relative layout under `movies/`, `series/`, and `unsorted/`. Completed files in `VOD_PATH` are hard links to files in `VOD_OFFLINE_PATH`.
+`VOD_PATH` contains generated STRM and live-TV playlist output. `VOD_OFFLINE_PATH` contains downloaded media and uses the same configured `movies/`, `series/`, and `unsorted/` organization. Completed downloads remain only under `VOD_OFFLINE_PATH`; VODSTRM does not copy, move, or hard-link them into `VOD_PATH`.
 
 The immediate subfolder names are configurable with `VOD_MOVIES_FOLDER`, `VOD_SERIES_FOLDER`, `VOD_LIVE_TV_FOLDER`, and `VOD_UNSORTED_FOLDER`. Their defaults preserve the existing `movies`, `series`, `livetv`, and `unsorted` layout. Dated TV content shares `VOD_SERIES_FOLDER`; `VOD_UNKNOWN_YEAR_FOLDER` defaults to `unknown` when dated TV has no year. Season directories retain the standard `Season NN` format. Configurable folder values must resolve to one folder name; separators and `..` are rejected.
 
-Both application paths must be on the same filesystem because hard links cannot cross filesystems. Docker therefore mounts only `DATA_PATH` at `/app/data`; keep both paths beneath that mount unless you provide another single common-parent mount yourself.
+The roots may reside on unrelated filesystems. `VOD_OFFLINE_PATH` is accessed only when download processing or an explicit tracked-file deletion requires it, so a slow network mount does not block application startup.
+
+When Docker is used, an absolute `VOD_OFFLINE_PATH` outside `/app/data` must also be mounted into the container at that path. For example, add `- /mnt/media:/mnt/media` under the service's `volumes`.
 
 **Local M3U files:** If you have `.m3u` files on your host, you can either mount a directory into the container (uncomment the volume in `docker-compose.yml` and set the host path), or simply drop the files into `DATA_PATH/m3u` and add them as a Local File provider through the UI.
 
@@ -402,7 +405,7 @@ The status widget on the Integrations page shows the current queue depth, the la
 
 ### Downloads
 
-The Downloads integration converts remote stream URLs into persistent offline media. The physical file is stored under `VOD_OFFLINE_PATH`; a hard link with the same relative path is created under `VOD_PATH` so your media server can read it directly. This is useful for offline access, unreliable providers, or content you want to keep permanently.
+The Downloads integration converts remote stream URLs into persistent media under `VOD_OFFLINE_PATH`. Downloaded files remain there after completion and are not copied, moved, or linked into `VOD_PATH`. Point the relevant media-server library at `VOD_OFFLINE_PATH` if it should scan downloaded media.
 
 #### How It Works
 
@@ -420,15 +423,15 @@ The Downloads integration converts remote stream URLs into persistent offline me
 
    - **Probing** — The stream URL is probed with `ffprobe` to verify it is reachable and to capture format metadata.
   - **Downloading** — Progressive media files such as MP4, MKV, and TS are downloaded byte-for-byte in their original container, preserving every video, audio, subtitle, data stream, chapter, and metadata field. Non-progressive inputs use ffmpeg stream copy with every input stream explicitly mapped. VODSTRM does not re-encode or silently drop incompatible streams; the download fails instead. The partial file uses a `.part` suffix beside its final offline destination.
-  - **Finalizing** — The `.part` file is atomically renamed into the mirrored path under `VOD_OFFLINE_PATH` using the configured content folder (for example, `data/vod-offline/movies/Movie Title (Year)/Movie Title (Year).mp4` with defaults). VODSTRM then creates the matching hard link under `VOD_PATH`, and STRM sync removes the now-obsolete `.strm` file.
+  - **Completing** — The `.part` file is atomically renamed to its final structured filename under `VOD_OFFLINE_PATH`. No second file, hard link, or cross-root move is created.
 
-3. **STRM interaction** — When a download completes, the entry's `.strm` file is deleted and your media server picks up the hard-linked media file instead. If a download is cancelled or both file names disappear, the `.strm` file is regenerated on the next sync. During every STRM sync, completed downloads are reconciled across both mirrored trees; missing VOD links are repaired and filter-driven renames update both paths.
+3. **STRM interaction** — When a download completes, the entry's `.strm` file is deleted. The downloaded media remains solely under `VOD_OFFLINE_PATH`; media servers should scan that root separately when downloaded files need to appear in their library.
 
-4. **Cancellation and failure handling** — The Cancel action stops an active HTTP transfer or ffmpeg process, removes its partial `.part` file, and retains the row as cancelled for retry. Failed downloads are retained with a reason (e.g. `probe_failed`, `ffmpeg_failed`, `hardlink_failed`, `no_eligible_stream`). They can be retried individually from the Downloads page or in bulk via the Clear Failed button. Failed rows are automatically cleaned up after 90 days; cancelled rows after 24 hours. Both happen during STRM sync.
+4. **Cancellation and failure handling** — The Cancel action marks pending, probing, or downloading work as cancelled, stops an active HTTP transfer or ffmpeg process, removes its partial `.part` file, and removes empty episode/season/show directories up to (but not including) the configured content-type folder. Existing sibling episodes keep their non-empty directories intact. The cancelled row remains visible for retry. Failed downloads are retained with a reason (e.g. `probe_failed`, `ffmpeg_failed`, `finalize_failed`, `no_eligible_stream`). Failed rows are automatically cleaned up after 90 days; cancelled rows after 24 hours.
 
 5. **Provider independence** — Download rows are keyed by entry_id, not by stream or provider. If a provider is removed, the downloaded file and its database row survive. The foreign key uses ON DELETE SET NULL, so the row persists even if the underlying entry is orphaned.
 
-6. **Automatic maintenance** — On startup, downloads stuck in probing or downloading are reset to pending. During STRM sync, orphaned `.part` and offline files are removed, existing VOD-only downloads are adopted into the offline tree, missing hard links are repaired, and completed downloads are cancelled only when neither path exists.
+6. **Automatic maintenance** — On startup, downloads stuck in probing or downloading are reset to pending. Maintenance deletes only exact file paths recorded in expired download rows. It never scans `VOD_OFFLINE_PATH`, deletes untracked files, removes surrounding offline directories, or relocates completed media.
 
 #### Configuration
 
