@@ -1,10 +1,10 @@
 #!/bin/sh
 set -e
 
-: "${PUID:?PUID must be set in .env}"
-: "${PGID:?PGID must be set in .env}"
-: "${APP_HOST:?APP_HOST must be set in .env}"
-: "${APP_PORT:?APP_PORT must be set in .env}"
+: "${PUID:=1000}"
+: "${PGID:=1000}"
+: "${APP_HOST:=0.0.0.0}"
+: "${APP_PORT:=2112}"
 
 # Create group if it doesn't already exist with this GID
 if ! getent group "$PGID" > /dev/null 2>&1; then
