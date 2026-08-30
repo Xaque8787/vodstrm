@@ -1605,9 +1605,7 @@ document.addEventListener('click', async function(e) {
       await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/remove`, 'POST');
       refreshAfterTvVodAction();
     } else if (action === 'follow-tv-vod-year' && title && year) {
-      btn.disabled = true;
-      await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/follow`, 'POST');
-      refreshAfterTvVodAction();
+      openTvVodFollowModal(title, year);
     } else if (action === 'unfollow-tv-vod-year' && title && year) {
       btn.disabled = true;
       await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/unfollow`, 'POST');
@@ -1657,9 +1655,7 @@ document.addEventListener('click', async function(e) {
       await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/remove`, 'POST');
       refreshAfterAction();
     } else if (action === 'follow-season' && seriesTitle && seasonNum !== null) {
-      btn.disabled = true;
-      await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/follow`, 'POST');
-      refreshAfterAction();
+      openFollowModal(seriesTitle, seasonNum);
     } else if (action === 'unfollow-season' && seriesTitle && seasonNum !== null) {
       btn.disabled = true;
       await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/unfollow`, 'POST');
@@ -1900,13 +1896,19 @@ function refreshAfterTvVodAction() {
 // ── Follow modal ──────────────────────────────────────────────────────────────
 
 let followPendingTitle = null;
+let followPendingSeason = null;
 
-function openFollowModal(title) {
+function openFollowModal(title, season) {
   followPendingTitle = title;
-  document.getElementById('modal-title').textContent = `Follow: ${title}`;
+  followPendingSeason = season !== undefined ? season : null;
+  const label = season !== undefined ? `Follow: ${title} (Season ${season})` : `Follow: ${title}`;
+  document.getElementById('modal-title').textContent = label;
   const body = document.getElementById('modal-body');
   const selector = body.querySelector('.follow-mode-selector');
-  body.innerHTML = `<p style="margin:0 0 12px;">Following "${esc(title)}" will automatically add all current and future episodes to your library whenever new content is ingested.</p>`;
+  const desc = season !== undefined
+    ? `Following Season ${season} of "${esc(title)}" will automatically add all current and future episodes from this season to your library whenever new content is ingested.`
+    : `Following "${esc(title)}" will automatically add all current and future episodes to your library whenever new content is ingested.`;
+  body.innerHTML = `<p style="margin:0 0 12px;">${desc}</p>`;
   if (selector) body.appendChild(selector);
   const strmRadio = body.querySelector('input[value="strm"]');
   if (strmRadio) strmRadio.checked = true;
@@ -1918,6 +1920,7 @@ function openFollowModal(title) {
 function closeFollowModal() {
   document.getElementById('follow-modal').classList.remove('open');
   followPendingTitle = null;
+  followPendingSeason = null;
 }
 
 document.getElementById('modal-confirm-btn').addEventListener('click', async function() {
@@ -1926,11 +1929,15 @@ document.getElementById('modal-confirm-btn').addEventListener('click', async fun
   try {
     const modeEl = document.querySelector('input[name="follow-mode"]:checked');
     const mode = modeEl ? modeEl.value : 'strm';
-    await api('/library/follows', 'POST', {
-      entry_type: 'series',
-      entry_title: followPendingTitle,
-      mode: mode,
-    });
+    if (followPendingSeason !== null) {
+      await api(`/library/series/${encodeURIComponent(followPendingTitle)}/seasons/${followPendingSeason}/follow?mode=${mode}`, 'POST');
+    } else {
+      await api('/library/follows', 'POST', {
+        entry_type: 'series',
+        entry_title: followPendingTitle,
+        mode: mode,
+      });
+    }
     closeFollowModal();
     refreshAfterAction();
   } catch (e) {
@@ -1948,13 +1955,19 @@ document.getElementById('follow-modal').addEventListener('click', function(e) {
 // ── TV VOD follow modal ───────────────────────────────────────────────────────
 
 let tvVodFollowPendingTitle = null;
+let tvVodFollowPendingYear = null;
 
-function openTvVodFollowModal(title) {
+function openTvVodFollowModal(title, year) {
   tvVodFollowPendingTitle = title;
-  document.getElementById('tv-vod-modal-title').textContent = `Follow: ${title}`;
+  tvVodFollowPendingYear = year !== undefined ? year : null;
+  const label = year !== undefined ? `Follow: ${title} (${year})` : `Follow: ${title}`;
+  document.getElementById('tv-vod-modal-title').textContent = label;
   const body = document.getElementById('tv-vod-modal-body');
   const selector = body.querySelector('.follow-mode-selector');
-  body.innerHTML = `<p style="margin:0 0 12px;">Following "${esc(title)}" will automatically add all current and future episodes to your library whenever new content is ingested.</p>`;
+  const desc = year !== undefined
+    ? `Following ${year} of "${esc(title)}" will automatically add all current and future episodes from this year to your library whenever new content is ingested.`
+    : `Following "${esc(title)}" will automatically add all current and future episodes to your library whenever new content is ingested.`;
+  body.innerHTML = `<p style="margin:0 0 12px;">${desc}</p>`;
   if (selector) body.appendChild(selector);
   const strmRadio = body.querySelector('input[value="strm"]');
   if (strmRadio) strmRadio.checked = true;
@@ -1966,6 +1979,7 @@ function openTvVodFollowModal(title) {
 function closeTvVodFollowModal() {
   document.getElementById('tv-vod-follow-modal').classList.remove('open');
   tvVodFollowPendingTitle = null;
+  tvVodFollowPendingYear = null;
 }
 
 document.getElementById('tv-vod-modal-confirm-btn').addEventListener('click', async function() {
@@ -1974,11 +1988,15 @@ document.getElementById('tv-vod-modal-confirm-btn').addEventListener('click', as
   try {
     const modeEl = document.querySelector('input[name="tv-vod-follow-mode"]:checked');
     const mode = modeEl ? modeEl.value : 'strm';
-    await api('/library/follows', 'POST', {
-      entry_type: 'tv_vod',
-      entry_title: tvVodFollowPendingTitle,
-      mode: mode,
-    });
+    if (tvVodFollowPendingYear !== null) {
+      await api(`/library/tv_vod/${encodeURIComponent(tvVodFollowPendingTitle)}/years/${encodeURIComponent(tvVodFollowPendingYear)}/follow?mode=${mode}`, 'POST');
+    } else {
+      await api('/library/follows', 'POST', {
+        entry_type: 'tv_vod',
+        entry_title: tvVodFollowPendingTitle,
+        mode: mode,
+      });
+    }
     closeTvVodFollowModal();
     refreshAfterAction();
   } catch (e) {
