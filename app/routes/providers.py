@@ -312,7 +312,10 @@ async def edit_m3u_provider(
             "UPDATE providers SET name = ?, slug = ?, url = ?, priority = ?, quality_terms = ?, force_vod = ? WHERE slug = ?",
             (data.name, new_slug, data.url, max(1, priority), _parse_quality_terms(quality_terms), _checkbox_to_int(force_vod), provider_slug),
         )
+        if new_slug != provider_slug:
+            conn.execute("UPDATE streams SET provider = ? WHERE provider = ?", (new_slug, provider_slug))
     logger.info("Provider updated (m3u): %s by %s", provider_slug, current_user.username)
+    _sync_strm_after_provider_change()
     return RedirectResponse("/providers", status_code=302)
 
 
@@ -375,8 +378,20 @@ async def edit_xtream_provider(
             "UPDATE providers SET name = ?, slug = ?, url = ?, username = ?, password = ?, port = ?, stream_format = ?, priority = ?, quality_terms = ?, force_vod = ? WHERE slug = ?",
             (data.name, new_slug, data.full_server_url(), data.username, data.password, data.port, data.stream_format, max(1, priority), _parse_quality_terms(quality_terms), _checkbox_to_int(force_vod), provider_slug),
         )
+        if new_slug != provider_slug:
+            conn.execute("UPDATE streams SET provider = ? WHERE provider = ?", (new_slug, provider_slug))
     logger.info("Provider updated (xtream): %s by %s", provider_slug, current_user.username)
+    _sync_strm_after_provider_change()
     return RedirectResponse("/providers", status_code=302)
+
+
+def _sync_strm_after_provider_change() -> None:
+    """Re-run global STRM sync after a provider edit so priority changes take effect immediately."""
+    from app.tasks.strm import generate_strm
+    try:
+        generate_strm()
+    except Exception as exc:
+        logger.error("[PROVIDERS] STRM sync after provider edit failed: %s", exc, exc_info=True)
 
 
 @router.post("/{provider_slug}/toggle")
@@ -446,8 +461,19 @@ async def delete_provider(
     from app.tasks.strm import deactivate_provider_strm
     from app.tasks.live_m3u import deactivate_provider_live_m3u
 
-    # Run handover/cleanup before touching the DB so replacements can still be
-    # found and files are dealt with while stream rows still exist.
+    # Mark inactive first so the STRM handover excludes this provider from
+    # replacement candidate searches, then run handover/cleanup while stream
+    # rows still exist so replacements can be found and files are dealt with.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT is_active FROM providers WHERE slug = ?", (provider_slug,)
+        ).fetchone()
+        if not row:
+            return RedirectResponse("/providers", status_code=302)
+        conn.execute(
+            "UPDATE providers SET is_active = 0 WHERE slug = ?", (provider_slug,)
+        )
+
     deactivate_provider_strm(provider_slug)
     deactivate_provider_live_m3u(provider_slug)
 
@@ -568,5 +594,8 @@ async def edit_local_file_provider(
             "UPDATE providers SET name = ?, slug = ?, local_file_path = ?, priority = ?, quality_terms = ?, force_vod = ? WHERE slug = ?",
             (data.name, new_slug, data.local_file_path, max(1, priority), _parse_quality_terms(quality_terms), _checkbox_to_int(force_vod), provider_slug),
         )
+        if new_slug != provider_slug:
+            conn.execute("UPDATE streams SET provider = ? WHERE provider = ?", (new_slug, provider_slug))
     logger.info("Provider updated (local_file): %s by %s", provider_slug, current_user.username)
+    _sync_strm_after_provider_change()
     return RedirectResponse("/providers", status_code=302)
