@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.auth.jwt_handler import TokenData, get_current_user
@@ -130,6 +130,20 @@ _CAN_ADD_SUBQUERY = """
 # Subquery: download status for this entry (NULL if no download row)
 _DOWNLOAD_STATUS_SUBQUERY = """
     (SELECT _dl.status FROM downloads _dl WHERE _dl.entry_id = e.entry_id)
+"""
+
+# Episode title from the highest-priority active, eligible provider stream.
+_EPISODE_TITLE_SUBQUERY = """
+        (SELECT NULLIF(TRIM(json_extract(_se.metadata_json, '$."episode-title"')), '')
+         FROM streams _se
+         JOIN providers _pe ON _pe.slug = _se.provider
+         WHERE _se.entry_id = e.entry_id
+             AND _pe.is_active = 1
+             AND _se.exclude = 0
+             AND (_se.include_only_active = 0 OR _se.include_only = 1)
+             AND NULLIF(TRIM(json_extract(_se.metadata_json, '$."episode-title"')), '') IS NOT NULL
+         ORDER BY _pe.priority, _pe.slug
+         LIMIT 1)
 """
 
 # Subquery: filtered_title from the highest-priority eligible import_selected stream.
@@ -838,9 +852,16 @@ async def list_seasons(
             f"""
             SELECT
                 e.season,
-                COUNT(e.entry_id) AS episode_count,
+                COUNT(DISTINCT COALESCE({_EPISODE_TITLE_SUBQUERY}, e.entry_id)) AS episode_count,
                 {_COVER_ART_GROUP_SUBQUERY} AS cover_art,
-                SUM(CASE WHEN s.strm_path IS NOT NULL THEN 1 ELSE 0 END) AS owned_count,
+                COUNT(DISTINCT CASE
+                    WHEN EXISTS (
+                        SELECT 1 FROM streams _so
+                        WHERE _so.entry_id=e.entry_id
+                          AND _so.strm_path IS NOT NULL
+                    )
+                    THEN COALESCE({_EPISODE_TITLE_SUBQUERY}, e.entry_id)
+                END) AS owned_count,
                 SUM(CASE WHEN p.strm_mode = 'import_selected' AND p.is_active = 1
                               AND s.exclude = 0 AND s.imported = 0
                               AND (s.include_only_active = 0 OR s.include_only = 1)
@@ -919,17 +940,7 @@ async def list_episodes(
                    AND s2.exclude = 0 AND s2.imported = 0
                    AND (s2.include_only_active = 0 OR s2.include_only = 1)
                 ) AS can_add_count,
-                                (SELECT NULLIF(TRIM(json_extract(s2.metadata_json, '$."episode-title"')), '')
-                                 FROM streams s2
-                 JOIN providers p2 ON p2.slug = s2.provider
-                 WHERE s2.entry_id = e.entry_id
-                                     AND p2.is_active = 1
-                   AND s2.exclude = 0
-                   AND (s2.include_only_active = 0 OR s2.include_only = 1)
-                                     AND NULLIF(TRIM(json_extract(s2.metadata_json, '$."episode-title"')), '') IS NOT NULL
-                 ORDER BY p2.priority, p2.slug
-                 LIMIT 1
-                                ) AS episode_name,
+                {_EPISODE_TITLE_SUBQUERY} AS episode_name,
                 (SELECT _dl.status FROM downloads _dl WHERE _dl.entry_id = e.entry_id) AS download_status
             FROM entries e
             WHERE e.type = 'series'
@@ -940,18 +951,27 @@ async def list_episodes(
             (title, season),
         ).fetchall()
 
-    episodes = [{
-        "entry_id": r["entry_id"],
-        "episode": r["episode"],
-        "cover_art": r["cover_art"],
-        "episode_name": (r["episode_name"] or "").strip() or None,
-        "display_title": (r["episode_name"] or "").strip() or None,
-        "is_owned": r["owner_slug"] is not None,
-        "owner_slug": r["owner_slug"],
-        "stream_count": r["stream_count"],
-        "can_add": (r["can_add_count"] or 0) > 0,
-        "download_completed": r["download_status"] == "completed",
-    } for r in rows]
+    episodes = []
+    seen_names = set()
+    for r in rows:
+        episode_name = (r["episode_name"] or "").strip() or None
+        name_key = episode_name.casefold() if episode_name else None
+        if name_key and name_key in seen_names:
+            continue
+        if name_key:
+            seen_names.add(name_key)
+        episodes.append({
+            "entry_id": r["entry_id"],
+            "episode": len(episodes) + 1,
+            "cover_art": r["cover_art"],
+            "episode_name": episode_name,
+            "display_title": episode_name,
+            "is_owned": r["owner_slug"] is not None,
+            "owner_slug": r["owner_slug"],
+            "stream_count": r["stream_count"],
+            "can_add": (r["can_add_count"] or 0) > 0,
+            "download_completed": r["download_status"] == "completed",
+        })
 
     return JSONResponse({"title": title, "season": season, "episodes": episodes})
 
@@ -1860,27 +1880,93 @@ async def download_entry(
     current_user: TokenData = Depends(get_current_user),
 ):
     """Queue a single entry for download."""
+    with get_db() as conn:
+        entry = conn.execute(
+            "SELECT type FROM entries WHERE entry_id=?", (entry_id,)
+        ).fetchone()
+    if not entry:
+        return JSONResponse({"error": "Entry not found"}, status_code=404)
     from app.tasks.downloads import queue_download
     queued = queue_download(entry_id)
     logger.info("[LIBRARY] Download queued entry=%s by=%s", entry_id[:12], current_user.username)
     return JSONResponse({"ok": True, "queued": queued})
 
 
+@router.post(
+    "/series/{title}/seasons/{season}/episodes/{episode}/download",
+    response_class=JSONResponse,
+)
+async def download_series_episode(
+    title: str,
+    season: int,
+    episode: int,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Resolve and queue a series episode by its visible content identity."""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT e.entry_id
+            FROM entries e
+            WHERE e.type='series'
+              AND lower(e.cleaned_title)=lower(?)
+              AND e.season=? AND e.episode=?
+              AND EXISTS (
+                  SELECT 1 FROM streams s
+                  JOIN providers p ON p.slug=s.provider
+                  WHERE s.entry_id=e.entry_id
+                    AND p.is_active=1
+                    AND s.exclude=0
+                    AND (s.include_only_active=0 OR s.include_only=1)
+              )
+            LIMIT 1
+            """,
+            (title, season, episode),
+        ).fetchone()
+    if not row:
+        return JSONResponse({"error": "Episode not found"}, status_code=404)
+
+    from app.tasks.downloads import queue_download
+    entry_id = row["entry_id"]
+    queued = queue_download(entry_id)
+    logger.info(
+        "[LIBRARY] Download queued series=%r S%02dE%02d entry=%s by=%s",
+        title,
+        season,
+        episode,
+        entry_id[:12],
+        current_user.username,
+    )
+    return JSONResponse({"ok": True, "queued": queued, "entry_id": entry_id})
+
+
 @router.post("/entries/{entry_id}/cancel-download", response_class=JSONResponse)
 async def cancel_entry_download(
     entry_id: str,
+    background_tasks: BackgroundTasks,
     current_user: TokenData = Depends(get_current_user),
 ):
     """Cancel a download for an entry, optionally deleting the local file."""
     from app.tasks.downloads import cancel_download
-    cancel_download(entry_id, delete_file=True)
+    deleted = cancel_download(entry_id, delete_file=True)
+    if not deleted:
+        return JSONResponse({"ok": True, "already_removed": True})
     logger.info("[LIBRARY] Download cancelled entry=%s by=%s", entry_id[:12], current_user.username)
+    background_tasks.add_task(_generate_strm_after_download_change, "cancel")
+    return JSONResponse({"ok": True})
+
+
+def _generate_strm_after_download_change(action: str) -> None:
     try:
         from app.tasks.strm import generate_strm
         generate_strm()
     except Exception as exc:
-        logger.error("[LIBRARY] generate_strm after cancel failed: %s", exc, exc_info=True)
-    return JSONResponse({"ok": True})
+        logger.error(
+            "[LIBRARY] generate_strm after download %s failed: %s",
+            action,
+            exc,
+            exc_info=True,
+        )
 
 
 def _queue_downloads_for_entries(conn, entry_ids: list[str]) -> int:
@@ -2050,18 +2136,20 @@ async def retry_download(
 @router.post("/downloads/{entry_id}/delete", response_class=JSONResponse)
 async def delete_download(
     entry_id: str,
+    background_tasks: BackgroundTasks,
     current_user: TokenData = Depends(get_current_user),
 ):
     """Delete a completed download and its local file."""
-    from app.tasks.downloads import cancel_download
-    cancel_download(entry_id, delete_file=True)
-    logger.info("[LIBRARY] Download deleted entry=%s by=%s", entry_id[:12], current_user.username)
-    try:
-        from app.tasks.strm import generate_strm
-        generate_strm()
-    except Exception as exc:
-        logger.error("[LIBRARY] generate_strm after delete failed: %s", exc, exc_info=True)
-    return JSONResponse({"ok": True})
+    from app.tasks.downloads import remove_download
+    result = remove_download(entry_id)
+    logger.info(
+        "[LIBRARY] Download removed entry=%s file_present=%s by=%s",
+        entry_id[:12],
+        result["file_present"],
+        current_user.username,
+    )
+    background_tasks.add_task(_generate_strm_after_download_change, "delete")
+    return JSONResponse({"ok": True, **result})
 
 
 @router.post("/downloads/clear-failed", response_class=JSONResponse)

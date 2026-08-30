@@ -266,11 +266,11 @@
         actions += `<button class="btn btn-danger-outline btn-sm" onclick="cancelDl('${item.entry_id}', this)">Cancel</button>`;
       }
       if (item.is_completed) {
-        actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}')">Delete File</button>`;
+        actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}', this)">Delete File</button>`;
       }
       if (item.is_failed || item.status === "cancelled") {
         actions += `<button class="btn btn-secondary btn-sm" onclick="retryDl('${item.entry_id}')">Retry</button>`;
-        actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}')">Remove</button>`;
+        actions += `<button class="btn btn-danger-outline btn-sm" onclick="deleteDl('${item.entry_id}', this)">Remove</button>`;
       }
 
       let meta = "";
@@ -300,23 +300,64 @@
         button.textContent = "Stopping...";
       }
       const res = await fetch(`/library/entries/${entryId}/cancel-download`, { method: "POST" });
-      if (!res.ok) throw new Error("Cancel failed");
-      loadDownloads();
-    } catch { alert("Failed to cancel."); }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Cancel failed");
+      await loadDownloads();
+      if (data.already_removed) {
+        await appAlert("This download was already removed from the queue.", {
+          title: "Download already removed",
+        });
+      }
+    } catch (error) {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Cancel";
+      }
+      await appAlert(`Could not cancel the download: ${error.message}`, {
+        title: "Cancel failed",
+      });
+    }
   }
 
-  async function deleteDl(entryId) {
+  async function deleteDl(entryId, button) {
+    const originalLabel = button.textContent;
     try {
-      await fetch(`/library/downloads/${entryId}/delete`, { method: "POST" });
-      loadDownloads();
-    } catch { alert("Failed to delete."); }
+      button.disabled = true;
+      button.textContent = "Deleting...";
+      const res = await fetch(`/library/downloads/${entryId}/delete`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Delete failed");
+      await loadDownloads();
+      if (!data.found) {
+        await appAlert("This download was already removed from the queue.", {
+          title: "Download already removed",
+        });
+      } else if (!data.file_present) {
+        await appAlert(
+          "The queue item was removed. No downloaded or partial file was present.",
+          { title: "Download removed" }
+        );
+      }
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+      await appAlert(`Could not remove the download: ${error.message}`, {
+        title: "Remove failed",
+      });
+    }
   }
 
   async function retryDl(entryId) {
     try {
-      await fetch(`/library/downloads/${entryId}/retry`, { method: "POST" });
-      loadDownloads();
-    } catch { alert("Failed to retry."); }
+      const response = await fetch(`/library/downloads/${entryId}/retry`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Retry failed");
+      await loadDownloads();
+    } catch (error) {
+      await appAlert(`Could not retry the download: ${error.message}`, {
+        title: "Retry failed",
+      });
+    }
   }
 
   function openClearModal() { document.getElementById("clear-modal").classList.add("open"); }
@@ -325,9 +366,15 @@
   async function confirmClear() {
     closeClearModal();
     try {
-      await fetch("/library/downloads/clear-failed", { method: "POST" });
-      loadDownloads();
-    } catch { alert("Failed to clear."); }
+      const response = await fetch("/library/downloads/clear-failed", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Clear failed");
+      await loadDownloads();
+    } catch (error) {
+      await appAlert(`Could not clear downloads: ${error.message}`, {
+        title: "Clear failed",
+      });
+    }
   }
 
   document.getElementById("clear-modal").addEventListener("click", function(e) {

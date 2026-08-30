@@ -591,12 +591,6 @@
     });
   });
 
-  document.querySelectorAll("[data-confirm]").forEach(form => {
-    form.addEventListener("submit", e => {
-      if (!confirm(form.dataset.confirm)) e.preventDefault();
-    });
-  });
-
   // ── File Browser ──────────────────────────────────────────────────────────
 
   async function loadBrowser(el, path) {

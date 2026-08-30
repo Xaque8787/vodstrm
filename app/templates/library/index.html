@@ -206,11 +206,9 @@
   .badge-live    { background: var(--color-warning-bg); color: var(--color-warning-text); }
   .badge-tv_vod  { background: var(--color-error-bg); color: var(--color-error-text); }
   .badge-unsorted{ background: var(--color-neutral-bg); color: var(--color-neutral-text); }
-  .badge-owned   { background: var(--color-success); color: var(--color-on-primary); }
   .badge-following { background: var(--color-primary); color: var(--color-on-primary); }
   .badge-downloaded { background: var(--color-success-bg); color: var(--color-success-text); }
   .badge-queued { background: var(--color-warning-bg); color: var(--color-warning-text); }
-  .badge-on-demand { background: var(--color-info-bg); color: var(--color-info-text); }
 
   .card-actions {
     display: flex;
@@ -235,7 +233,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .btn-download { flex: 0 0 auto; }
+  .btn-download { flex: 0 0 auto; min-width: 72px; }
   .btn-follow, .btn-unfollow { flex: 0 0 auto; }
   .btn-action:disabled { opacity: 0.35; cursor: not-allowed; }
   .btn-add { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
@@ -249,7 +247,13 @@
   .btn-unfollow:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
   .btn-download { background: transparent; border-color: var(--color-success); color: var(--color-success); }
   .btn-download:hover:not(:disabled) { background: var(--color-success); color: var(--color-on-primary); }
-  .btn-download.is-downloading { background: var(--color-success); color: var(--color-on-primary); opacity: 0.7; }
+  .btn-download.is-downloading {
+    background: var(--color-success);
+    border-color: var(--color-success);
+    color: var(--color-on-primary);
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
 
   /* ── Series / TV VOD detail overlay ── */
   body.library-detail-open { overflow: hidden; }
@@ -301,6 +305,10 @@
     overflow: hidden;
   }
 
+  .series-panel {
+    height: min(860px, calc(100dvh - 80px));
+  }
+
   .expand-panel-header {
     display: flex;
     align-items: center;
@@ -334,15 +342,27 @@
   .expand-close:hover { color: var(--color-text); }
 
   .season-list {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: calc(var(--spacing) * 1.5);
     display: flex;
     flex-direction: column;
     gap: var(--spacing);
     overflow-y: auto;
     overscroll-behavior: contain;
+    scrollbar-width: auto;
+    scrollbar-color: var(--color-border) var(--color-surface);
+  }
+  .season-list::-webkit-scrollbar { width: 12px; }
+  .season-list::-webkit-scrollbar-track { background: var(--color-surface); }
+  .season-list::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border: 3px solid var(--color-surface);
+    border-radius: var(--radius);
   }
 
   .season-row {
+    flex: 0 0 auto;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
@@ -442,6 +462,20 @@
   .ep-btn-add:hover:not(:disabled) { background: var(--color-primary-hover); }
   .ep-btn-remove { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
   .ep-btn-remove:hover:not(:disabled) { background: var(--color-danger); color: #fff; }
+  .ep-btn-download {
+    min-width: 72px;
+    background: transparent;
+    border-color: var(--color-success);
+    color: var(--color-success);
+  }
+  .ep-btn-download:hover:not(:disabled) { background: var(--color-success); color: var(--color-on-primary); }
+  .ep-btn-download.is-downloading {
+    background: var(--color-success);
+    border-color: var(--color-success);
+    color: var(--color-on-primary);
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
   .ep-owned-badge { font-size: 0.65rem; color: var(--color-success); font-weight: 700; }
 
   .entry-detail-body {
@@ -691,6 +725,7 @@
       border: 0;
       border-radius: 0;
     }
+    .series-panel { height: 100dvh; }
     .expand-panel-header { padding: 14px 16px; }
     .season-list { padding: 10px; }
     .season-header { flex-wrap: wrap; padding: 10px 12px; }
@@ -908,6 +943,42 @@ async function api(url, method='GET', body=null) {
   return data;
 }
 
+function markDownloadQueued(button) {
+  button.textContent = 'Queued';
+  button.disabled = true;
+  button.classList.add('is-downloading');
+  button.removeAttribute('title');
+}
+
+async function queueEntryDownload(button, entryId) {
+  button.disabled = true;
+  try {
+    await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
+    markDownloadQueued(button);
+  } catch (error) {
+    button.disabled = false;
+    appAlert('Download failed: ' + (error.message || error), {
+      title: 'Download failed',
+    });
+  }
+}
+
+async function queueSeriesEpisodeDownload(button, title, season, episode) {
+  button.disabled = true;
+  try {
+    await api(
+      `/library/series/${encodeURIComponent(title)}/seasons/${season}/episodes/${episode}/download`,
+      'POST'
+    );
+    markDownloadQueued(button);
+  } catch (error) {
+    button.disabled = false;
+    appAlert('Download failed: ' + (error.message || error), {
+      title: 'Download failed',
+    });
+  }
+}
+
 // ── Render helpers ────────────────────────────────────────────────────────────
 
 function artEl(coverArt, title, type) {
@@ -925,7 +996,6 @@ function renderCard(e, idx) {
   cardData[idx] = e;
   if (e.is_series_group) {
     const ownedClass = e.is_owned ? ' is-owned' : '';
-    const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
     const followBadge = e.is_following ? `<span class="badge badge-following">Following</span>` : '';
     const meta = e.episodes_loaded
       ? [
@@ -933,11 +1003,7 @@ function renderCard(e, idx) {
           `${e.season_count} season${e.season_count !== 1 ? 's' : ''}`,
           `${e.episode_count} ep`,
         ].filter(Boolean).join(' · ')
-      : 'Episodes load when opened';
-    const onDemandBadge = e.episodes_loaded
-      ? ''
-      : `<span class="badge badge-on-demand">On demand</span>`;
-
+      : '';
     const followBtn = e.is_following
       ? `<button class="btn-action btn-unfollow" data-action="unfollow-series">Unfollow</button>`
       : `<button class="btn-action btn-follow" data-action="open-follow">Follow</button>`;
@@ -949,11 +1015,9 @@ function renderCard(e, idx) {
         ${artEl(e.cover_art, displayTitle, 'series')}
         <div class="card-body">
           <div class="card-title">${esc(displayTitle)}</div>
-          <div class="card-meta">${esc(meta)}</div>
+          ${meta ? `<div class="card-meta">${esc(meta)}</div>` : ''}
           <div class="card-badges">
             <span class="${typeBadgeClass('series')}">Series</span>
-            ${onDemandBadge}
-            ${ownedBadge}
             ${followBadge}
           </div>
           <div class="card-actions">
@@ -966,7 +1030,6 @@ function renderCard(e, idx) {
       </div>`;
   } else if (e.is_tv_vod_group) {
     const ownedClass = e.is_owned ? ' is-owned' : '';
-    const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
     const followBadge = e.is_following ? `<span class="badge badge-following">Following</span>` : '';
     const meta = [
       `${e.year_count} year${e.year_count !== 1 ? 's' : ''}`,
@@ -985,7 +1048,6 @@ function renderCard(e, idx) {
           <div class="card-meta">${esc(meta)}</div>
           <div class="card-badges">
             <span class="${typeBadgeClass('tv_vod')}">TV VOD</span>
-            ${ownedBadge}
             ${followBadge}
           </div>
           <div class="card-actions">
@@ -998,17 +1060,18 @@ function renderCard(e, idx) {
       </div>`;
   } else {
     const ownedClass = e.is_owned ? ' is-owned' : '';
-    const ownedBadge = e.is_owned ? `<span class="badge badge-owned">Owned</span>` : '';
-    const dlBadge = e.download_completed ? `<span class="badge badge-downloaded">Downloaded</span>` : (e.download_pending ? `<span class="badge badge-queued">Queued</span>` : '');
+    const dlBadge = e.download_completed ? `<span class="badge badge-downloaded">Downloaded</span>` : (e.download_status === 'pending' ? `<span class="badge badge-queued">Queued</span>` : '');
     const displayTitle = e.display_title || e.cleaned_title;
     const meta = [e.year || null, e.owner_slug ? `via ${e.owner_slug}` : null].filter(Boolean).join(' · ');
     const dlBtn = e.is_downloaded
       ? `<button class="btn-action btn-download is-downloading" disabled>Downloading</button>`
       : (e.download_completed
         ? `<button class="btn-action btn-download" disabled>Downloaded</button>`
-        : (e.download_pending
-          ? `<button class="btn-action btn-download" data-action="download-entry" title="Re-queue download">Queued</button>`
-          : `<button class="btn-action btn-download" data-action="download-entry">Download</button>`));
+        : (e.download_status === 'pending'
+          ? `<button class="btn-action btn-download is-downloading" disabled>Queued</button>`
+          : (e.download_status === 'failed'
+            ? `<button class="btn-action btn-download" data-action="download-entry">Retry</button>`
+            : `<button class="btn-action btn-download" data-action="download-entry">Download</button>`)));
     return `
       <div class="content-card${ownedClass}" data-card-idx="${idx}" data-type="${esc(e.type)}" data-entry-id="${esc(e.entry_id)}"
         role="button" tabindex="0" aria-label="Open ${esc(displayTitle)} details">
@@ -1018,7 +1081,6 @@ function renderCard(e, idx) {
           <div class="card-meta">${esc(meta)}</div>
           <div class="card-badges">
             <span class="${typeBadgeClass(e.type)}">${esc(e.type)}</span>
-            ${ownedBadge}
             ${dlBadge}
           </div>
           <div class="card-actions">
@@ -1255,7 +1317,7 @@ async function toggleSeriesExpand(cardEl, title) {
 
   const panel = document.createElement('div');
   panel.id = 'expand-panel';
-  panel.className = 'expand-panel';
+  panel.className = 'expand-panel series-panel';
   panel.innerHTML = `
     <div class="expand-panel-header">
       <h2 id="library-detail-title">${esc(title)}</h2>
@@ -1335,6 +1397,13 @@ async function toggleEpisodes(season, seriesTitle) {
     return;
   }
 
+  document.querySelectorAll('#season-list .episode-list.open').forEach(openList => {
+    openList.classList.remove('open');
+    openList.closest('.season-row')
+      ?.querySelector('.season-chevron')
+      ?.classList.remove('open');
+  });
+
   epList.classList.add('open');
   chev && chev.classList.add('open');
 
@@ -1355,7 +1424,7 @@ async function toggleEpisodes(season, seriesTitle) {
               ${(!ep.can_add || ep.is_owned) ? 'disabled' : ''}>Add</button>
             <button class="ep-btn ep-btn-remove" data-action="remove-entry" data-entry-id="${esc(ep.entry_id)}"
               ${!ep.is_owned && !ep.download_completed ? 'disabled' : ''}>Remove</button>
-            <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}">Download</button>
+            <button class="ep-btn ep-btn-download" data-action="download-entry" data-entry-id="${esc(ep.entry_id)}" data-episode="${ep.episode}">Download</button>
             <button class="ep-btn ep-btn-add" data-action="show-stream-link" data-entry-id="${esc(ep.entry_id)}">Stream Link</button>
         </div>
       </div>`;
@@ -1514,6 +1583,8 @@ document.addEventListener('click', async function(e) {
   const btn = e.target.closest('[data-action]');
   if (!btn || btn.disabled) return;
 
+  e.preventDefault();
+
   const action = btn.dataset.action;
 
   // ── TV VOD year list actions (inside tv-vod expand panel) ──
@@ -1546,7 +1617,11 @@ document.addEventListener('click', async function(e) {
       try {
         await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/download`, 'POST');
         btn.textContent = 'Queued';
-      } catch (e) { alert('Download failed: ' + (e.message || e)); }
+      } catch (e) {
+        appAlert('Download failed: ' + (e.message || e), {
+          title: 'Download failed',
+        });
+      }
       btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
@@ -1557,12 +1632,7 @@ document.addEventListener('click', async function(e) {
       await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
       refreshAfterTvVodAction();
     } else if (action === 'download-entry' && entryId) {
-      btn.disabled = true;
-      try {
-        await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
-        btn.textContent = 'Queued';
-      } catch (e) { alert('Download failed: ' + (e.message || e)); }
-      refreshAfterTvVodAction();
+      await queueEntryDownload(btn, entryId);
     } else if (action === 'show-stream-link' && entryId) {
       await toggleEpisodeStreamLink(btn, entryId);
     }
@@ -1599,7 +1669,11 @@ document.addEventListener('click', async function(e) {
       try {
         await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/download`, 'POST');
         btn.textContent = 'Queued';
-      } catch (e) { alert('Download failed: ' + (e.message || e)); }
+      } catch (e) {
+        appAlert('Download failed: ' + (e.message || e), {
+          title: 'Download failed',
+        });
+      }
       btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
@@ -1610,12 +1684,12 @@ document.addEventListener('click', async function(e) {
       await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
       refreshAfterAction();
     } else if (action === 'download-entry' && entryId) {
-      btn.disabled = true;
-      try {
-        await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
-        btn.textContent = 'Queued';
-      } catch (e) { alert('Download failed: ' + (e.message || e)); }
-      refreshAfterAction();
+      const episodeNum = Number.parseInt(btn.dataset.episode, 10);
+      if (Number.isInteger(episodeNum)) {
+        await queueSeriesEpisodeDownload(
+          btn, seriesTitle, seasonNum, episodeNum
+        );
+      }
     } else if (action === 'show-stream-link' && entryId) {
       await toggleEpisodeStreamLink(btn, entryId);
     }
@@ -1643,12 +1717,7 @@ document.addEventListener('click', async function(e) {
     const cardEl = btn.closest('[data-entry-id]');
     const entryId = cardEl ? cardEl.dataset.entryId : (btn.dataset.entryId || null);
     if (!entryId) return;
-    btn.disabled = true;
-    try {
-      await api(`/library/entries/${encodeURIComponent(entryId)}/download`, 'POST');
-      btn.textContent = 'Queued';
-    } catch (e) { alert('Download failed: ' + (e.message || e)); }
-    refreshAfterAction();
+    await queueEntryDownload(btn, entryId);
   } else if (action === 'download-series' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
     if (!d) return;
@@ -1656,7 +1725,11 @@ document.addEventListener('click', async function(e) {
     try {
       await api(`/library/series/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
       btn.textContent = 'Queued';
-    } catch (e) { alert('Download failed: ' + (e.message || e)); }
+    } catch (e) {
+      appAlert('Download failed: ' + (e.message || e), {
+        title: 'Download failed',
+      });
+    }
     btn.disabled = false;
   } else if (action === 'download-tv-vod' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
@@ -1665,7 +1738,11 @@ document.addEventListener('click', async function(e) {
     try {
       await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
       btn.textContent = 'Queued';
-    } catch (e) { alert('Download failed: ' + (e.message || e)); }
+    } catch (e) {
+      appAlert('Download failed: ' + (e.message || e), {
+        title: 'Download failed',
+      });
+    }
     btn.disabled = false;
   } else if (action === 'add-series' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
@@ -1857,7 +1934,9 @@ document.getElementById('modal-confirm-btn').addEventListener('click', async fun
     closeFollowModal();
     refreshAfterAction();
   } catch (e) {
-    alert('Failed to follow: ' + (e.message || e));
+    appAlert('Failed to follow: ' + (e.message || e), {
+      title: 'Follow failed',
+    });
   }
   this.disabled = false;
 });
@@ -1903,7 +1982,9 @@ document.getElementById('tv-vod-modal-confirm-btn').addEventListener('click', as
     closeTvVodFollowModal();
     refreshAfterAction();
   } catch (e) {
-    alert('Failed to follow: ' + (e.message || e));
+    appAlert('Failed to follow: ' + (e.message || e), {
+      title: 'Follow failed',
+    });
   }
   this.disabled = false;
 });

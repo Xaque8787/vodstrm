@@ -5,14 +5,20 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import patch
 
+from fastapi import BackgroundTasks
+
 from app.database import _SCHEMA
 from app.models import TokenData
 from app.routes.library import (
+    download_entry,
+    download_series_episode,
     entry_details,
+    delete_download,
     library_counts,
     list_entries,
     list_episodes,
     list_seasons,
+    cancel_entry_download,
 )
 
 
@@ -142,6 +148,62 @@ class LibraryBrowseTests(unittest.TestCase):
         self.assertTrue(data["strm_generated"])
         self.assertEqual(response.headers["cache-control"], "no-store")
 
+    @patch(
+        "app.tasks.downloads.remove_download",
+        return_value={"found": True, "file_present": False, "file_removed": False},
+    )
+    def test_delete_download_schedules_strm_regeneration(self, remove_download):
+        background_tasks = BackgroundTasks()
+
+        response = asyncio.run(
+            delete_download(
+                "movie-1",
+                background_tasks=background_tasks,
+                current_user=self.user,
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        remove_download.assert_called_once_with("movie-1")
+        self.assertEqual(len(background_tasks.tasks), 1)
+
+    @patch(
+        "app.tasks.downloads.remove_download",
+        return_value={"found": False, "file_present": False, "file_removed": False},
+    )
+    def test_delete_download_is_idempotent(self, remove_download):
+        background_tasks = BackgroundTasks()
+
+        response = asyncio.run(
+            delete_download(
+                "missing",
+                background_tasks=background_tasks,
+                current_user=self.user,
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(json.loads(response.body)["found"])
+        self.assertEqual(len(background_tasks.tasks), 1)
+
+    @patch("app.tasks.downloads.cancel_download", return_value=False)
+    def test_cancel_download_is_idempotent(self, cancel_download):
+        background_tasks = BackgroundTasks()
+
+        response = asyncio.run(
+            cancel_entry_download(
+                "already-removed",
+                background_tasks=background_tasks,
+                current_user=self.user,
+            )
+        )
+
+        data = json.loads(response.body)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["already_removed"])
+        self.assertEqual(len(background_tasks.tasks), 0)
+
     def test_series_episode_list_returns_episode_name(self):
         self.conn.execute(
             """
@@ -181,6 +243,130 @@ class LibraryBrowseTests(unittest.TestCase):
 
         self.assertEqual(data["episodes"][0]["episode_name"], "Pilot")
         self.assertEqual(data["episodes"][0]["display_title"], "Pilot")
+
+    def test_series_episode_list_collapses_duplicate_provider_titles(self):
+        self.conn.execute(
+            """
+            INSERT INTO providers (name, slug, type, url, strm_mode, priority)
+            VALUES ('Provider', 'provider', 'xtream', 'https://example.test',
+                    'generate_all', 1)
+            """
+        )
+        for episode, stream_id in ((1, "first"), (2, "duplicate"), (3, "second")):
+            entry_id = f"show-s1e{episode}"
+            self.conn.execute(
+                """
+                INSERT INTO entries (
+                    entry_id, type, cleaned_title, raw_title, season, episode,
+                    series_type
+                ) VALUES (?, 'series', 'Example Show', ?, 1, ?, 'season_episode')
+                """,
+                (entry_id, f"Example Show S01E{episode:02d}", episode),
+            )
+            title = "Pilot" if episode < 3 else "Second"
+            self.conn.execute(
+                """
+                INSERT INTO streams (
+                    entry_id, stream_url, provider, batch_id, metadata_json
+                ) VALUES (?, ?, 'provider', 'batch', ?)
+                """,
+                (
+                    entry_id,
+                    f"https://example.test/{stream_id}",
+                    json.dumps({"episode-title": title}),
+                ),
+            )
+
+        self.conn.execute(
+            "UPDATE streams SET strm_path='/tmp/pilot.strm' "
+            "WHERE entry_id IN ('show-s1e1', 'show-s1e2')"
+        )
+
+        with patch("app.routes.library.get_db", self._db):
+            response = asyncio.run(
+                list_episodes("Example Show", 1, current_user=self.user)
+            )
+        data = json.loads(response.body)
+
+        self.assertEqual(len(data["episodes"]), 2)
+        self.assertEqual(
+            [episode["episode"] for episode in data["episodes"]], [1, 2]
+        )
+        self.assertEqual(
+            [episode["episode_name"] for episode in data["episodes"]],
+            ["Pilot", "Second"],
+        )
+
+        with (
+            patch("app.routes.library.get_db", self._db),
+            patch(
+                "app.ingestion.xtream_native.ensure_series_loaded",
+                return_value=3,
+            ),
+        ):
+            response = asyncio.run(
+                list_seasons("Example Show", current_user=self.user)
+            )
+        seasons = json.loads(response.body)["seasons"]
+        self.assertEqual(seasons[0]["episode_count"], 2)
+        self.assertEqual(seasons[0]["owned_count"], 1)
+
+    @patch("app.tasks.downloads.queue_download", return_value=True)
+    def test_series_episode_download_resolves_semantic_identity(self, queue_download):
+        self.conn.execute(
+            """
+            INSERT INTO providers (name, slug, type, url, priority)
+            VALUES ('Provider', 'provider', 'xtream', 'https://example.test', 1)
+            """
+        )
+        for episode in (2, 3):
+            entry_id = f"show-s1e{episode}"
+            self.conn.execute(
+                """
+                INSERT INTO entries (
+                    entry_id, type, cleaned_title, raw_title, season, episode
+                ) VALUES (?, 'series', 'Example Show', ?, 1, ?)
+                """,
+                (entry_id, f"Example Show S01E{episode:02d}", episode),
+            )
+            self.conn.execute(
+                """
+                INSERT INTO streams (entry_id, stream_url, provider, batch_id)
+                VALUES (?, ?, 'provider', 'batch')
+                """,
+                (entry_id, f"https://example.test/{episode}"),
+            )
+        self.conn.commit()
+
+        with patch("app.routes.library.get_db", self._db):
+            response = asyncio.run(
+                download_series_episode(
+                    "Example Show", 1, 3, current_user=self.user
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        queue_download.assert_called_once_with("show-s1e3")
+
+    @patch("app.tasks.downloads.queue_download", return_value=True)
+    def test_generic_download_supports_legacy_series_entry_id(self, queue_download):
+        self.conn.execute(
+            """
+            INSERT INTO entries (
+                entry_id, type, cleaned_title, raw_title, season, episode
+            ) VALUES ('show-s1e3', 'series', 'Example Show',
+                      'Example Show S01E03', 1, 3)
+            """
+        )
+        self.conn.commit()
+
+        with patch("app.routes.library.get_db", self._db):
+            response = asyncio.run(
+                download_entry("show-s1e3", current_user=self.user)
+            )
+
+        self.assertEqual(response.status_code, 200)
+        queue_download.assert_called_once_with("show-s1e3")
 
     def test_series_groups_are_paginated_before_card_decoration(self):
         self.conn.execute(

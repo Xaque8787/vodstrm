@@ -78,7 +78,6 @@ import_selected mode.  For each entry where this provider currently owns the
 import logging
 import os
 import re
-import shutil
 import sqlite3
 
 from app.config import settings
@@ -93,10 +92,6 @@ _VOD_ROOT_RELATIVE = settings.vod_path
 
 def _vod_root() -> str:
     return resolve_path(_VOD_ROOT_RELATIVE)
-
-
-def _offline_root() -> str:
-    return resolve_path(settings.vod_offline_path)
 
 
 # ---------------------------------------------------------------------------
@@ -207,28 +202,6 @@ def _remove_empty_dirs(directory: str) -> None:
                 break
         except OSError:
             break
-
-
-def _remove_empty_dirs_to_root(directory: str, root: str) -> None:
-    current = directory
-    while current and os.path.abspath(current) != os.path.abspath(root):
-        try:
-            if os.path.isdir(current) and not os.listdir(current):
-                os.rmdir(current)
-                current = os.path.dirname(current)
-            else:
-                break
-        except OSError:
-            break
-
-
-def _ensure_hardlink(source_path: str, link_path: str) -> None:
-    os.makedirs(os.path.dirname(link_path), exist_ok=True)
-    if os.path.exists(link_path):
-        if os.path.samefile(source_path, link_path):
-            return
-        os.remove(link_path)
-    os.link(source_path, link_path)
 
 
 # ---------------------------------------------------------------------------
@@ -471,139 +444,18 @@ def _sync_one(
 
 
 # ---------------------------------------------------------------------------
-# Download reconciliation & cleanup
+# Download cleanup
 # ---------------------------------------------------------------------------
-
-def _reconcile_download_paths(conn: sqlite3.Connection, vod_root: str) -> int:
-    """
-    Keep the persistent offline path and media-facing VOD hard link aligned.
-    Existing VOD-only downloads are adopted into the offline tree. Missing
-    links are repaired, and metadata-driven path changes update both trees.
-    """
-    rows = conn.execute(
-        """
-        SELECT d.entry_id, d.local_path, d.offline_path, d.container,
-               e.type, e.cleaned_title, e.year, e.season, e.episode, e.air_date,
-               (SELECT s.filtered_title FROM streams s
-                JOIN providers p ON p.slug = s.provider
-                WHERE s.entry_id = d.entry_id
-                  AND p.is_active = 1 AND s.exclude = 0
-                  AND (s.include_only_active = 0 OR s.include_only = 1)
-                  AND (p.strm_mode = 'generate_all'
-                       OR (p.strm_mode = 'import_selected' AND s.imported = 1))
-                ORDER BY p.priority, p.slug LIMIT 1) AS filtered_title
-        FROM downloads d
-        JOIN entries e ON e.entry_id = d.entry_id
-        WHERE d.status = 'completed'
-        """,
-    ).fetchall()
-
-    reconciled = 0
-    changed = 0
-    now = local_now_iso()
-    offline_root = _offline_root()
-    for row in rows:
-        title = row["filtered_title"] or row["cleaned_title"]
-        target_vod_path = _derive_media_path(
-            row["type"], title, row["year"], row["season"], row["episode"],
-            vod_root, container=row["container"], air_date=row["air_date"],
-        )
-        target_offline_path = _derive_media_path(
-            row["type"], title, row["year"], row["season"], row["episode"],
-            offline_root, container=row["container"], air_date=row["air_date"],
-        )
-
-        local_path = row["local_path"]
-        offline_path = row["offline_path"]
-        offline_exists = bool(offline_path and os.path.exists(offline_path))
-        local_exists = bool(local_path and os.path.exists(local_path))
-        if not offline_exists and not local_exists:
-            conn.execute(
-                "UPDATE downloads SET status='cancelled', fail_reason='file_missing', "
-                "cancelled_at=?, updated_at=? WHERE entry_id=?",
-                (now, now, row["entry_id"]),
-            )
-            logger.debug(
-                "[STRM] Download file missing — entry=%s offline=%s vod=%s",
-                row["entry_id"][:12], offline_path, local_path,
-            )
-            changed += 1
-            continue
-
-        try:
-            os.makedirs(os.path.dirname(target_offline_path), exist_ok=True)
-            if offline_exists:
-                if os.path.abspath(offline_path) != os.path.abspath(target_offline_path):
-                    if os.path.exists(target_offline_path):
-                        os.remove(target_offline_path)
-                    os.replace(offline_path, target_offline_path)
-                    _remove_empty_dirs_to_root(
-                        os.path.dirname(offline_path), offline_root
-                    )
-            else:
-                _ensure_hardlink(local_path, target_offline_path)
-
-            if local_path and os.path.abspath(local_path) != os.path.abspath(target_vod_path):
-                if os.path.exists(local_path):
-                    os.remove(local_path)
-                    _remove_empty_dirs(os.path.dirname(local_path))
-            _ensure_hardlink(target_offline_path, target_vod_path)
-        except OSError as exc:
-            logger.error(
-                "[STRM] Could not reconcile offline/VOD hard links — entry=%s error=%s",
-                row["entry_id"][:12], exc,
-            )
-            continue
-
-        conn.execute(
-            "UPDATE downloads SET local_path=?, offline_path=?, updated_at=? "
-            "WHERE entry_id=?",
-            (target_vod_path, target_offline_path, now, row["entry_id"]),
-        )
-        reconciled += 1
-        changed += 1
-    if changed:
-        conn.commit()
-    if reconciled:
-        logger.info("[STRM] Reconciled %d offline download path(s)", reconciled)
-    return reconciled
-
-
 def _cleanup_downloads(conn: sqlite3.Connection) -> int:
     """
     Periodic download maintenance — runs inside generate_strm:
-    1. Delete untracked staging and media files from the offline tree
+    1. Delete files explicitly tracked by expired download rows
     2. Delete cancelled download rows older than 24h
     3. Delete failed download rows older than retention (default 90 days)
     Returns count of rows deleted.
     """
     now = local_now_iso()
     deleted = 0
-
-    # 1. Clean untracked files from the dedicated offline tree
-    offline_root = _offline_root()
-    if os.path.isdir(offline_root):
-        active_staging = {
-            os.path.abspath(row[0]) for row in conn.execute(
-                "SELECT staging_path FROM downloads "
-                "WHERE status IN ('probing','downloading') AND staging_path IS NOT NULL"
-            ).fetchall()
-        }
-        known_offline = {
-            os.path.abspath(row[0]) for row in conn.execute(
-                "SELECT offline_path FROM downloads WHERE offline_path IS NOT NULL"
-            ).fetchall()
-        }
-        for dirpath, _dirnames, filenames in os.walk(offline_root, topdown=False):
-            for filename in filenames:
-                path = os.path.abspath(os.path.join(dirpath, filename))
-                if path in active_staging or path in known_offline:
-                    continue
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-            _remove_empty_dirs_to_root(dirpath, offline_root)
 
     expired = conn.execute(
         """
@@ -617,18 +469,17 @@ def _cleanup_downloads(conn: sqlite3.Connection) -> int:
         (now, now),
     ).fetchall()
     for row in expired:
-        for path in (row["local_path"], row["offline_path"], row["staging_path"]):
+        tracked_paths = {
+            path
+            for path in (
+                row["local_path"], row["offline_path"], row["staging_path"]
+            )
+            if path
+        }
+        for path in tracked_paths:
             if path and os.path.exists(path):
                 try:
                     os.remove(path)
-                    if os.path.commonpath(
-                        [os.path.abspath(path), os.path.abspath(offline_root)]
-                    ) == os.path.abspath(offline_root):
-                        _remove_empty_dirs_to_root(
-                            os.path.dirname(path), offline_root
-                        )
-                    else:
-                        _remove_empty_dirs(os.path.dirname(path))
                 except OSError:
                     pass
 
@@ -897,7 +748,6 @@ def generate_strm() -> None:
               AND entry_id IN (SELECT entry_id FROM entries WHERE type = 'live')
             """
         )
-        _reconcile_download_paths(conn, vod_root)
         _cleanup_downloads(conn)
         stats = _sync_streams(conn, vod_root)
         orphans = _cleanup_orphans(conn, vod_root)

@@ -27,6 +27,7 @@ _HEADERS = {
     )
 }
 _YEAR_RE = re.compile(r"\b(?:19\d{2}|20\d{2})\b")
+_EPISODE_POSITION_RE = re.compile(r"\bS(\d{1,3})\s*E(\d{1,4})\b", re.IGNORECASE)
 _EXTENSION_RE = re.compile(r"^[a-zA-Z0-9]{1,8}$")
 _PATH_SEGMENT_SAFE = "!$&'()*+,;=:@"
 
@@ -231,6 +232,7 @@ def _normalize_episode_payload(payload: Any) -> list[dict[str, Any]]:
         raise XtreamAPIError("series detail returned an invalid episode payload")
 
     normalized: list[dict[str, Any]] = []
+    seen_positions: set[tuple[int, int]] = set()
     for season_key, episode_list in payload["episodes"].items():
         if not isinstance(episode_list, list):
             continue
@@ -240,15 +242,24 @@ def _normalize_episode_payload(payload: Any) -> list[dict[str, Any]]:
             stream_id = str(episode.get("id") or "")
             season = _to_int(episode.get("season")) or _to_int(season_key)
             episode_number = _to_int(episode.get("episode_num"))
+            title = str(episode.get("title") or "")
+            title_position = _EPISODE_POSITION_RE.search(title)
+            if title_position:
+                season = int(title_position.group(1))
+                episode_number = int(title_position.group(2))
             if not stream_id or season is None or episode_number is None:
                 continue
+            position = (season, episode_number)
+            if position in seen_positions:
+                continue
+            seen_positions.add(position)
             info = episode.get("info") if isinstance(episode.get("info"), dict) else {}
             normalized.append(
                 {
                     "id": stream_id,
                     "season": season,
                     "episode": episode_number,
-                    "title": str(episode.get("title") or ""),
+                    "title": title,
                     "container_extension": _safe_extension(
                         episode.get("container_extension"), "mkv"
                     ),
@@ -308,6 +319,69 @@ def _playback_url(
     password = _quote_path_segment(client.password)
     identifier = _quote_path_segment(stream_id)
     return f"{client.base}/{media_type}/{username}/{password}/{identifier}.{extension}"
+
+
+def refresh_episode_stream(
+    conn: sqlite3.Connection,
+    entry_id: str,
+    provider_slug: str,
+) -> str | None:
+    """Refresh one materialized episode URL when an Xtream stream ID rotates."""
+    row = conn.execute(
+        """
+        SELECT e.season, e.episode, s.metadata_json, p.*
+        FROM entries e
+        JOIN streams s ON s.entry_id=e.entry_id AND s.provider=?
+        JOIN providers p ON p.slug=s.provider
+        WHERE e.entry_id=? AND e.type='series' AND p.type='xtream'
+        """,
+        (provider_slug, entry_id),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        metadata = json.loads(row["metadata_json"] or "{}")
+    except (TypeError, ValueError):
+        return None
+    series_id = str(metadata.get("xtream-series-id") or "").strip()
+    if not series_id:
+        return None
+
+    client = XtreamClient(dict(row))
+    episodes = _normalize_episode_payload(
+        client.get_json("get_series_info", series_id=series_id)
+    )
+    episode = next(
+        (
+            item for item in episodes
+            if item["season"] == row["season"]
+            and item["episode"] == row["episode"]
+        ),
+        None,
+    )
+    if not episode:
+        return None
+
+    extension = _safe_extension(episode.get("container_extension"), "mkv")
+    stream_url = _playback_url(
+        client,
+        "series",
+        episode["id"],
+        extension,
+        episode.get("direct_source"),
+    )
+    metadata.update({
+        "xtream-id": str(episode["id"]),
+        "container-extension": extension,
+        "episode-title": str(episode.get("title") or ""),
+    })
+    conn.execute(
+        "UPDATE streams SET stream_url=?, metadata_json=? "
+        "WHERE entry_id=? AND provider=?",
+        (stream_url, json.dumps(metadata, ensure_ascii=False), entry_id, provider_slug),
+    )
+    conn.commit()
+    return stream_url
 
 
 def _entry(
@@ -456,7 +530,11 @@ def ensure_series_loaded(title: str) -> int:
                             ON x.provider_slug=c.provider_slug AND x.series_id=c.series_id
             WHERE p.is_active=1 AND p.type='xtream'
               AND lower(c.series_name)=lower(?)
-                            AND (x.series_id IS NULL OR x.fetch_status != 'ok')
+                                                        AND (
+                                                                x.series_id IS NULL
+                                                                OR x.fetch_status != 'ok'
+                                                                OR datetime(x.fetched_at) <= datetime('now', '-1 hour')
+                                                        )
             ORDER BY p.priority, p.slug, c.series_id
             """,
             (title,),

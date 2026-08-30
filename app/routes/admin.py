@@ -9,7 +9,12 @@ from app.auth.jwt_handler import TokenData, get_current_admin
 from app.database import get_db
 from app.template_engine import create_templates
 from app.tasks.strm import _remove_empty_dirs, _vod_root
-from app.utils.log_reader import LOG_LEVELS, available_log_files, read_log_entries
+from app.utils.log_reader import (
+    LOG_LEVELS,
+    available_log_files,
+    cleanup_log_file,
+    read_log_entries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +112,28 @@ async def logs_data(
         },
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.post("/logs/cleanup", response_class=JSONResponse)
+async def cleanup_logs(
+    file: str = Form(...),
+    current_user: TokenData = Depends(get_current_admin),
+):
+    try:
+        result = cleanup_log_file(file)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except OSError:
+        logger.exception("[ADMIN] Could not clean up log file=%s", file)
+        return JSONResponse({"error": "Could not clean up log file"}, status_code=500)
+    logger.warning(
+        "[ADMIN] Log %s by=%s file=%s bytes_removed=%d",
+        result["action"],
+        current_user.username,
+        result["name"],
+        result["bytes_removed"],
+    )
+    return JSONResponse({"ok": True, **result, "files": available_log_files()})
 
 
 # ---------------------------------------------------------------------------

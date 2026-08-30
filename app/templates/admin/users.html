@@ -27,7 +27,7 @@
         <td>{{ user.created_at }}</td>
         <td>
           {% if user.id != current_user.user_id %}
-          <form method="post" action="/admin/users/{{ user.id }}/delete" onsubmit="return confirm('Delete this user?')">
+          <form method="post" action="/admin/users/{{ user.id }}/delete" data-confirm="Delete this user?">
             <button type="submit" class="btn btn-danger btn-sm">Delete</button>
           </form>
           {% else %}

@@ -110,3 +110,20 @@ def read_log_entries(
         )
     ]
     return list(reversed(filtered[-limit:]))
+
+
+def cleanup_log_file(name: str) -> dict:
+    """Clear the active log in place or delete one allowlisted archive."""
+    path = _log_path(name)
+    size = os.path.getsize(path)
+    if name == "app.log":
+        flags = os.O_WRONLY | os.O_TRUNC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(path, flags)
+        os.close(descriptor)
+        action = "cleared"
+    else:
+        os.unlink(path)
+        action = "deleted"
+    return {"name": name, "bytes_removed": size, "action": action}

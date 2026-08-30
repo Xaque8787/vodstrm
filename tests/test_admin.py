@@ -10,6 +10,7 @@ from starlette.requests import Request
 from app.database import _SCHEMA
 from app.models import TokenData
 from app.routes.admin import (
+    cleanup_logs,
     clear_entries,
     clear_streams,
     legacy_library_page,
@@ -197,6 +198,33 @@ class AdminLibraryClearTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(json.loads(response.body)["error"], "Unknown log file")
+
+    def test_cleanup_logs_returns_updated_file_list(self):
+        result = {"name": "app.log.1", "bytes_removed": 500, "action": "deleted"}
+        files = [{"name": "app.log", "size": 20, "modified_at": "now", "rotation": 0}]
+        with (
+            patch("app.routes.admin.cleanup_log_file", return_value=result) as cleanup,
+            patch("app.routes.admin.available_log_files", return_value=files),
+        ):
+            response = asyncio.run(
+                cleanup_logs(file="app.log.1", current_user=self.user)
+            )
+
+        data = json.loads(response.body)
+        cleanup.assert_called_once_with("app.log.1")
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["files"], files)
+
+    def test_cleanup_logs_rejects_unknown_file(self):
+        with patch(
+            "app.routes.admin.cleanup_log_file",
+            side_effect=ValueError("Unknown log file"),
+        ):
+            response = asyncio.run(
+                cleanup_logs(file="../app.log", current_user=self.user)
+            )
+
+        self.assertEqual(response.status_code, 400)
 
 
 if __name__ == "__main__":

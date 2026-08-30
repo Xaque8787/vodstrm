@@ -4,6 +4,7 @@
 {% block page_heading %}Logs{% endblock %}
 {% block page_description %}Inspect persistent application logs and rotated archives.{% endblock %}
 {% block page_actions %}
+<button class="btn btn-danger btn-sm" id="log-cleanup" type="button">Cleanup log</button>
 <button class="btn btn-secondary btn-sm" id="log-refresh" type="button">Refresh</button>
 {% endblock %}
 
@@ -176,6 +177,22 @@
     <div class="log-empty">Loading logs...</div>
   </div>
 </section>
+
+<div class="modal-overlay" id="log-cleanup-modal" style="display:none" aria-modal="true" role="dialog" aria-labelledby="log-cleanup-title">
+  <div class="modal">
+    <div class="modal__header">
+      <h3 class="modal__title" id="log-cleanup-title">Cleanup log?</h3>
+    </div>
+    <div class="modal__body">
+      <p>This will permanently remove all entries from <strong id="log-cleanup-file"></strong>.</p>
+      <p class="modal__warning">This action cannot be undone. The cleanup action will be recorded in the active application log.</p>
+    </div>
+    <div class="modal__footer">
+      <button type="button" class="btn btn-secondary" id="log-cleanup-cancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="log-cleanup-confirm">Cleanup log</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -188,6 +205,11 @@
   const logList = document.getElementById('log-list');
   const logSummary = document.getElementById('log-summary');
   const refreshButton = document.getElementById('log-refresh');
+  const cleanupButton = document.getElementById('log-cleanup');
+  const cleanupModal = document.getElementById('log-cleanup-modal');
+  const cleanupFile = document.getElementById('log-cleanup-file');
+  const cleanupCancel = document.getElementById('log-cleanup-cancel');
+  const cleanupConfirm = document.getElementById('log-cleanup-confirm');
   let requestRunning = false;
   let searchTimer;
 
@@ -264,7 +286,61 @@
     }
   }
 
+  function openCleanupModal() {
+    if (!logFile.value) return;
+    cleanupFile.textContent = logFile.value;
+    cleanupModal.style.display = 'flex';
+    cleanupConfirm.focus();
+  }
+
+  function closeCleanupModal() {
+    cleanupModal.style.display = 'none';
+    cleanupButton.focus();
+  }
+
+  async function cleanupSelectedLog() {
+    const selectedFile = logFile.value;
+    if (!selectedFile || requestRunning) return;
+    requestRunning = true;
+    cleanupConfirm.disabled = true;
+    cleanupConfirm.textContent = 'Cleaning...';
+    try {
+      const body = new URLSearchParams({ file: selectedFile });
+      const response = await fetch('/admin/logs/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      const nextFile = data.files.some(file => file.name === selectedFile)
+        ? selectedFile
+        : (data.files[0]?.name || '');
+      syncFileOptions(data.files, nextFile);
+      closeCleanupModal();
+      requestRunning = false;
+      await loadLogs();
+    } catch (error) {
+      logSummary.textContent = `Could not clean up log: ${error.message}`;
+      requestRunning = false;
+    } finally {
+      cleanupConfirm.disabled = false;
+      cleanupConfirm.textContent = 'Cleanup log';
+    }
+  }
+
   refreshButton.addEventListener('click', loadLogs);
+  cleanupButton.addEventListener('click', openCleanupModal);
+  cleanupCancel.addEventListener('click', closeCleanupModal);
+  cleanupConfirm.addEventListener('click', cleanupSelectedLog);
+  cleanupModal.addEventListener('click', event => {
+    if (event.target === cleanupModal) closeCleanupModal();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && cleanupModal.style.display !== 'none') {
+      closeCleanupModal();
+    }
+  });
   logFile.addEventListener('change', loadLogs);
   logLevel.addEventListener('change', loadLogs);
   logLimit.addEventListener('change', loadLogs);

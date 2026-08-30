@@ -48,7 +48,10 @@ async def login_page(request: Request):
     token = request.cookies.get(COOKIE_NAME)
     if token and decode_access_token(token):
         return RedirectResponse("/", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": None, "username": "", "remember": False},
+    )
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -57,18 +60,29 @@ async def login_submit(
     response: Response,
     username: str = Form(...),
     password: str = Form(...),
+    remember: bool = Form(False),
 ):
     user = _get_user_by_username(username)
     if not user or user["password_hash"] != _hash_password(password):
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "Invalid username or password"},
+            {
+                "request": request,
+                "error": "Invalid username or password",
+                "username": username,
+                "remember": remember,
+            },
             status_code=401,
         )
 
+    token_lifetime = (
+        timedelta(days=settings.remember_me_days)
+        if remember
+        else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     token = create_access_token(
         {"sub": user["username"], "user_id": user["id"], "is_admin": bool(user["is_admin"])},
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        expires_delta=token_lifetime,
     )
 
     redirect = RedirectResponse("/", status_code=302)
@@ -78,7 +92,7 @@ async def login_submit(
         httponly=True,
         samesite="lax",
         secure=settings.secure_cookies,
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=settings.remember_me_days * 24 * 60 * 60 if remember else None,
     )
     logger.info("User '%s' logged in", username)
     return redirect

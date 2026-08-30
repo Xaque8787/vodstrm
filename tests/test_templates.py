@@ -1,4 +1,5 @@
 import os
+import re
 import unittest
 
 from jinja2 import Environment, FileSystemLoader
@@ -37,6 +38,17 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(page.count('class="context-bar"'), 1)
         self.assertIn('id="context-bar-title">Providers</h1>', page)
         self.assertEqual(page.count('id="action"'), 1)
+        self.assertEqual(page.count('id="app-dialog"'), 1)
+        self.assertEqual(page.count('id="app-dialog-confirm"'), 1)
+        self.assertEqual(page.count('id="app-dialog-cancel"'), 1)
+
+    def test_login_has_remember_me_checkbox(self):
+        source, _, _ = self.env.loader.get_source(self.env, "login.html")
+
+        self.assertIn('type="checkbox"', source)
+        self.assertIn('id="remember"', source)
+        self.assertIn('name="remember"', source)
+        self.assertIn("Remember me", source)
 
     def test_migrated_actions_are_unique(self):
         checks = {
@@ -60,6 +72,72 @@ class TemplateLayoutTests(unittest.TestCase):
         logs, _, _ = self.env.loader.get_source(self.env, "admin/logs.html")
         for level in ("debug", "info", "warning", "error", "critical"):
             self.assertIn(f".log-row--{level}", logs)
+        self.assertEqual(logs.count('id="log-cleanup"'), 1)
+        self.assertEqual(logs.count('id="log-cleanup-modal"'), 1)
+        self.assertIn("This action cannot be undone", logs)
+        self.assertIn("/admin/logs/cleanup", logs)
+
+    def test_templates_do_not_use_native_alerts_or_confirms(self):
+        templates = (
+            "admin/users.html",
+            "integrations/index.html",
+            "library/downloads.html",
+            "library/index.html",
+            "providers/index.html",
+        )
+        native_dialog = re.compile(r"(?<![A-Za-z])(?:alert|confirm)\s*\(")
+        for template_name in templates:
+            source, _, _ = self.env.loader.get_source(self.env, template_name)
+            self.assertIsNone(native_dialog.search(source), template_name)
+
+    def test_library_entry_download_updates_only_clicked_button(self):
+        source, _, _ = self.env.loader.get_source(
+            self.env, "library/index.html"
+        )
+        helper_start = source.index("async function queueEntryDownload")
+        helper_end = source.index("// ── Render helpers", helper_start)
+        helper = source[helper_start:helper_end]
+
+        self.assertEqual(source.count("await queueEntryDownload(btn, entryId);"), 2)
+        self.assertIn("queueSeriesEpisodeDownload", source)
+        self.assertIn("await queueSeriesEpisodeDownload(", source)
+        self.assertIn("btn, seriesTitle, seasonNum, episodeNum", source)
+        self.assertIn("data-episode=", source)
+        self.assertIn("markDownloadQueued(button);", helper)
+        self.assertNotIn("refreshAfterAction", helper)
+        self.assertNotIn("refreshAfterTvVodAction", helper)
+        self.assertIn("e.preventDefault();", source)
+        self.assertIn(".btn-download { flex: 0 0 auto; min-width: 72px; }", source)
+        self.assertIn(".ep-btn-download.is-downloading {", source)
+        self.assertIn(
+            'class="btn-action btn-download is-downloading" disabled>Queued',
+            source,
+        )
+        self.assertIn(
+            'class="btn-action btn-download" data-action="download-entry">Retry',
+            source,
+        )
+
+    def test_series_overlay_scrolls_and_expands_one_season(self):
+        source, _, _ = self.env.loader.get_source(
+            self.env, "library/index.html"
+        )
+
+        self.assertIn(".series-panel {", source)
+        self.assertIn("height: min(860px, calc(100dvh - 80px));", source)
+        self.assertIn("flex: 1 1 auto;", source)
+        self.assertIn("min-height: 0;", source)
+        self.assertIn("flex: 0 0 auto;", source)
+        self.assertIn(".season-list::-webkit-scrollbar", source)
+        self.assertIn("panel.className = 'expand-panel series-panel';", source)
+        self.assertIn(
+            "document.querySelectorAll('#season-list .episode-list.open')",
+            source,
+        )
+        self.assertNotIn("Episodes load when opened", source)
+        self.assertNotIn("On demand", source)
+        self.assertNotIn("badge-on-demand", source)
+        self.assertNotIn("badge-owned", source)
 
 
 if __name__ == "__main__":
