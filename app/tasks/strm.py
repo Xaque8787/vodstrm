@@ -191,9 +191,11 @@ def _move_strm(old_path: str, new_path: str) -> None:
 
 def _remove_empty_dirs(directory: str) -> None:
     """Walk upward from directory, removing empty folders until vod_root."""
-    vod = _vod_root()
+    vod = os.path.abspath(_vod_root())
     current = directory
     while current and os.path.abspath(current) != os.path.abspath(vod):
+        if os.path.abspath(os.path.dirname(current)) == vod:
+            break
         try:
             if not os.listdir(current):
                 os.rmdir(current)

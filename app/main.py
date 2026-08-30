@@ -34,6 +34,18 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database tables verified")
 
+    from app.utils.env import resolve_path
+    vod_root = resolve_path(settings.vod_path)
+    for folder in (
+        settings.vod_movies_folder,
+        settings.vod_series_folder,
+        settings.vod_live_tv_folder,
+        settings.vod_unsorted_folder,
+    ):
+        os.makedirs(os.path.join(vod_root, folder), exist_ok=True)
+    os.makedirs(resolve_path(settings.vod_offline_path), exist_ok=True)
+    logger.info("VOD directories verified")
+
     from run_migrations import run_all_migrations
     run_all_migrations()
 

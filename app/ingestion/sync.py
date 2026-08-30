@@ -55,6 +55,8 @@ def _delete_strm_file(path: str) -> None:
         vod_root = os.path.abspath(resolve_path(_VOD_ROOT_RELATIVE))
         parent = os.path.dirname(os.path.abspath(path))
         while parent and parent != vod_root:
+            if os.path.dirname(parent) == vod_root:
+                break
             if os.path.isdir(parent) and not os.listdir(parent):
                 os.rmdir(parent)
                 parent = os.path.dirname(parent)
@@ -69,8 +71,14 @@ def _safe_remove(path: str) -> None:
     try:
         if os.path.exists(path):
             os.remove(path)
+            vod_root = os.path.abspath(resolve_path(_VOD_ROOT_RELATIVE))
             parent = os.path.dirname(os.path.abspath(path))
-            if parent and os.path.isdir(parent) and not os.listdir(parent):
+            if (
+                parent
+                and os.path.dirname(parent) != vod_root
+                and os.path.isdir(parent)
+                and not os.listdir(parent)
+            ):
                 os.rmdir(parent)
     except OSError as exc:
         logger.warning("[SYNC] Failed to remove %s: %s", path, exc)
