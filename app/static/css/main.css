@@ -1575,6 +1575,33 @@ code {
 .filter-form-meta-row .form-group { flex: 1; }
 .filter-form-order { flex: 0 0 100px !important; }
 
+/* Literal mode toggle */
+.filter-literal-group {
+  margin-bottom: calc(var(--spacing) * 1.5);
+}
+
+.filter-literal-label {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--spacing) * 0.75);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.filter-literal-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #0d6efd);
+}
+
+.filter-literal-hint {
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
 .filter-meta-input {
   width: 100%;
   padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 1.5);

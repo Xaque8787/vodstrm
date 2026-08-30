@@ -5,7 +5,7 @@ from app.utils.env import local_now_iso
 
 def list_filters(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
-        "SELECT id, filter_type, label, order_index, enabled, created_at FROM filters ORDER BY filter_type, order_index"
+        "SELECT id, filter_type, label, order_index, enabled, literal_mode, created_at FROM filters ORDER BY filter_type, order_index"
     ).fetchall()
     result = []
     for row in rows:
@@ -29,6 +29,7 @@ def list_filters(conn: sqlite3.Connection) -> list[dict]:
             "label": row["label"],
             "order_index": row["order_index"],
             "enabled": bool(row["enabled"]),
+            "literal_mode": bool(row["literal_mode"]),
             "created_at": row["created_at"],
             "providers": providers,
             "entry_types": entry_types,
@@ -39,7 +40,7 @@ def list_filters(conn: sqlite3.Connection) -> list[dict]:
 
 def get_filter(conn: sqlite3.Connection, filter_id: int) -> dict | None:
     row = conn.execute(
-        "SELECT id, filter_type, label, order_index, enabled FROM filters WHERE id = ?", (filter_id,)
+        "SELECT id, filter_type, label, order_index, enabled, literal_mode FROM filters WHERE id = ?", (filter_id,)
     ).fetchone()
     if not row:
         return None
@@ -59,6 +60,7 @@ def get_filter(conn: sqlite3.Connection, filter_id: int) -> dict | None:
     return {
         "id": row["id"], "filter_type": row["filter_type"], "label": row["label"],
         "order_index": row["order_index"], "enabled": bool(row["enabled"]),
+        "literal_mode": bool(row["literal_mode"]),
         "providers": providers, "entry_types": entry_types, "patterns": patterns,
     }
 
@@ -67,11 +69,12 @@ def create_filter(
     conn: sqlite3.Connection,
     filter_type: str, label: str, order_index: int,
     providers: list[str], entry_types: list[str], patterns: list[dict],
+    literal_mode: bool = False,
 ) -> int:
     now = local_now_iso()
     cursor = conn.execute(
-        "INSERT INTO filters (filter_type, label, order_index, enabled, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
-        (filter_type, label, order_index, now, now),
+        "INSERT INTO filters (filter_type, label, order_index, enabled, literal_mode, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)",
+        (filter_type, label, order_index, 1 if literal_mode else 0, now, now),
     )
     fid = cursor.lastrowid
     _set_providers(conn, fid, providers)
@@ -84,11 +87,12 @@ def update_filter(
     conn: sqlite3.Connection,
     filter_id: int, label: str, order_index: int,
     providers: list[str], entry_types: list[str], patterns: list[dict],
+    literal_mode: bool = False,
 ) -> None:
     now = local_now_iso()
     conn.execute(
-        "UPDATE filters SET label=?, order_index=?, updated_at=? WHERE id=?",
-        (label, order_index, now, filter_id),
+        "UPDATE filters SET label=?, order_index=?, literal_mode=?, updated_at=? WHERE id=?",
+        (label, order_index, 1 if literal_mode else 0, now, filter_id),
     )
     _set_providers(conn, filter_id, providers)
     _set_entry_types(conn, filter_id, entry_types)

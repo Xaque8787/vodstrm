@@ -41,7 +41,7 @@ def _compile(pattern: str) -> re.Pattern | None:
 def load_filters(conn: sqlite3.Connection) -> list[dict]:
     """Return all enabled filter rules with scope and patterns, ordered for execution."""
     rows = conn.execute(
-        "SELECT id, filter_type, order_index FROM filters WHERE enabled = 1 ORDER BY filter_type, order_index"
+        "SELECT id, filter_type, order_index, literal_mode FROM filters WHERE enabled = 1 ORDER BY filter_type, order_index"
     ).fetchall()
 
     result = []
@@ -61,6 +61,7 @@ def load_filters(conn: sqlite3.Connection) -> list[dict]:
             "id": fid,
             "filter_type": row["filter_type"],
             "order_index": row["order_index"],
+            "literal_mode": bool(row["literal_mode"]),
             "providers": providers,
             "entry_types": entry_types,
             "patterns": patterns,
@@ -99,10 +100,11 @@ def apply_filters(stream: dict[str, Any], entry: dict[str, Any], filters: list[d
             if compiled:
                 working = compiled.sub(pat["replacement"] or "", working)
 
-    # Step 2: Remove (raw regex patterns)
+    # Step 2: Remove (regex patterns, auto-escaped when literal_mode is on)
     for rule in remove_rules:
         for pat in rule["patterns"]:
-            compiled = _compile(pat["pattern"])
+            pattern = re.escape(pat["pattern"]) if rule.get("literal_mode") else pat["pattern"]
+            compiled = _compile(pattern)
             if compiled:
                 matches = compiled.findall(working)
                 if matches:
@@ -117,7 +119,8 @@ def apply_filters(stream: dict[str, Any], entry: dict[str, Any], filters: list[d
     exclude = 0
     for rule in exclude_rules:
         for pat in rule["patterns"]:
-            compiled = _compile(pat["pattern"])
+            pattern = re.escape(pat["pattern"]) if rule.get("literal_mode") else pat["pattern"]
+            compiled = _compile(pattern)
             if compiled and compiled.search(raw_title):
                 hits.append(pat["pattern"])
                 exclude = 1
@@ -130,7 +133,8 @@ def apply_filters(stream: dict[str, Any], entry: dict[str, Any], filters: list[d
     if include_only_rules:
         for rule in include_only_rules:
             for pat in rule["patterns"]:
-                compiled = _compile(pat["pattern"])
+                pattern = re.escape(pat["pattern"]) if rule.get("literal_mode") else pat["pattern"]
+                compiled = _compile(pattern)
                 if compiled and compiled.search(raw_title):
                     hits.append(pat["pattern"])
                     include_only = 1

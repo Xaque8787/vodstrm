@@ -87,6 +87,7 @@ async def add_filter(request: Request, current_user: TokenData = Depends(get_cur
 
     filter_type = (form_dict.get("filter_type") or "").strip()
     label = (form_dict.get("label") or "").strip()
+    literal_mode = form_dict.get("literal_mode") == "on"
     try:
         order_index = int(form_dict.get("order_index") or 0)
     except ValueError:
@@ -109,7 +110,7 @@ async def add_filter(request: Request, current_user: TokenData = Depends(get_cur
             {"request": request, "current_user": current_user, **ctx}, status_code=422)
 
     with get_db() as conn:
-        create_filter(conn, filter_type, label, order_index, providers, entry_types, patterns)
+        create_filter(conn, filter_type, label, order_index, providers, entry_types, patterns, literal_mode=literal_mode)
     logger.info("[FILTERS] Created type=%s label=%r by %s", filter_type, label, current_user.username)
     return RedirectResponse("/filters?flash=created", status_code=302)
 
@@ -121,6 +122,7 @@ async def edit_filter(filter_id: int, request: Request, current_user: TokenData 
     form_dict = dict(items)
 
     label = (form_dict.get("label") or "").strip()
+    literal_mode = form_dict.get("literal_mode") == "on"
     try:
         order_index = int(form_dict.get("order_index") or 0)
     except ValueError:
@@ -143,7 +145,7 @@ async def edit_filter(filter_id: int, request: Request, current_user: TokenData 
             {"request": request, "current_user": current_user, **ctx}, status_code=422)
 
     with get_db() as conn:
-        update_filter(conn, filter_id, label, order_index, providers, entry_types, patterns)
+        update_filter(conn, filter_id, label, order_index, providers, entry_types, patterns, literal_mode=literal_mode)
     logger.info("[FILTERS] Updated filter %d by %s", filter_id, current_user.username)
     return RedirectResponse("/filters?flash=updated", status_code=302)
 

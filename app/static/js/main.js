@@ -284,6 +284,8 @@ function initFiltersPage() {
     const list = document.getElementById("add-pattern-list");
     list.dataset.ftype = chosenType;
     patLabel.textContent = chosenType === "replace" ? "Replacement pairs" : "Patterns";
+    const litToggle = document.getElementById("add-literal-toggle");
+    if (litToggle) litToggle.style.display = chosenType === "replace" ? "none" : "";
     if (!list.querySelector(".filter-row")) addPatternRow(list, chosenType);
     initScopeGroup(panel);
   });
@@ -303,6 +305,11 @@ function initFiltersPage() {
     panel.querySelectorAll(".filter-type-opt").forEach((o) => o.classList.remove("filter-type-opt--active"));
     panel.querySelectorAll("input[type=radio]").forEach((r) => (r.checked = false));
     document.getElementById("add-pattern-list").innerHTML = "";
+    const litToggle = document.getElementById("add-literal-toggle");
+    if (litToggle) {
+      litToggle.style.display = "none";
+      litToggle.querySelector("input[type=checkbox]").checked = false;
+    }
   }
 
   // Add pattern row (delegated)
@@ -372,12 +379,14 @@ function initScopeGroup(container) {
 function addPatternRow(list, ftype) {
   const idx = list.querySelectorAll(".filter-row").length;
   const isReplace = ftype === "replace";
+  const litToggle = list.closest("form")?.querySelector("input[name=literal_mode]");
+  const isLiteral = !isReplace && litToggle?.checked;
   const row = document.createElement("div");
   row.className = "filter-row";
   row.dataset.idx = idx;
   row.innerHTML = `
     <input type="text" name="pattern_${idx}"
-           placeholder="${isReplace ? "Find (literal text)" : "Regex pattern"}"
+           placeholder="${isReplace ? "Find (literal text)" : isLiteral ? "Text to remove (literal)" : "Regex pattern"}"
            class="filter-input" required>
     ${isReplace ? `<span class="filter-arrow">\u2192</span>
     <input type="text" name="replacement_${idx}" placeholder="Replace with"

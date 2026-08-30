@@ -81,6 +81,13 @@
           </div>
         </div>
 
+        <div class="form-group filter-literal-group" id="add-literal-toggle" style="display:none">
+          <label class="filter-literal-label">
+            <input type="checkbox" name="literal_mode"> Literal mode
+            <span class="filter-literal-hint text-muted">Treat patterns as plain text — no regex escaping needed</span>
+          </label>
+        </div>
+
         <div class="form-group">
           <label>Providers</label>
           <div class="filter-scope-row" id="add-provider-scope">
@@ -148,6 +155,9 @@
           {{ f.label if f.label else 'Filter #' ~ f.id }}
         </span>
         <span class="filter-card__order text-muted">order&nbsp;{{ f.order_index }}</span>
+        {% if f.literal_mode and ftype != 'replace' %}
+        <span class="badge badge--green">literal</span>
+        {% endif %}
         {% for p in f.providers %}
         <span class="badge badge--blue">{{ 'all providers' if p == '*' else p }}</span>
         {% endfor %}
@@ -195,6 +205,15 @@
               <input type="number" name="order_index" value="{{ f.order_index }}" min="0" max="999" class="filter-meta-input">
             </div>
           </div>
+
+          {% if ftype != 'replace' %}
+          <div class="form-group filter-literal-group">
+            <label class="filter-literal-label">
+              <input type="checkbox" name="literal_mode" {% if f.literal_mode %}checked{% endif %}> Literal mode
+              <span class="filter-literal-hint text-muted">Treat patterns as plain text — no regex escaping needed</span>
+            </label>
+          </div>
+          {% endif %}
 
           <div class="form-group">
             <label>Providers</label>
