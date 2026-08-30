@@ -971,11 +971,15 @@
         setRunning(true);
         pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
       } else {
-        alert("Could not start enrichment: " + (data.reason || "unknown"));
+        appAlert("Could not start enrichment: " + (data.reason || "unknown"), {
+          title: "Enrichment failed",
+        });
         setRunning(false);
       }
     } catch {
-      alert("Request failed \u2014 please try again.");
+      appAlert("Request failed \u2014 please try again.", {
+        title: "Request failed",
+      });
       setRunning(false);
     }
   }
@@ -990,7 +994,7 @@
         setTimeout(() => { btn.disabled = false; btn.textContent = "Process Now"; }, 3000);
       }
     } catch {
-      alert("Request failed.");
+      appAlert("Request failed.", { title: "Request failed" });
       if (btn) { btn.disabled = false; btn.textContent = "Process Now"; }
     }
   }
@@ -1006,11 +1010,15 @@
         notFoundLoaded = false;
         pollTimer = setTimeout(pollStatus, POLL_INTERVAL);
       } else {
-        alert("Could not start retry: " + (data.reason || "unknown"));
+        appAlert("Could not start retry: " + (data.reason || "unknown"), {
+          title: "Retry failed",
+        });
         if (btn) btn.disabled = false;
       }
     } catch {
-      alert("Request failed \u2014 please try again.");
+      appAlert("Request failed \u2014 please try again.", {
+        title: "Request failed",
+      });
       if (btn) btn.disabled = false;
     }
   }
@@ -1024,9 +1032,15 @@
       const res  = await fetch("/integrations/tmdb/clear", { method: "POST" });
       const data = await res.json();
       if (data.ok) { location.reload(); }
-      else { alert("Could not clear: " + (data.reason || "unknown")); }
+      else {
+        appAlert("Could not clear: " + (data.reason || "unknown"), {
+          title: "Clear failed",
+        });
+      }
     } catch {
-      alert("Request failed \u2014 please try again.");
+      appAlert("Request failed \u2014 please try again.", {
+        title: "Request failed",
+      });
     }
   }
 

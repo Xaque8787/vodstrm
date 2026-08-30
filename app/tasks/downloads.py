@@ -203,6 +203,7 @@ def _ffmpeg_download(
     cancel_event: threading.Event | None = None,
     input_format: str | None = None,
     output_container: str = "mkv",
+    cancel_callback=None,
 ) -> bool:
     """Download via ffmpeg stream-copy remux. Returns True on success.
 
@@ -242,9 +243,21 @@ def _ffmpeg_download(
         return False
 
     if progress_callback:
-        progress_callback(0, expected_size)
+        if progress_callback(0, expected_size) is False:
+            process.terminate()
+            process.communicate()
+            return False
     started_at = time.monotonic()
     while process.poll() is None:
+        if cancel_callback and cancel_callback():
+            process.terminate()
+            try:
+                process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+            logger.info("[DOWNLOADS] ffmpeg transfer cancelled")
+            return False
         if cancel_event and cancel_event.wait(timeout=0.5):
             process.terminate()
             try:
@@ -262,7 +275,11 @@ def _ffmpeg_download(
             logger.warning("[DOWNLOADS] ffmpeg timed out after %d seconds", timeout)
             return False
         if progress_callback and os.path.exists(dest_path):
-            progress_callback(os.path.getsize(dest_path), expected_size)
+            if progress_callback(os.path.getsize(dest_path), expected_size) is False:
+                process.terminate()
+                process.communicate()
+                logger.info("[DOWNLOADS] ffmpeg transfer cancelled")
+                return False
 
     _, stderr = process.communicate()
     if process.returncode != 0:
@@ -273,7 +290,8 @@ def _ffmpeg_download(
         )
         return False
     if progress_callback and os.path.exists(dest_path):
-        progress_callback(os.path.getsize(dest_path), expected_size)
+        if progress_callback(os.path.getsize(dest_path), expected_size) is False:
+            return False
     return os.path.exists(dest_path) and os.path.getsize(dest_path) > 0
 
 
@@ -298,6 +316,7 @@ def _http_download_exact(
     dest_path: str,
     progress_callback=None,
     cancel_event: threading.Event | None = None,
+    cancel_callback=None,
 ) -> bool:
     """Copy a progressive HTTP media object byte-for-byte without remuxing."""
     range_chunk_size = 4 * 1024 * 1024
@@ -365,10 +384,14 @@ def _http_download_exact(
 
                     bytes_written = offset
                     if progress_callback:
-                        progress_callback(bytes_written, expected_size)
+                        if progress_callback(bytes_written, expected_size) is False:
+                            return False
                     with open(dest_path, "ab" if offset else "wb") as destination:
                         for chunk in response.iter_content(chunk_size=1024 * 1024):
-                            if cancel_event and cancel_event.is_set():
+                            if (
+                                (cancel_event and cancel_event.is_set())
+                                or (cancel_callback and cancel_callback())
+                            ):
                                 logger.info("[DOWNLOADS] Direct transfer cancelled")
                                 return False
                             if chunk:
@@ -380,7 +403,8 @@ def _http_download_exact(
                                     or bytes_written - last_reported_bytes >= 16 * 1024 * 1024
                                     or now - last_reported_at >= 1
                                 ):
-                                    progress_callback(bytes_written, expected_size)
+                                    if progress_callback(bytes_written, expected_size) is False:
+                                        return False
                                     last_reported_bytes = bytes_written
                                     last_reported_at = now
                     if response_size is not None and bytes_written - offset != response_size:
@@ -388,7 +412,8 @@ def _http_download_exact(
                             "incomplete byte range"
                         )
                     if progress_callback and bytes_written != last_reported_bytes:
-                        progress_callback(bytes_written, expected_size)
+                        if progress_callback(bytes_written, expected_size) is False:
+                            return False
                     range_completed = True
                     break
             except requests.RequestException as exc:
@@ -561,7 +586,7 @@ def _process_one(conn, row, settings, cancel_event=None) -> bool:
 
     def record_progress(bytes_written, total_bytes):
         if is_cancelled():
-            return
+            return False
         conn.execute(
             "UPDATE downloads SET downloaded_bytes=?, "
             "expected_size=COALESCE(?, expected_size), updated_at=? "
@@ -569,6 +594,7 @@ def _process_one(conn, row, settings, cancel_event=None) -> bool:
             (bytes_written, total_bytes, local_now_iso(), entry_id),
         )
         conn.commit()
+        return True
 
     # Download
     if source_container:
@@ -582,6 +608,7 @@ def _process_one(conn, row, settings, cancel_event=None) -> bool:
             staging,
             progress_callback=record_progress,
             cancel_event=cancel_event,
+            cancel_callback=is_cancelled,
         )
         failure_reason = "direct_download_failed"
     else:
@@ -594,6 +621,7 @@ def _process_one(conn, row, settings, cancel_event=None) -> bool:
             cancel_event=cancel_event,
             input_format=input_format,
             output_container=container,
+            cancel_callback=is_cancelled,
         )
         failure_reason = "ffmpeg_failed"
     if not success:
@@ -860,6 +888,7 @@ def cancel_download(entry_id: str, delete_file: bool = False) -> bool:
         if cancel_event:
             cancel_event.set()
     now = local_now_iso()
+    paths = set()
     with get_db() as conn:
         row = conn.execute(
             "SELECT local_path, offline_path, staging_path, status FROM downloads WHERE entry_id=?",
@@ -876,9 +905,6 @@ def cancel_download(entry_id: str, delete_file: bool = False) -> bool:
                 )
                 if path
             }
-            for path in paths:
-                _remove_download_file(path)
-
         if row["status"] in ("pending", "probing", "downloading"):
             conn.execute(
                 "UPDATE downloads SET status='cancelled', fail_reason='cancelled_by_user', "
@@ -895,7 +921,49 @@ def cancel_download(entry_id: str, delete_file: bool = False) -> bool:
                 (now, now, entry_id),
             )
         conn.commit()
-        return True
+    for path in paths:
+        _remove_download_file(path)
+    return True
+
+
+def remove_download(entry_id: str) -> dict:
+    """Remove a download row and any exact recorded files, if present."""
+    with _cancel_lock:
+        cancel_event = _cancel_events.get(entry_id)
+        if cancel_event:
+            cancel_event.set()
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT local_path, offline_path, staging_path "
+            "FROM downloads WHERE entry_id=?",
+            (entry_id,),
+        ).fetchone()
+        if not row:
+            return {
+                "found": False,
+                "file_present": False,
+                "file_removed": False,
+            }
+
+        paths = {
+            path
+            for path in (
+                row["local_path"], row["offline_path"], row["staging_path"]
+            )
+            if path
+        }
+        file_present = any(os.path.isfile(path) for path in paths)
+        cursor = conn.execute(
+            "DELETE FROM downloads WHERE entry_id=?", (entry_id,)
+        )
+        conn.commit()
+        for path in paths:
+            _remove_download_file(path)
+        return {
+            "found": cursor.rowcount == 1,
+            "file_present": file_present,
+            "file_removed": file_present,
+        }
 
 
 def reset_stuck_downloads(max_age_seconds: int | None = 300) -> int:

@@ -1,4 +1,5 @@
 import os
+import re
 import unittest
 
 from jinja2 import Environment, FileSystemLoader
@@ -37,6 +38,9 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(page.count('class="context-bar"'), 1)
         self.assertIn('id="context-bar-title">Providers</h1>', page)
         self.assertEqual(page.count('id="action"'), 1)
+        self.assertEqual(page.count('id="app-dialog"'), 1)
+        self.assertEqual(page.count('id="app-dialog-confirm"'), 1)
+        self.assertEqual(page.count('id="app-dialog-cancel"'), 1)
 
     def test_login_has_remember_me_checkbox(self):
         source, _, _ = self.env.loader.get_source(self.env, "login.html")
@@ -73,6 +77,19 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn("This action cannot be undone", logs)
         self.assertIn("/admin/logs/cleanup", logs)
 
+    def test_templates_do_not_use_native_alerts_or_confirms(self):
+        templates = (
+            "admin/users.html",
+            "integrations/index.html",
+            "library/downloads.html",
+            "library/index.html",
+            "providers/index.html",
+        )
+        native_dialog = re.compile(r"(?<![A-Za-z])(?:alert|confirm)\s*\(")
+        for template_name in templates:
+            source, _, _ = self.env.loader.get_source(self.env, template_name)
+            self.assertIsNone(native_dialog.search(source), template_name)
+
     def test_library_entry_download_updates_only_clicked_button(self):
         source, _, _ = self.env.loader.get_source(
             self.env, "library/index.html"
@@ -83,10 +100,8 @@ class TemplateLayoutTests(unittest.TestCase):
 
         self.assertEqual(source.count("await queueEntryDownload(btn, entryId);"), 2)
         self.assertIn("queueSeriesEpisodeDownload", source)
-        self.assertIn(
-            "await queueSeriesEpisodeDownload(btn, seriesTitle, seasonNum, episodeNum);",
-            source,
-        )
+        self.assertIn("await queueSeriesEpisodeDownload(", source)
+        self.assertIn("btn, seriesTitle, seasonNum, episodeNum", source)
         self.assertIn("data-episode=", source)
         self.assertIn("markDownloadQueued(button);", helper)
         self.assertNotIn("refreshAfterAction", helper)

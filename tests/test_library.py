@@ -18,6 +18,7 @@ from app.routes.library import (
     list_entries,
     list_episodes,
     list_seasons,
+    cancel_entry_download,
 )
 
 
@@ -147,8 +148,11 @@ class LibraryBrowseTests(unittest.TestCase):
         self.assertTrue(data["strm_generated"])
         self.assertEqual(response.headers["cache-control"], "no-store")
 
-    @patch("app.tasks.downloads.cancel_download", return_value=True)
-    def test_delete_download_schedules_strm_regeneration(self, cancel_download):
+    @patch(
+        "app.tasks.downloads.remove_download",
+        return_value={"found": True, "file_present": False, "file_removed": False},
+    )
+    def test_delete_download_schedules_strm_regeneration(self, remove_download):
         background_tasks = BackgroundTasks()
 
         response = asyncio.run(
@@ -160,11 +164,14 @@ class LibraryBrowseTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        cancel_download.assert_called_once_with("movie-1", delete_file=True)
+        remove_download.assert_called_once_with("movie-1")
         self.assertEqual(len(background_tasks.tasks), 1)
 
-    @patch("app.tasks.downloads.cancel_download", return_value=False)
-    def test_delete_download_reports_missing_row(self, cancel_download):
+    @patch(
+        "app.tasks.downloads.remove_download",
+        return_value={"found": False, "file_present": False, "file_removed": False},
+    )
+    def test_delete_download_is_idempotent(self, remove_download):
         background_tasks = BackgroundTasks()
 
         response = asyncio.run(
@@ -175,7 +182,26 @@ class LibraryBrowseTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(json.loads(response.body)["found"])
+        self.assertEqual(len(background_tasks.tasks), 1)
+
+    @patch("app.tasks.downloads.cancel_download", return_value=False)
+    def test_cancel_download_is_idempotent(self, cancel_download):
+        background_tasks = BackgroundTasks()
+
+        response = asyncio.run(
+            cancel_entry_download(
+                "already-removed",
+                background_tasks=background_tasks,
+                current_user=self.user,
+            )
+        )
+
+        data = json.loads(response.body)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["already_removed"])
         self.assertEqual(len(background_tasks.tasks), 0)
 
     def test_series_episode_list_returns_episode_name(self):

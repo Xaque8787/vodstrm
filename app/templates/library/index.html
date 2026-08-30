@@ -957,7 +957,9 @@ async function queueEntryDownload(button, entryId) {
     markDownloadQueued(button);
   } catch (error) {
     button.disabled = false;
-    alert('Download failed: ' + (error.message || error));
+    appAlert('Download failed: ' + (error.message || error), {
+      title: 'Download failed',
+    });
   }
 }
 
@@ -971,7 +973,9 @@ async function queueSeriesEpisodeDownload(button, title, season, episode) {
     markDownloadQueued(button);
   } catch (error) {
     button.disabled = false;
-    alert('Download failed: ' + (error.message || error));
+    appAlert('Download failed: ' + (error.message || error), {
+      title: 'Download failed',
+    });
   }
 }
 
@@ -1613,7 +1617,11 @@ document.addEventListener('click', async function(e) {
       try {
         await api(`/library/tv_vod/${encodeURIComponent(title)}/years/${encodeURIComponent(year)}/download`, 'POST');
         btn.textContent = 'Queued';
-      } catch (e) { alert('Download failed: ' + (e.message || e)); }
+      } catch (e) {
+        appAlert('Download failed: ' + (e.message || e), {
+          title: 'Download failed',
+        });
+      }
       btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
@@ -1624,10 +1632,7 @@ document.addEventListener('click', async function(e) {
       await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
       refreshAfterTvVodAction();
     } else if (action === 'download-entry' && entryId) {
-      const episodeNum = Number.parseInt(btn.dataset.episode, 10);
-      if (Number.isInteger(episodeNum)) {
-        await queueSeriesEpisodeDownload(btn, seriesTitle, seasonNum, episodeNum);
-      }
+      await queueEntryDownload(btn, entryId);
     } else if (action === 'show-stream-link' && entryId) {
       await toggleEpisodeStreamLink(btn, entryId);
     }
@@ -1664,7 +1669,11 @@ document.addEventListener('click', async function(e) {
       try {
         await api(`/library/series/${encodeURIComponent(seriesTitle)}/seasons/${seasonNum}/download`, 'POST');
         btn.textContent = 'Queued';
-      } catch (e) { alert('Download failed: ' + (e.message || e)); }
+      } catch (e) {
+        appAlert('Download failed: ' + (e.message || e), {
+          title: 'Download failed',
+        });
+      }
       btn.disabled = false;
     } else if (action === 'add-entry' && entryId) {
       btn.disabled = true;
@@ -1675,7 +1684,12 @@ document.addEventListener('click', async function(e) {
       await api(`/library/entries/${encodeURIComponent(entryId)}/remove`, 'POST');
       refreshAfterAction();
     } else if (action === 'download-entry' && entryId) {
-      await queueEntryDownload(btn, entryId);
+      const episodeNum = Number.parseInt(btn.dataset.episode, 10);
+      if (Number.isInteger(episodeNum)) {
+        await queueSeriesEpisodeDownload(
+          btn, seriesTitle, seasonNum, episodeNum
+        );
+      }
     } else if (action === 'show-stream-link' && entryId) {
       await toggleEpisodeStreamLink(btn, entryId);
     }
@@ -1711,7 +1725,11 @@ document.addEventListener('click', async function(e) {
     try {
       await api(`/library/series/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
       btn.textContent = 'Queued';
-    } catch (e) { alert('Download failed: ' + (e.message || e)); }
+    } catch (e) {
+      appAlert('Download failed: ' + (e.message || e), {
+        title: 'Download failed',
+      });
+    }
     btn.disabled = false;
   } else if (action === 'download-tv-vod' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
@@ -1720,7 +1738,11 @@ document.addEventListener('click', async function(e) {
     try {
       await api(`/library/tv_vod/${encodeURIComponent(d.cleaned_title)}/download`, 'POST');
       btn.textContent = 'Queued';
-    } catch (e) { alert('Download failed: ' + (e.message || e)); }
+    } catch (e) {
+      appAlert('Download failed: ' + (e.message || e), {
+        title: 'Download failed',
+      });
+    }
     btn.disabled = false;
   } else if (action === 'add-series' && card) {
     const d = cardData[parseInt(card.dataset.cardIdx)];
@@ -1912,7 +1934,9 @@ document.getElementById('modal-confirm-btn').addEventListener('click', async fun
     closeFollowModal();
     refreshAfterAction();
   } catch (e) {
-    alert('Failed to follow: ' + (e.message || e));
+    appAlert('Failed to follow: ' + (e.message || e), {
+      title: 'Follow failed',
+    });
   }
   this.disabled = false;
 });
@@ -1958,7 +1982,9 @@ document.getElementById('tv-vod-modal-confirm-btn').addEventListener('click', as
     closeTvVodFollowModal();
     refreshAfterAction();
   } catch (e) {
-    alert('Failed to follow: ' + (e.message || e));
+    appAlert('Failed to follow: ' + (e.message || e), {
+      title: 'Follow failed',
+    });
   }
   this.disabled = false;
 });

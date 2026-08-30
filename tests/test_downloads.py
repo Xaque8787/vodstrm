@@ -120,6 +120,41 @@ class DownloadsTests(unittest.TestCase):
         )
         conn.close()
 
+    def test_remove_download_deletes_row_when_file_is_missing(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.executescript(_SCHEMA)
+        conn.execute(
+            "INSERT INTO entries (entry_id, type, cleaned_title, raw_title) "
+            "VALUES ('movie-1', 'movie', 'Movie', 'Movie')"
+        )
+        conn.execute(
+            "INSERT INTO downloads (entry_id, status, offline_path) "
+            "VALUES ('movie-1', 'failed', '/missing/movie.mkv')"
+        )
+        conn.commit()
+
+        @contextmanager
+        def use_test_db():
+            yield conn
+
+        with (
+            patch("app.tasks.downloads.get_db", side_effect=use_test_db),
+            patch("app.tasks.downloads.os.path.isfile", return_value=False),
+            patch("app.tasks.downloads._remove_download_file"),
+        ):
+            result = downloads.remove_download("movie-1")
+
+        self.assertTrue(result["found"])
+        self.assertFalse(result["file_present"])
+        self.assertIsNone(
+            conn.execute(
+                "SELECT 1 FROM downloads WHERE entry_id='movie-1'"
+            ).fetchone()
+        )
+        conn.close()
+
     def test_cancel_pending_download_keeps_cancelled_row(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -668,6 +703,29 @@ class DownloadsTests(unittest.TestCase):
             self.assertFalse(result)
             self.assertEqual(os.path.getsize(output), 0)
 
+    @patch("app.tasks.downloads.requests.get")
+    def test_http_download_stops_when_database_cancellation_is_seen(self, mock_get):
+        mock_get.return_value = FakeResponse(
+            [b"first", b"should-not-continue"], content_length=24
+        )
+        checks = 0
+        with tempfile.TemporaryDirectory() as directory:
+            output = os.path.join(directory, "movie.mp4")
+
+            def is_cancelled():
+                nonlocal checks
+                checks += 1
+                return checks > 1
+
+            result = downloads._http_download_exact(
+                "https://example.test/movie.mp4",
+                output,
+                cancel_callback=is_cancelled,
+            )
+
+            self.assertFalse(result)
+            self.assertEqual(os.path.getsize(output), len(b"first"))
+
     @patch("app.tasks.downloads.subprocess.Popen")
     def test_ffmpeg_download_terminates_when_cancelled(self, mock_popen):
         cancel_event = threading.Event()
@@ -735,7 +793,11 @@ class DownloadsTests(unittest.TestCase):
             )
 
             def exact_copy(
-                _url, path, progress_callback=None, cancel_event=None
+                _url,
+                path,
+                progress_callback=None,
+                cancel_event=None,
+                cancel_callback=None,
             ):
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "wb") as output:

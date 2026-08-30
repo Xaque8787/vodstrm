@@ -1950,7 +1950,7 @@ async def cancel_entry_download(
     from app.tasks.downloads import cancel_download
     deleted = cancel_download(entry_id, delete_file=True)
     if not deleted:
-        return JSONResponse({"error": "Download not found"}, status_code=404)
+        return JSONResponse({"ok": True, "already_removed": True})
     logger.info("[LIBRARY] Download cancelled entry=%s by=%s", entry_id[:12], current_user.username)
     background_tasks.add_task(_generate_strm_after_download_change, "cancel")
     return JSONResponse({"ok": True})
@@ -2140,13 +2140,16 @@ async def delete_download(
     current_user: TokenData = Depends(get_current_user),
 ):
     """Delete a completed download and its local file."""
-    from app.tasks.downloads import cancel_download
-    deleted = cancel_download(entry_id, delete_file=True)
-    if not deleted:
-        return JSONResponse({"error": "Download not found"}, status_code=404)
-    logger.info("[LIBRARY] Download deleted entry=%s by=%s", entry_id[:12], current_user.username)
+    from app.tasks.downloads import remove_download
+    result = remove_download(entry_id)
+    logger.info(
+        "[LIBRARY] Download removed entry=%s file_present=%s by=%s",
+        entry_id[:12],
+        result["file_present"],
+        current_user.username,
+    )
     background_tasks.add_task(_generate_strm_after_download_change, "delete")
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, **result})
 
 
 @router.post("/downloads/clear-failed", response_class=JSONResponse)

@@ -3,11 +3,20 @@ document.addEventListener("DOMContentLoaded", () => {
   // Theme and shared navigation
   initThemeControls();
   initPasswordToggles();
+  initAppDialog();
 
   // ── Confirm destructive forms ────────────────────────────────────────
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
-    form.addEventListener("submit", (e) => {
-      if (!confirm(form.dataset.confirm)) e.preventDefault();
+    form.addEventListener("submit", async (e) => {
+      if (form.dataset.confirmed === "true") {
+        delete form.dataset.confirmed;
+        return;
+      }
+      e.preventDefault();
+      if (await appConfirm(form.dataset.confirm, { title: "Confirm action" })) {
+        form.dataset.confirmed = "true";
+        form.requestSubmit(e.submitter);
+      }
     });
   });
 
@@ -20,6 +29,58 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Database inspector ───────────────────────────────────────────────
   if (document.getElementById("lib-table")) initDatabase();
 
+});
+
+let appDialogResolver = null;
+
+function initAppDialog() {
+  const dialog = document.getElementById("app-dialog");
+  const cancelButton = document.getElementById("app-dialog-cancel");
+  const confirmButton = document.getElementById("app-dialog-confirm");
+  if (!dialog || !cancelButton || !confirmButton) return;
+
+  const close = (result) => {
+    dialog.hidden = true;
+    const resolver = appDialogResolver;
+    appDialogResolver = null;
+    resolver?.(result);
+  };
+  cancelButton.addEventListener("click", () => close(false));
+  confirmButton.addEventListener("click", () => close(true));
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) close(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !dialog.hidden) close(false);
+  });
+}
+
+function showAppDialog(message, options = {}) {
+  const dialog = document.getElementById("app-dialog");
+  const title = document.getElementById("app-dialog-title");
+  const body = document.getElementById("app-dialog-message");
+  const cancelButton = document.getElementById("app-dialog-cancel");
+  const confirmButton = document.getElementById("app-dialog-confirm");
+  if (!dialog || !title || !body || !cancelButton || !confirmButton) {
+    return Promise.resolve(false);
+  }
+  if (appDialogResolver) appDialogResolver(false);
+  title.textContent = options.title || "Notice";
+  body.textContent = String(message || "");
+  cancelButton.hidden = !options.confirm;
+  confirmButton.textContent = options.confirmLabel || "OK";
+  confirmButton.className = options.danger ? "btn btn-danger" : "btn btn-primary";
+  dialog.hidden = false;
+  confirmButton.focus();
+  return new Promise((resolve) => { appDialogResolver = resolve; });
+}
+
+window.appAlert = (message, options = {}) => showAppDialog(message, options);
+window.appConfirm = (message, options = {}) => showAppDialog(message, {
+  ...options,
+  confirm: true,
+  danger: options.danger !== false,
+  confirmLabel: options.confirmLabel || "Continue",
 });
 
 // ─────────────────────────────────────────────────────────────────────────
