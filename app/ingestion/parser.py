@@ -207,7 +207,10 @@ def _classify(entry: dict, force_vod: bool = False) -> dict:
         last = year_matches[-1]
         entry["type"] = "movie"
         entry["year"] = int(last.group(0))
-        entry["cleaned_title"] = _clean_name(name[: last.start()])
+        start = last.start()
+        if start > 0 and name[start - 1] in "([{":
+            start -= 1
+        entry["cleaned_title"] = _clean_name(name[:start])
         logger.debug(
             "[PARSER] Classified as MOVIE (%d): %s",
             entry["year"], entry["cleaned_title"][:80],
