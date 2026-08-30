@@ -354,7 +354,7 @@ async def set_strm_mode(
 
     with get_db() as conn:
         current = conn.execute(
-            "SELECT strm_mode FROM providers WHERE slug = ?", (provider_slug,)
+            "SELECT strm_mode, type FROM providers WHERE slug = ?", (provider_slug,)
         ).fetchone()
 
     if not current:
@@ -364,23 +364,51 @@ async def set_strm_mode(
         current["strm_mode"] != "import_selected"
         and strm_mode == "import_selected"
     )
+    switching_to_all = (
+        current["strm_mode"] != "generate_all"
+        and strm_mode == "generate_all"
+    )
 
     with get_db() as conn:
         conn.execute(
             "UPDATE providers SET strm_mode = ? WHERE slug = ?",
             (strm_mode, provider_slug),
         )
+        if switching_to_selected:
+            # Retain existing .strm files by marking all current streams as
+            # imported.  This way the user keeps everything they already have
+            # and can selectively remove items from the Library page.
+            conn.execute(
+                "UPDATE streams SET imported = 1 WHERE provider = ? AND imported = 0",
+                (provider_slug,),
+            )
 
     if switching_to_selected:
-        from app.tasks.strm import deactivate_provider_strm_async
-        import threading
-        threading.Thread(
-            target=deactivate_provider_strm_async,
-            args=(provider_slug,),
-            daemon=True,
-        ).start()
         logger.info(
-            "STRM handover triggered for provider '%s' (switched to import_selected) by %s",
+            "Provider '%s' switched to import_selected — %d streams marked imported by %s",
+            provider_slug,
+            current["type"],
+            current_user.username,
+        )
+
+    if switching_to_all and current["type"] == "xtream":
+        # Switching an xtream provider to generate_all: trigger a download so
+        # the M3U path populates all entries and .strm files are generated.
+        import threading
+        from app.tasks.downloader import download_provider
+
+        def _trigger_download():
+            try:
+                download_provider(provider_slug)
+            except Exception as exc:
+                logger.error(
+                    "[SCHEDULES] Download trigger after switch to generate_all failed for '%s': %s",
+                    provider_slug, exc, exc_info=True,
+                )
+
+        threading.Thread(target=_trigger_download, daemon=True).start()
+        logger.info(
+            "Xtream provider '%s' switched to generate_all — download triggered by %s",
             provider_slug, current_user.username,
         )
 

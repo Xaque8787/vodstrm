@@ -105,12 +105,18 @@ def _safe_origin(url: str) -> str:
 
 def _try_native_xtream(provider: sqlite3.Row, playlist_failure: str) -> bool:
     slug = provider["slug"] or str(provider["id"])
-    logger.warning(
-        "[DOWNLOADER] Xtream playlist unavailable for '%s' (%s); "
-        "trying native Player API ingestion",
-        slug,
-        playlist_failure,
-    )
+    if playlist_failure == "import_selected mode":
+        logger.info(
+            "[DOWNLOADER] Using Player API for import_selected xtream provider '%s'",
+            slug,
+        )
+    else:
+        logger.warning(
+            "[DOWNLOADER] Xtream playlist unavailable for '%s' (%s); "
+            "trying native Player API ingestion",
+            slug,
+            playlist_failure,
+        )
     try:
         from app.ingestion.xtream_native import ingest_native_provider
 
@@ -162,6 +168,13 @@ def _download_provider_unlocked(provider: sqlite3.Row, m3u_dir: str) -> bool:
     if provider_type == "m3u":
         url = provider["url"] or ""
     elif provider_type == "xtream":
+        strm_mode = provider["strm_mode"] if "strm_mode" in provider.keys() else "generate_all"
+        if strm_mode == "import_selected":
+            logger.info(
+                "[DOWNLOADER] Xtream provider '%s' is import_selected — using Player API for catalog browsing",
+                slug,
+            )
+            return _try_native_xtream(provider, "import_selected mode")
         url = _build_xtream_url(provider)
     else:
         logger.warning("[DOWNLOADER] Unknown provider type '%s' for '%s', skipping", provider_type, slug)
