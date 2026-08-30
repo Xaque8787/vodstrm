@@ -78,11 +78,51 @@ code {
 .nav-links a {
   color: var(--color-text);
   font-size: 0.9rem;
+  text-decoration: none;
+  transition: color 0.15s ease;
 }
 
 .nav-links a:hover {
   color: var(--color-primary);
   text-decoration: none;
+}
+
+.nav-links a.active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.nav-toggle__bar {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: var(--color-text);
+  border-radius: 1px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.nav-toggle--open .nav-toggle__bar:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+.nav-toggle--open .nav-toggle__bar:nth-child(2) {
+  opacity: 0;
+}
+.nav-toggle--open .nav-toggle__bar:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
 }
 
 .nav-logout {

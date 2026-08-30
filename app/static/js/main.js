@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initThemeControls();
   initPasswordToggles();
   initAppDialog();
+  initNavBar();
 
   // ── Confirm destructive forms ────────────────────────────────────────
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
@@ -113,6 +114,34 @@ function initThemeControls() {
     toggle.addEventListener("change", () => {
       applyTheme(toggle.checked ? "dark" : "light", true);
     });
+  });
+}
+
+function initNavBar() {
+  const toggle = document.getElementById("nav-toggle");
+  const links = document.getElementById("nav-links");
+  if (!toggle || !links) return;
+
+  toggle.addEventListener("click", () => {
+    const open = links.classList.toggle("nav-links--open");
+    toggle.classList.toggle("nav-toggle--open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!links.classList.contains("nav-links--open")) return;
+    if (e.target.closest("#nav-toggle") || e.target.closest("#nav-links")) return;
+    links.classList.remove("nav-links--open");
+    toggle.classList.remove("nav-toggle--open");
+    toggle.setAttribute("aria-expanded", "false");
+  });
+
+  const path = window.location.pathname;
+  links.querySelectorAll("a[data-nav]").forEach((a) => {
+    const href = a.getAttribute("href");
+    if (href === path || (href !== "/" && path.startsWith(href))) {
+      a.classList.add("active");
+    }
   });
 }
 

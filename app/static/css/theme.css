@@ -736,6 +736,42 @@ html[data-theme="dark"] .toggle-thumb {
     padding-left: 12px;
   }
 
+  .nav-toggle {
+    display: flex;
+  }
+
+  .nav-links {
+    position: absolute;
+    top: 56px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 0;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: var(--shadow-md);
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+    z-index: 100;
+  }
+
+  .nav-links--open {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .nav-links a {
+    padding: calc(var(--spacing) * 1.75) calc(var(--spacing) * 2);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.95rem;
+  }
+
+  .nav-actions {
+    gap: calc(var(--spacing) * 1.5);
+  }
+
   .nav-brand span {
     display: none;
   }
