@@ -65,15 +65,23 @@ services:
     container_name: vodstrm
     restart: unless-stopped
     ports:
-      - "${APP_PORT}:${APP_PORT}"
-    env_file:
-      - .env
+      - "${APP_PORT:-2112}:${APP_PORT:-2112}"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      TZ: ${TZ:-America/Los_Angeles}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # VOD_PATH and VOD_OFFLINE_PATH default to data/vod and data/vod-offline
+      # inside the container. All subfolder names (movies, series, livetv, etc.)
+      # are created automatically — uncomment in docker-compose.yml to customize.
     volumes:
-      - ${DATA_PATH}:/app/data
-      # Uncomment and point to a host path containing local .m3u files. Or place m3u files directly in /app/data/m3u.
+      - ${DATA_PATH:-./data}:/app/data
+      # Optional: mount local .m3u files, or place them in DATA_PATH/m3u.
       # - /path/on/host/to/m3u:/app/data/m3u
+      # Optional: mount VOD_PATH or VOD_OFFLINE_PATH on a separate host disk.
+      # - /mnt/media:/mnt/media
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT}/login"]
+      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-2112}/login"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -117,14 +125,16 @@ SECURE_COOKIES=false
 DATABASE_PATH=data/app.db
 SCHEDULER_DB_PATH=data/scheduler.db
 VOD_PATH=data/vod
-VOD_MOVIES_FOLDER=movies
-VOD_SERIES_FOLDER=series
-VOD_LIVE_TV_FOLDER=livetv
-VOD_UNSORTED_FOLDER=unsorted
-VOD_UNKNOWN_YEAR_FOLDER=unknown
-M3U_DIR=data/m3u
 VOD_OFFLINE_PATH=data/vod-offline
+M3U_DIR=data/m3u
 LOG_DIR=data/logs
+
+# Optional: override subfolder names inside VOD_PATH (defaults shown)
+# VOD_MOVIES_FOLDER=movies
+# VOD_SERIES_FOLDER=series
+# VOD_LIVE_TV_FOLDER=livetv
+# VOD_UNSORTED_FOLDER=unsorted
+# VOD_UNKNOWN_YEAR_FOLDER=unknown
 
 # Scheduling
 TZ=America/Los_Angeles
@@ -135,13 +145,11 @@ PGID=1000
 DATA_PATH=./data
 ```
 
-`VOD_PATH` contains generated STRM and live-TV playlist output. `VOD_OFFLINE_PATH` contains downloaded media and uses the same configured `movies/`, `series/`, and `unsorted/` organization. Completed downloads remain only under `VOD_OFFLINE_PATH`; VODSTRM does not copy, move, or hard-link them into `VOD_PATH`.
+`VOD_PATH` contains generated STRM and live-TV playlist output. `VOD_OFFLINE_PATH` contains downloaded media. Both paths default to subdirectories of `data/` and are created automatically on startup. Completed downloads remain only under `VOD_OFFLINE_PATH`; VODSTRM does not copy, move, or hard-link them into `VOD_PATH`.
 
-The immediate subfolder names are configurable with `VOD_MOVIES_FOLDER`, `VOD_SERIES_FOLDER`, `VOD_LIVE_TV_FOLDER`, and `VOD_UNSORTED_FOLDER`. Their defaults preserve the existing `movies`, `series`, `livetv`, and `unsorted` layout. Dated TV content shares `VOD_SERIES_FOLDER`; `VOD_UNKNOWN_YEAR_FOLDER` defaults to `unknown` when dated TV has no year. Season directories retain the standard `Season NN` format. Configurable folder values must resolve to one folder name; separators and `..` are rejected.
+The subfolder names inside `VOD_PATH` (`movies`, `series`, `livetv`, `unsorted`, `unknown`) are created automatically and rarely need changing. To use custom names, uncomment the `VOD_*_FOLDER` variables in `docker-compose.yml` or `.env`. Configurable folder values must resolve to one folder name; separators and `..` are rejected.
 
-The roots may reside on unrelated filesystems. `VOD_OFFLINE_PATH` is accessed only when download processing or an explicit tracked-file deletion requires it, so a slow network mount does not block application startup.
-
-When Docker is used, an absolute `VOD_OFFLINE_PATH` outside `/app/data` must also be mounted into the container at that path. For example, add `- /mnt/media:/mnt/media` under the service's `volumes`.
+Both `VOD_PATH` and `VOD_OFFLINE_PATH` may point outside `data/` — for example, to a separate host disk with more space. When using Docker, any path outside `/app/data` must also be mounted into the container. For example, add `- /mnt/media:/mnt/media` under the service's `volumes` and set `VOD_PATH=/mnt/media`.
 
 **Local M3U files:** If you have `.m3u` files on your host, you can either mount a directory into the container (uncomment the volume in `docker-compose.yml` and set the host path), or simply drop the files into `DATA_PATH/m3u` and add them as a Local File provider through the UI.
 
