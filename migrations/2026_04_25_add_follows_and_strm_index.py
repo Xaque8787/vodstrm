@@ -25,10 +25,22 @@ Removed index:
     before the winner's strm_path is set in the same pass. The single-owner
     invariant is maintained by the sync engine logic, not at DB level.
 """
+import logging
 import sqlite3
 
 
-def up(conn: sqlite3.Connection) -> None:
+def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
+    log = logger or logging.getLogger(__name__)
+
+    tables = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "follows" in tables:
+        log.info("  follows table already exists, skipping creation")
+    else:
+        log.info("  Creating follows table")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS follows (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,16 +52,19 @@ def up(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    stream_indexes = {
+    indexes = {
         row[1]
         for row in conn.execute("PRAGMA index_list(follows)").fetchall()
     }
-    if "idx_follows_provider_id" not in stream_indexes:
+    if "idx_follows_provider_id" not in indexes:
+        log.info("  Creating idx_follows_provider_id index")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_follows_provider_id ON follows(provider_id)"
         )
+    else:
+        log.info("  idx_follows_provider_id already exists, skipping")
 
-    # Drop the bad unique index if it was applied by an earlier version of this migration
+    log.info("  Dropping idx_unique_strm_owner if present")
     try:
         conn.execute("DROP INDEX IF EXISTS idx_unique_strm_owner")
     except Exception:

@@ -29,10 +29,21 @@ Migration: create task_schedules table
      APScheduler job state lives in the separate scheduler.db file.
    - task_id is the join key between this table and the scheduler job store.
 """
+import logging
 import sqlite3
 
 
-def up(conn: sqlite3.Connection) -> None:
+def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
+    log = logger or logging.getLogger(__name__)
+    tables = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "task_schedules" in tables:
+        log.info("  task_schedules table already exists, skipping")
+        return
+    log.info("  Creating task_schedules table")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS task_schedules (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,

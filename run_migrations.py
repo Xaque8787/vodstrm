@@ -96,7 +96,14 @@ def run_all_migrations() -> None:
         logger.info("Applying migration: %s", filename)
         module = _load_migration(path)
         try:
-            module.up(conn)
+            # Pass logger so migrations can report what they checked and changed.
+            up_fn = getattr(module, "up", None)
+            if up_fn is None:
+                raise RuntimeError(f"Migration {filename} has no up() function")
+            try:
+                up_fn(conn, logger=logger)
+            except TypeError:
+                up_fn(conn)
             conn.execute(
                 "INSERT INTO migrations (filename) VALUES (?)", (filename,)
             )

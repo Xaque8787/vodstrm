@@ -19,21 +19,32 @@ and the future import-selection pipeline:
 No data is changed; all three columns are nullable / default-zero so the
 migration is safe on any existing dataset.
 """
+import logging
 import sqlite3
 
 
-def up(conn: sqlite3.Connection) -> None:
+def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
+    log = logger or logging.getLogger(__name__)
     existing = {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
 
+    added = []
     if "strm_path" not in existing:
         conn.execute("ALTER TABLE streams ADD COLUMN strm_path TEXT")
+        added.append("strm_path")
 
     if "last_written_url" not in existing:
         conn.execute("ALTER TABLE streams ADD COLUMN last_written_url TEXT")
+        added.append("last_written_url")
 
     if "imported" not in existing:
         conn.execute(
             "ALTER TABLE streams ADD COLUMN imported INTEGER NOT NULL DEFAULT 0"
         )
+        added.append("imported")
+
+    if added:
+        log.info("  Added streams columns: %s", ", ".join(added))
+    else:
+        log.info("  STRM tracking columns already exist on streams, skipping")
 
     conn.commit()

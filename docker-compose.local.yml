@@ -23,18 +23,21 @@ services:
       LOG_DIR: ${LOG_DIR:-data/logs}
       VOD_PATH: ${VOD_PATH:-data/vod}
       VOD_OFFLINE_PATH: ${VOD_OFFLINE_PATH:-data/vod-offline}
-      VOD_MOVIES_FOLDER: ${VOD_MOVIES_FOLDER:-movies}
-      VOD_SERIES_FOLDER: ${VOD_SERIES_FOLDER:-series}
-      VOD_LIVE_TV_FOLDER: ${VOD_LIVE_TV_FOLDER:-livetv}
-      VOD_UNSORTED_FOLDER: ${VOD_UNSORTED_FOLDER:-unsorted}
-      VOD_UNKNOWN_YEAR_FOLDER: ${VOD_UNKNOWN_YEAR_FOLDER:-unknown}
+      # Folder names inside VOD_PATH. Uncomment to customize; defaults are shown.
+      # VOD_MOVIES_FOLDER: movies
+      # VOD_SERIES_FOLDER: series
+      # VOD_LIVE_TV_FOLDER: livetv
+      # VOD_UNSORTED_FOLDER: unsorted
+      # VOD_UNKNOWN_YEAR_FOLDER: unknown
       TZ: ${TZ:-America/Los_Angeles}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
     volumes:
       - ${DATA_PATH:-./data}:/app/data
-      # Uncomment and point to a host path containing local .m3u files. Or place m3u files directly in /app/data/m3u.
+      # Optional: mount local .m3u files, or place them in DATA_PATH/m3u.
       # - /path/on/host/to/m3u:/app/data/m3u
+      # Optional: mount VOD_PATH or VOD_OFFLINE_PATH on a separate host disk.
+      # - /mnt/media:/mnt/media
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-2112}/login"]
       interval: 30s
