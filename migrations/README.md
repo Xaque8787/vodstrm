@@ -64,6 +64,29 @@ def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
 
 ---
 
+## The Two-Place Rule (Critical)
+
+Every schema change requires updates in **two places**:
+
+1. **`app/database.py` `_SCHEMA`** — the canonical full schema. A fresh install only
+   runs this; it must produce the complete, correct database with no migrations needed.
+   This is the source of truth for what the database looks like.
+
+2. **`migrations/YYYY_MM_DD_<description>.py`** — alters *existing* installations that
+   were created before the change. This brings an older database up to date.
+
+**Never rely on migrations alone to shape the database.** If you add a column in a
+migration but forget to add it to `_SCHEMA`, a fresh install will have an incomplete
+schema and the migration's idempotency check will try to add the column (which is the
+old problem). The migration is the *upgrade path* for existing installs — `_SCHEMA` is
+the *source of truth* for what a correct database looks like.
+
+When you write a migration, always verify that `_SCHEMA` already reflects the same
+change. The migration should be able to run on a fresh database (where `_SCHEMA` already
+applied the change) and skip gracefully — that's the idempotency guarantee.
+
+---
+
 ## The Idempotency Rule (Critical)
 
 **Every migration must be idempotent.** On a fresh install, `init_db()` runs first and
