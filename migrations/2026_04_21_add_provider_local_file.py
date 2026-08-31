@@ -20,17 +20,20 @@ Steps:
 On a fresh install database.py already creates the table with all columns and
 the updated CHECK constraint, so this migration is a no-op in that case.
 """
+import logging
 import sqlite3
 
 
-def up(conn: sqlite3.Connection) -> None:
+def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
+    log = logger or logging.getLogger(__name__)
     existing = {row[1] for row in conn.execute("PRAGMA table_info(providers)").fetchall()}
     if "local_file_path" in existing:
-        # Fresh install — _SCHEMA already has this column; nothing to do.
+        log.info("  providers.local_file_path already exists, skipping table rebuild")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_slug ON providers (slug)")
         conn.commit()
         return
 
+    log.info("  Rebuilding providers table with local_file type support")
     conn.executescript("""
         ALTER TABLE providers RENAME TO _providers_old;
 

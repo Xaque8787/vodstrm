@@ -8,11 +8,27 @@ Changes:
     SQLite's standard rename-create-insert-drop pattern.
 
 No data is lost. Foreign key references are maintained.
+
+On a fresh install, _SCHEMA already creates follows with the updated constraint,
+so this migration detects that and skips the rebuild.
 """
+import logging
 import sqlite3
 
 
-def up(conn: sqlite3.Connection) -> None:
+def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
+    log = logger or logging.getLogger(__name__)
+
+    # Check if the current constraint already includes tv_vod.
+    schema = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='follows'"
+    ).fetchone()
+    if schema and "tv_vod" in (schema["sql"] or ""):
+        log.info("  follows.entry_type already includes tv_vod, skipping rebuild")
+        conn.commit()
+        return
+
+    log.info("  Rebuilding follows table with tv_vod entry_type support")
     conn.execute("PRAGMA foreign_keys = OFF")
 
     conn.execute("""

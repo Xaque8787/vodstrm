@@ -12,10 +12,25 @@ Modified tables:
 
 Security: no RLS needed — this is SQLite.
 """
+import logging
 import sqlite3
 
 
-def up(conn: sqlite3.Connection) -> None:
+def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
+    log = logger or logging.getLogger(__name__)
+
+    tables = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    new_tables = ["tmdb_shows", "tmdb_seasons", "tmdb_movies", "tmdb_run_log"]
+    missing = [t for t in new_tables if t not in tables]
+    if missing:
+        log.info("  Creating TMDB tables: %s", ", ".join(missing))
+    else:
+        log.info("  TMDB tables already exist, skipping table creation")
+
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS tmdb_shows (
             tmdb_id        INTEGER PRIMARY KEY,
@@ -58,9 +73,16 @@ def up(conn: sqlite3.Connection) -> None:
     """)
 
     existing = {row[1] for row in conn.execute("PRAGMA table_info(entries)").fetchall()}
+    added = []
     if "tmdb_id" not in existing:
         conn.execute("ALTER TABLE entries ADD COLUMN tmdb_id INTEGER DEFAULT NULL")
+        added.append("tmdb_id")
     if "tmdb_type" not in existing:
         conn.execute("ALTER TABLE entries ADD COLUMN tmdb_type TEXT DEFAULT NULL")
+        added.append("tmdb_type")
+    if added:
+        log.info("  Added entries columns: %s", ", ".join(added))
+    else:
+        log.info("  TMDB columns already exist on entries, skipping")
 
     conn.commit()

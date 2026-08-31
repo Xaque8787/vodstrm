@@ -24,10 +24,25 @@ Changes:
 
 No existing data is modified. New columns default to NULL/0.
 """
+import logging
 import sqlite3
 
 
-def up(conn: sqlite3.Connection) -> None:
+def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
+    log = logger or logging.getLogger(__name__)
+
+    tables = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    new_tables = ["filters", "filter_providers", "filter_entry_types", "filter_patterns"]
+    missing = [t for t in new_tables if t not in tables]
+    if missing:
+        log.info("  Creating filter tables: %s", ", ".join(missing))
+    else:
+        log.info("  Filter tables already exist, skipping table creation")
+
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS filters (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,20 +84,23 @@ def up(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_filter_patterns_filter
             ON filter_patterns(filter_id);
-
     """)
 
-    # ALTER TABLE ... ADD COLUMN has no IF NOT EXISTS in SQLite.
-    # On a fresh install database.py already creates these columns, so we
-    # check before adding to avoid an error on the first run.
     existing = {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
-    for col, definition in [
+    new_cols = [
         ("filtered_title", "TEXT"),
         ("filter_hits",    "TEXT DEFAULT '[]'"),
         ("exclude",        "INTEGER DEFAULT 0"),
         ("include_only",   "INTEGER DEFAULT 0"),
-    ]:
+    ]
+    added = []
+    for col, definition in new_cols:
         if col not in existing:
             conn.execute(f"ALTER TABLE streams ADD COLUMN {col} {definition}")
+            added.append(col)
+    if added:
+        log.info("  Added streams columns: %s", ", ".join(added))
+    else:
+        log.info("  Filter output columns already exist on streams, skipping")
 
     conn.commit()

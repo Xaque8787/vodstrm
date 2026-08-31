@@ -15,6 +15,7 @@ Migration: add slug column to providers table
    - The slug is kept in sync with the name on every UPDATE via the application
      layer. Uniqueness is enforced at the database level.
 """
+import logging
 import re
 import sqlite3
 
@@ -27,15 +28,21 @@ def _slugify(value: str) -> str:
     return value.strip("-")
 
 
-def up(conn: sqlite3.Connection) -> None:
+def up(conn: sqlite3.Connection, logger: logging.Logger = None) -> None:
+    log = logger or logging.getLogger(__name__)
     existing = {row[1] for row in conn.execute("PRAGMA table_info(providers)").fetchall()}
     if "slug" not in existing:
+        log.info("  Adding providers.slug column")
         conn.execute("ALTER TABLE providers ADD COLUMN slug TEXT")
 
         rows = conn.execute("SELECT id, name FROM providers").fetchall()
         for row in rows:
             slug = _slugify(row["name"])
             conn.execute("UPDATE providers SET slug = ? WHERE id = ?", (slug, row["id"]))
+        log.info("  Backfilled %d slug values", len(rows))
+    else:
+        log.info("  providers.slug already exists, skipping column add")
 
+    log.info("  Ensuring idx_providers_slug unique index exists")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_slug ON providers (slug)")
     conn.commit()
